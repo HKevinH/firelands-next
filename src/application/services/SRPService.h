@@ -162,6 +162,27 @@ namespace Firelands {
             std::vector<uint8_t> data(buffer.GetBuffer(), buffer.GetBuffer() + buffer.Size());
             return Crypto::CalculateSHA1(data);
         }
+
+        static bool VerifyPassword(const std::string& username, const std::string& password, const std::vector<uint8_t>& salt, const std::vector<uint8_t>& verifier) {
+            std::string identity = Crypto::ToUpper(username);
+            std::string pass = Crypto::ToUpper(password);
+            
+            auto h1 = Crypto::CalculateSHA1(identity + ":" + pass);
+            
+            std::vector<uint8_t> saltAndH1 = salt;
+            saltAndH1.insert(saltAndH1.end(), h1.begin(), h1.end());
+            auto x_bytes = Crypto::CalculateSHA1(saltAndH1);
+            std::reverse(x_bytes.begin(), x_bytes.end());
+
+            BigInt bn_g(SRP::g);
+            BigInt bn_x(x_bytes);
+            BigInt bn_N(SRP::N);
+
+            BigInt bn_v = BigInt::ModExp(bn_g, bn_x, bn_N);
+            auto calculated_verifier = bn_v.ToBinary(32);
+            
+            return calculated_verifier == verifier;
+        }
     };
 
 } // namespace Firelands

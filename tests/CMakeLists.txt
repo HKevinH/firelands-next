@@ -8,10 +8,13 @@ add_executable(FirelandsUnitTests
     unit/shared/LoggerTests.cpp
     unit/application/SRPServiceTests.cpp
     unit/application/RealmListServiceTests.cpp
+    unit/application/AuthServiceTests.cpp
+    unit/application/CharacterServiceTests.cpp
 )
 
 target_link_libraries(FirelandsUnitTests
     GTest::gtest_main
+    GTest::gmock
     FirelandsDomain
     FirelandsApplication
     FirelandsInfrastructure

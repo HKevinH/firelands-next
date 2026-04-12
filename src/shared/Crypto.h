@@ -50,6 +50,39 @@ namespace Crypto {
         return ss.str();
     }
 
+    class SHA1 {
+    public:
+        SHA1() {
+            _ctx = EVP_MD_CTX_new();
+            EVP_DigestInit_ex(_ctx, EVP_sha1(), nullptr);
+        }
+        ~SHA1() {
+            EVP_MD_CTX_free(_ctx);
+        }
+        void Update(const uint8_t* data, size_t len) {
+            EVP_DigestUpdate(_ctx, data, len);
+        }
+        template<typename T>
+        void Update(T val) {
+            Update((const uint8_t*)&val, sizeof(T));
+        }
+        void Update(const std::string& str) {
+            Update((const uint8_t*)str.c_str(), str.length());
+        }
+        void Update(const std::vector<uint8_t>& vec) {
+            Update(vec.data(), vec.size());
+        }
+        SHA1Hash Finalize() {
+            SHA1Hash hash(SHA_DIGEST_LENGTH);
+            unsigned int len = 0;
+            EVP_DigestFinal_ex(_ctx, hash.data(), &len);
+            // Re-initialize for reuse if needed, or just let users create new ones
+            return hash;
+        }
+    private:
+        EVP_MD_CTX* _ctx;
+    };
+
 } // namespace Crypto
 } // namespace Firelands
 

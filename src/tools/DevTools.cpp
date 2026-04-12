@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
             .Build()
     );
 
-    PrintBanner();
+    PrintBanner(BannerType::Tools);
     LOG_INFO("--- Firelands DevTools ---");
 
     if (argc < 2) {

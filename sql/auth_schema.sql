@@ -26,3 +26,9 @@ CREATE TABLE IF NOT EXISTS `realmlist` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `account_session` (
+  `id` int(10) unsigned NOT NULL,
+  `session_key` binary(40) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -93,4 +93,41 @@ namespace Firelands {
         }
     }
 
+    void MySqlAccountRepository::CreateSession(uint32 accountId, const std::vector<uint8_t>& sessionKey) {
+        try {
+            // Using REPLACE INTO to handle existing sessions for the same account
+            std::shared_ptr<sql::PreparedStatement> stmnt(
+                _connection->prepareStatement("REPLACE INTO account_session (id, session_key) VALUES (?, ?)")
+            );
+            stmnt->setUInt(1, accountId);
+            
+            std::string keyStr(sessionKey.begin(), sessionKey.end());
+            std::istringstream keyStream(keyStr);
+            stmnt->setBlob(2, &keyStream);
+            
+            stmnt->executeUpdate();
+        } catch (sql::SQLException& e) {
+            LOG_ERROR("Database error in CreateSession: {}", e.what());
+        }
+    }
+
+    std::vector<uint8_t> MySqlAccountRepository::GetSessionKey(uint32 accountId) {
+        std::vector<uint8_t> key;
+        try {
+            std::shared_ptr<sql::PreparedStatement> stmnt(
+                _connection->prepareStatement("SELECT session_key FROM account_session WHERE id = ?")
+            );
+            stmnt->setUInt(1, accountId);
+            
+            std::unique_ptr<sql::ResultSet> res(stmnt->executeQuery());
+            if (res->next()) {
+                auto keyStream = res->getBlob("session_key");
+                key.assign(std::istreambuf_iterator<char>(*keyStream), std::istreambuf_iterator<char>());
+            }
+        } catch (sql::SQLException& e) {
+            LOG_ERROR("Database error in GetSessionKey: {}", e.what());
+        }
+        return key;
+    }
+
 } // namespace Firelands

@@ -2,7 +2,12 @@
 #include <shared/Logger.h>
 #include <infrastructure/persistence/MySqlAccountRepository.h>
 #include <infrastructure/persistence/MySqlRealmRepository.h>
+#include <infrastructure/network/sessions/AuthSession.h>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
+#include <infrastructure/network/rest/RestAuthServer.h>
+#include <infrastructure/persistence/MemoryWebSessionRepository.h>
+#include <application/services/WebSessionService.h>
+
 #include <application/services/AuthService.h>
 #include <application/services/RealmListService.h>
 #include <conncpp.hpp>
@@ -24,7 +29,7 @@ int main() {
             .Build()
     );
 
-    PrintBanner();
+    PrintBanner(BannerType::Auth);
     LOG_INFO("Starting Authentication Server...");
 
     try {
@@ -44,12 +49,27 @@ int main() {
         // 3. Initialize Services
         auto authService = std::make_shared<AuthService>(accountRepo);
         auto realmService = std::make_shared<RealmListService>(realmRepo);
+        
+        // Initialize Web Session Service for REST API
+        auto webSessionRepo = std::make_shared<MemoryWebSessionRepository>();
+        auto webSessionService = std::make_shared<WebSessionService>(webSessionRepo);
+
 
         // 4. Initialize Network Layer
-        AsyncNetworkServer authServer(authService, realmService);
+        auto sessionFactory = [authService, realmService](boost::asio::ip::tcp::socket socket) {
+            std::make_shared<AuthSession>(std::move(socket), authService, realmService)->Start();
+        };
+        AsyncNetworkServer authServer(sessionFactory);
 
         if (authServer.Start("0.0.0.0", 3724)) {
             LOG_INFO("Authentication Server listening on port 3724");
+
+            // 5. Initialize REST API
+            RestAuthServer restServer(authService, webSessionService, "0.0.0.0", 8081);
+
+            if (restServer.Start()) {
+                LOG_INFO("REST Authentication API listening on port 8081");
+            }
 
             // Server Loop
             while (true) {

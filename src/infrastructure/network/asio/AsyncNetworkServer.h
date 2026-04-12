@@ -2,8 +2,9 @@
 #define FIRELANDS_INFRASTRUCTURE_NETWORK_ASIO_ASYNC_NETWORK_SERVER_H
 
 #include <application/ports/INetworkServer.h>
-#include <application/services/AuthService.h>
-#include <application/services/RealmListService.h>
+#include <application/ports/INetworkServer.h>
+#include <boost/asio.hpp>
+#include <functional>
 #include <boost/asio.hpp>
 #include <memory>
 #include <string>
@@ -14,7 +15,9 @@ namespace Firelands {
 
     class AsyncNetworkServer : public INetworkServer {
     public:
-        explicit AsyncNetworkServer(std::shared_ptr<AuthService> authService, std::shared_ptr<RealmListService> realmService);
+        using SessionFactory = std::function<void(tcp::socket)>;
+        
+        explicit AsyncNetworkServer(SessionFactory sessionFactory);
         ~AsyncNetworkServer() override;
 
         bool Start(const std::string& address, uint16 port) override;
@@ -26,8 +29,7 @@ namespace Firelands {
 
         boost::asio::io_context _ioContext;
         std::unique_ptr<tcp::acceptor> _acceptor;
-        std::shared_ptr<AuthService> _authService;
-        std::shared_ptr<RealmListService> _realmService;
+        SessionFactory _sessionFactory;
     };
 
 } // namespace Firelands

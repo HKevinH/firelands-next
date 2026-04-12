@@ -20,6 +20,9 @@ namespace Firelands {
         void Update(const Account& account) override;
         void DeleteByUsername(const std::string& username) override;
 
+        void CreateSession(uint32 accountId, const std::vector<uint8_t>& sessionKey) override;
+        std::vector<uint8_t> GetSessionKey(uint32 accountId) override;
+
     private:
         std::shared_ptr<sql::Connection> _connection;
     };

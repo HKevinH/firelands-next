@@ -149,6 +149,12 @@ namespace Firelands {
             response.survey_id = 0;
             response.login_flags = 0;
             LOG_INFO("Login successful for {}", _username);
+
+            // Persist the session key so the World Server can validate it
+            auto account = _authService->FindAccount(_username);
+            if (account) {
+                _authService->CreateSession(account->id, K);
+            }
         }
 
         ByteBuffer resBuffer;

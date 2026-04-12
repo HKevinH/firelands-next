@@ -45,8 +45,8 @@ TEST(AuthPacketsTest, AuthLogonChallenge_S_Write) {
     packet.Write(buffer);
 
     // Opcode + unk + result + B(32) + gLen + g + NLen + N(32) + s(32) + unk(16) + flags(1)
-    // 1 + 1 + 1 + 32 + 1 + 1 + 1 + 32 + 32 + 16 + 1 = 120 bytes
-    EXPECT_EQ(buffer.Size(), 120);
+    // 1 + 1 + 1 + 32 + 1 + 1 + 1 + 32 + 32 + 16 + 1 = 119 bytes
+    EXPECT_EQ(buffer.Size(), 119);
     
     EXPECT_EQ(buffer.Data()[0], 0x00); // opcode
     EXPECT_EQ(buffer.Data()[2], 0x00); // result (AUTH_SUCCESS)

@@ -1,0 +1,31 @@
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+#include <application/services/CharacterService.h>
+#include <domain/repositories/ICharacterRepository.h>
+
+using namespace Firelands;
+using namespace testing;
+
+class MockCharacterRepository : public ICharacterRepository {
+public:
+    MOCK_METHOD(std::vector<std::shared_ptr<Character>>, GetCharactersByAccount, (uint32_t), (override));
+    MOCK_METHOD(bool, CreateCharacter, (const Character&), (override));
+    MOCK_METHOD(bool, DeleteCharacter, (uint32_t, uint32_t), (override));
+    MOCK_METHOD(bool, IsNameAvailable, (const std::string&), (override));
+};
+
+TEST(CharacterServiceTests, GetCharacters_ReturnsCharactersFromRepository) {
+    auto repo = std::make_shared<MockCharacterRepository>();
+    CharacterService service(repo);
+
+    uint32_t accountId = 1;
+    auto mockChar = std::make_shared<Character>(1, accountId, "Test", 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, true);
+    std::vector<std::shared_ptr<Character>> characters = { mockChar };
+
+    EXPECT_CALL(*repo, GetCharactersByAccount(accountId))
+        .WillOnce(Return(characters));
+
+    auto result = service.GetCharactersForAccount(accountId);
+    ASSERT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0]->GetName(), "Test");
+}

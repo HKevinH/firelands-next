@@ -54,6 +54,14 @@ set(INSTALL_INCLUDEDIR "include" CACHE STRING "" FORCE)
 set(INSTALL_PLUGINDIR "lib/mariadb/plugin" CACHE STRING "" FORCE)
 FetchContent_MakeAvailable(mariadb-connector-c)
 
+# 3.1 nlohmann_json
+FetchContent_Declare(
+    json
+    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.2.zip
+    PATCH_COMMAND sed -i "" "s/VERSION 3.1/VERSION 3.10/g" CMakeLists.txt
+)
+FetchContent_MakeAvailable(json)
+
 # 4. MariaDB Connector/C++ 1.1.7
 FetchContent_Declare(
     mariadb-connector-cpp
@@ -83,8 +91,17 @@ add_subdirectory(src/infrastructure)
 add_subdirectory(tests)
 
 # Main Executables
-add_executable(FirelandsAuth src/main.cpp)
-target_link_libraries(FirelandsAuth 
+add_executable(auth src/auth/main.cpp)
+target_link_libraries(auth 
+    PRIVATE FirelandsInfrastructure 
+    PRIVATE FirelandsApplication
+    PRIVATE FirelandsDomain 
+    PRIVATE FirelandsShared
+    PRIVATE Boost::thread
+)
+
+add_executable(world src/world/main.cpp)
+target_link_libraries(world 
     PRIVATE FirelandsInfrastructure 
     PRIVATE FirelandsApplication
     PRIVATE FirelandsDomain 

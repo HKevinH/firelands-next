@@ -2,6 +2,7 @@
 #define FIRELANDS_APPLICATION_SERVICES_AUTH_SERVICE_H
 
 #include <domain/repositories/IAccountRepository.h>
+#include <application/services/SRPService.h>
 #include <shared/Crypto.h>
 #include <memory>
 
@@ -15,6 +16,23 @@ namespace Firelands {
 
         std::optional<Account> FindAccount(const std::string& username) {
             return _accountRepo->FindByUsername(Crypto::ToUpper(username));
+        }
+
+        bool VerifyCredentials(const std::string& username, const std::string& password) {
+            auto account = FindAccount(username);
+            if (!account) {
+                return false;
+            }
+
+            return SRPService::VerifyPassword(username, password, account->salt, account->verifier);
+        }
+
+        void CreateSession(uint32 accountId, const std::vector<uint8_t>& sessionKey) {
+            _accountRepo->CreateSession(accountId, sessionKey);
+        }
+
+        std::vector<uint8_t> GetSessionKey(uint32 accountId) {
+            return _accountRepo->GetSessionKey(accountId);
         }
 
     private:

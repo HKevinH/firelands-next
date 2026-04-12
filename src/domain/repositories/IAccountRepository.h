@@ -25,6 +25,9 @@ namespace Firelands {
         virtual void Create(const Account& account) = 0;
         virtual void Update(const Account& account) = 0;
         virtual void DeleteByUsername(const std::string& username) = 0;
+
+        virtual void CreateSession(uint32 accountId, const std::vector<uint8_t>& sessionKey) = 0;
+        virtual std::vector<uint8_t> GetSessionKey(uint32 accountId) = 0;
     };
 
 } // namespace Firelands
