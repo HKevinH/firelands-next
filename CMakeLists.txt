@@ -78,6 +78,7 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 # Main project subdirectories
 add_subdirectory(src/shared)
 add_subdirectory(src/domain)
+add_subdirectory(src/application)
 add_subdirectory(src/infrastructure)
 add_subdirectory(tests)
 
@@ -85,14 +86,15 @@ add_subdirectory(tests)
 add_executable(FirelandsAuth src/main.cpp)
 target_link_libraries(FirelandsAuth 
     PRIVATE FirelandsInfrastructure 
+    PRIVATE FirelandsApplication
     PRIVATE FirelandsDomain 
     PRIVATE FirelandsShared
     PRIVATE Boost::thread
 )
 
 # Tools
-add_executable(FirelandsAccountGen src/tools/AccountGen.cpp)
-target_link_libraries(FirelandsAccountGen
+add_executable(FirelandsDevTools src/tools/DevTools.cpp)
+target_link_libraries(FirelandsDevTools
     PRIVATE FirelandsInfrastructure
     PRIVATE FirelandsDomain
     PRIVATE FirelandsShared

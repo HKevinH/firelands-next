@@ -1,8 +1,10 @@
 #include <shared/Banner.h>
 #include <shared/Logger.h>
 #include <infrastructure/persistence/MySqlAccountRepository.h>
+#include <infrastructure/persistence/MySqlRealmRepository.h>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
 #include <application/services/AuthService.h>
+#include <application/services/RealmListService.h>
 #include <conncpp.hpp>
 #include <thread>
 #include <chrono>
@@ -37,12 +39,14 @@ int main() {
 
         // 2. Initialize Repositories
         auto accountRepo = std::make_shared<MySqlAccountRepository>(conn);
+        auto realmRepo = std::make_shared<MySqlRealmRepository>(conn);
 
         // 3. Initialize Services
         auto authService = std::make_shared<AuthService>(accountRepo);
+        auto realmService = std::make_shared<RealmListService>(realmRepo);
 
         // 4. Initialize Network Layer
-        AsyncNetworkServer authServer(authService);
+        AsyncNetworkServer authServer(authService, realmService);
 
         if (authServer.Start("0.0.0.0", 3724)) {
             LOG_INFO("Authentication Server listening on port 3724");

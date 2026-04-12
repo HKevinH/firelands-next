@@ -10,9 +10,9 @@ This document serves as the single source of truth for the step-by-step developm
 - [x] **Login Acceptance:** Successfully validate client and respond with Auth Success packets.
 
 ## Phase 2: Realm System (CURRENT)
-- [ ] **Realm Database:** Create `realmlist` table in the authentications database (with columns: id, name, address, port, icon, timezone, allowedSecurityLevel, population).
-- [ ] **Realm List Packet:** Handle `CMD_REALM_LIST` opcode from the game client.
-- [ ] **Packet Construction:** Construct and serialize the realm data payload correctly to match the 4.3.4 client's protocol version and send it to the client.
+- [x] **Realm Database:** Create `realmlist` table in the authentications database (with columns: id, name, address, port, icon, timezone, allowedSecurityLevel, population).
+- [x] **Realm List Packet:** Handle `CMD_REALM_LIST` opcode from the game client.
+- [x] **Packet Construction:** Construct and serialize the realm data payload correctly to match the 4.3.4 client's protocol version and send it to the client.
 
 ## Phase 3: World Server Skeleton & World-Auth Handshake
 - [ ] **World Server Service:** Scaffold `worldserver` application independent from the `authserver`.

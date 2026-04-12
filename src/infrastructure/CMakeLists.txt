@@ -1,11 +1,12 @@
 add_library(FirelandsInfrastructure STATIC
     persistence/MySqlAccountRepository.cpp
+    persistence/MySqlRealmRepository.cpp
     network/sessions/AuthSession.cpp
     network/asio/AsyncNetworkServer.cpp
 )
 
 target_link_libraries(FirelandsInfrastructure 
-    PRIVATE FirelandsDomain
+    PRIVATE FirelandsDomain FirelandsApplication
     PUBLIC mariadbcpp-static mariadbclient ${OPENSSL_LIBRARIES} ${MARIADB_EXTRA_LIBS}
     PUBLIC Boost::thread
 )

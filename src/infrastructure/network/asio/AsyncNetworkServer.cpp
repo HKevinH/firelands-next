@@ -4,8 +4,8 @@
 
 namespace Firelands {
 
-    AsyncNetworkServer::AsyncNetworkServer(std::shared_ptr<AuthService> authService)
-        : _authService(std::move(authService)) {
+    AsyncNetworkServer::AsyncNetworkServer(std::shared_ptr<AuthService> authService, std::shared_ptr<RealmListService> realmService)
+        : _authService(std::move(authService)), _realmService(std::move(realmService)) {
     }
 
     AsyncNetworkServer::~AsyncNetworkServer() {
@@ -43,7 +43,7 @@ namespace Firelands {
             [this](boost::system::error_code ec, tcp::socket socket) {
                 if (!ec) {
                     LOG_INFO("New connection from {}", socket.remote_endpoint().address().to_string());
-                    std::make_shared<AuthSession>(std::move(socket), _authService)->Start();
+                    std::make_shared<AuthSession>(std::move(socket), _authService, _realmService)->Start();
                 }
 
                 DoAccept();

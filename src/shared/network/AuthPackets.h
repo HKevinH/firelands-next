@@ -11,6 +11,7 @@ namespace Firelands {
     enum AuthOpcode : uint8 {
         AUTH_LOGON_CHALLENGE = 0x00,
         AUTH_LOGON_PROOF     = 0x01,
+        AUTH_REALM_LIST      = 0x10,
         // ... more as needed
     };
 
@@ -131,6 +132,19 @@ namespace Firelands {
                 buffer.Append<uint32>(survey_id);
                 buffer.Append<uint16>(login_flags);
             }
+        }
+    };
+
+    struct AuthRealmList_S {
+        uint8 opcode;
+        // The realms payload
+        std::vector<uint8> payload;
+
+        void Write(ByteBuffer& buffer) const {
+            buffer.Append<uint8>(opcode);
+            // Size of payload
+            buffer.Append<uint16>(static_cast<uint16>(payload.size()));
+            buffer.Append(payload.data(), payload.size());
         }
     };
 

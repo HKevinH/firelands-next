@@ -5,8 +5,8 @@
 
 namespace Firelands {
 
-    AuthSession::AuthSession(tcp::socket socket, std::shared_ptr<AuthService> authService)
-        : _socket(std::move(socket)), _authService(std::move(authService)) {
+    AuthSession::AuthSession(tcp::socket socket, std::shared_ptr<AuthService> authService, std::shared_ptr<RealmListService> realmService)
+        : _socket(std::move(socket)), _authService(std::move(authService)), _realmService(std::move(realmService)) {
     }
 
     void AuthSession::Start() {
@@ -61,6 +61,9 @@ namespace Firelands {
                 break;
             case AUTH_LOGON_PROOF:
                 HandleLogonProof(buffer);
+                break;
+            case AUTH_REALM_LIST:
+                HandleRealmList(buffer);
                 break;
             default:
                 LOG_WARN("Unknown opcode received: 0x{:02X}", opcode);
@@ -147,6 +150,48 @@ namespace Firelands {
             response.login_flags = 0;
             LOG_INFO("Login successful for {}", _username);
         }
+
+        ByteBuffer resBuffer;
+        response.Write(resBuffer);
+        SendPacket(resBuffer);
+    }
+
+    void AuthSession::HandleRealmList(ByteBuffer& /*buffer*/) {
+        LOG_INFO("Realm list requested by user: {}", _username);
+
+        AuthRealmList_S response;
+        response.opcode = AUTH_REALM_LIST;
+        
+        std::vector<Realm> realms;
+        if (_realmService) {
+            realms = _realmService->GetRealmList();
+        }
+
+        ByteBuffer payloadBuffer;
+        
+        payloadBuffer.Append<uint32>(0); // unknown
+        payloadBuffer.Append<uint16>(static_cast<uint16>(realms.size()));
+        
+        for (const auto& realm : realms) {
+            payloadBuffer.Append<uint8>(realm.GetIcon());
+            payloadBuffer.Append<uint8>(realm.GetAllowedSecurityLevel()); // Lock flags usually
+            payloadBuffer.Append<uint8>(0); // flags
+            // Name (ByteBuffer::Append(std::string) adds null terminator)
+            payloadBuffer.Append(realm.GetName());
+            
+            // Address:port
+            std::string address_port = realm.GetAddress() + ":" + std::to_string(realm.GetPort());
+            payloadBuffer.Append(address_port);
+            
+            payloadBuffer.Append<float>(realm.GetPopulation());
+            payloadBuffer.Append<uint8>(0); // characters count
+            payloadBuffer.Append<uint8>(realm.GetTimezone());
+            payloadBuffer.Append<uint8>(static_cast<uint8>(realm.GetId())); // Realm ID
+        }
+
+        payloadBuffer.Append<uint16>(0x0010); // unknown2
+        
+        response.payload = std::vector<uint8>(payloadBuffer.GetBuffer(), payloadBuffer.GetBuffer() + payloadBuffer.Size());
 
         ByteBuffer resBuffer;
         response.Write(resBuffer);

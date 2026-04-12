@@ -13,3 +13,16 @@ CREATE TABLE IF NOT EXISTS `account` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `realmlist` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `name` varchar(32) NOT NULL DEFAULT '',
+  `address` varchar(255) NOT NULL DEFAULT '127.0.0.1',
+  `port` smallint(5) unsigned NOT NULL DEFAULT '8085',
+  `icon` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `timezone` tinyint(3) unsigned NOT NULL DEFAULT '1',
+  `allowedSecurityLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `population` float NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
