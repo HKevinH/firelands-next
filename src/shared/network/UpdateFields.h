@@ -5,6 +5,26 @@
 
 namespace Firelands {
 
+    enum TypeID {
+        TYPEID_OBJECT        = 0,
+        TYPEID_ITEM          = 1,
+        TYPEID_CONTAINER     = 2,
+        TYPEID_UNIT          = 3,
+        TYPEID_PLAYER        = 4,
+        TYPEID_GAMEOBJECT    = 5,
+        TYPEID_DYNAMICOBJECT = 6,
+        TYPEID_CORPSE        = 7
+    };
+
+    enum UpdateType {
+        UPDATETYPE_VALUES            = 0,
+        UPDATETYPE_MOVEMENT          = 1,
+        UPDATETYPE_CREATE_OBJECT     = 2,
+        UPDATETYPE_CREATE_OBJECT2    = 3,
+        UPDATETYPE_OUT_OF_RANGE_OBJECTS = 4,
+        UPDATETYPE_NEAR_OBJECTS      = 5
+    };
+
     enum ObjectFields {
         OBJECT_FIELD_GUID = 0x0000,
         OBJECT_FIELD_TYPE = 0x0002,

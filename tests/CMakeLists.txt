@@ -4,6 +4,7 @@ add_executable(FirelandsUnitTests
     unit/infrastructure/MySqlAccountRepositoryTests.cpp
     unit/infrastructure/MySqlRealmRepositoryTests.cpp
     unit/shared/ByteBufferTests.cpp
+    unit/shared/UpdateDataTests.cpp
     unit/shared/AuthPacketsTests.cpp
     unit/shared/LoggerTests.cpp
     unit/application/SRPServiceTests.cpp

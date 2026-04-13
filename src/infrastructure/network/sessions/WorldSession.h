@@ -8,9 +8,13 @@
 #include <shared/network/ByteBuffer.h>
 #include <shared/network/WorldPacket.h>
 #include <shared/network/WorldOpcodes.h>
+#include <shared/network/MovementInfo.h>
+#include <shared/network/WorldCrypt.h>
 #include <boost/asio.hpp>
 #include <memory>
 #include <string>
+#include <deque>
+#include <mutex>
 
 namespace Firelands {
 
@@ -34,21 +38,36 @@ namespace Firelands {
         void ProcessPacket(WorldPacket& packet);
         
         void HandleAuthSession(WorldPacket& packet);
+        void HandlePing(WorldPacket& packet);
         void HandleCharEnum(WorldPacket& packet);
         void HandleCharCreate(WorldPacket& packet);
         void HandleCharDelete(WorldPacket& packet);
         void HandlePlayerLogin(WorldPacket& packet);
+        void HandleMovement(WorldPacket& packet);
+        void HandleMessageChat(WorldPacket& packet);
         void SendInitialObjectUpdate(uint64 guid);
-        void WritePackedGuid(uint64 guid, BitWriter& bw, ByteBuffer& bb);
+        
+        void ReadMovementInfo(WorldPacket& packet, MovementInfo& move);
+
+        void DoWrite();
 
         tcp::socket _socket;
         std::shared_ptr<AuthService> _authService;
         std::shared_ptr<CharacterService> _charService;
         uint32 _serverSeed;
         uint32 _accountId;
+        uint64 _playerGuid = 0;
+        MovementInfo _position;
         bool _initialized = false;
         uint8 _readBuffer[2048];
         ByteBuffer _inBuffer;
+        WorldCrypt _crypt;
+        uint8 _decHeader[6]{};
+        bool _headerDecrypted = false;
+
+        // Write queue: serializes async_write calls to prevent interleaving
+        std::deque<std::shared_ptr<std::vector<uint8>>> _writeQueue;
+        bool _writing = false;
     };
 
 } // namespace Firelands

@@ -5,31 +5,46 @@
 
 namespace Firelands {
 
-    enum WorldOpcode : uint32 {
-        SMSG_AUTH_CHALLENGE              = 0x4542,
-        CMSG_AUTH_SESSION                = 0x0449,
-        SMSG_AUTH_RESPONSE               = 0x5DB6,
-        SMSG_ADDON_INFO                  = 0x2D54,
+enum WorldOpcode : uint32 {
+  SMSG_AUTH_CHALLENGE = 0x4542,
+  CMSG_AUTH_SESSION = 0x0449,
+  SMSG_AUTH_RESPONSE = 0x5DB6,
+  SMSG_ADDON_INFO = 0x2C14,
+  SMSG_CLIENTCACHE_VERSION = 0x2734,
+  SMSG_TUTORIAL_FLAGS = 0x0B35,
+  SMSG_FEATURE_SYSTEM_STATUS = 0x3DB7,
 
-        CMSG_CHAR_ENUM                   = 0x3286,
-        SMSG_CHAR_ENUM                   = 0x33A6,
-        CMSG_CHAR_CREATE                 = 0x30A7,
-        SMSG_CHAR_CREATE                 = 0x30A5,
-        CMSG_CHAR_DELETE                 = 0x34A6,
-        SMSG_CHAR_DELETE                 = 0x31A4,
+  CMSG_CHAR_ENUM = 0x0502,
+  SMSG_CHAR_ENUM = 0x10B0,
+  CMSG_CHAR_CREATE = 0x4A36,
+  SMSG_CHAR_CREATE = 0x2D05,
+  CMSG_CHAR_DELETE = 0x6425,
+  SMSG_CHAR_DELETE = 0x0304,
+  CMSG_PLAYER_LOGIN = 0x05B1,
+  SMSG_LOGIN_VERIFY_WORLD = 0x2005,
+  SMSG_TIME_SYNC_REQ = 0x3CA4,
+  SMSG_INITIAL_SPELLS = 0x0104,
+  SMSG_ACTION_BUTTONS = 0x38B5,
+  SMSG_UPDATE_OBJECT = 0x4715,
+  SMSG_MOTD = 0x0A35,
+  SMSG_ACCOUNT_DATA_TIMES = 0x4B05,
+  SMSG_REALM_SPLIT = 0x2714,
+  SMSG_LOGIN_SET_TIME_SPEED = 0x4D15,
+  SMSG_PONG = 0x4D42,
 
-        CMSG_PLAYER_LOGIN                = 0x3685,
-        SMSG_LOGIN_VERIFY_WORLD          = 0x3DA5,
-        SMSG_TIME_SYNC_REQ               = 0x3486,
-        SMSG_TUTORIAL_FLAGS              = 0x3FA4,
-        SMSG_MOTD                        = 0x3785,
-        SMSG_UPDATE_OBJECT               = 0x34A4,
-        SMSG_ACCOUNT_DATA_TIMES          = 0x3184,
-        SMSG_INITIAL_SPELLS              = 0x3384,
-        SMSG_ACTION_BUTTONS              = 0x3FA5,
+  CMSG_PING = 0x444D,
 
-        CMSG_LOG_DISCONNECT              = 0x446D,
-    };
+  MSG_MOVE_HEARTBEAT = 0x3914,
+  MSG_MOVE_START_FORWARD = 0x7814,
+  MSG_MOVE_START_BACKWARD = 0x330A,
+  MSG_MOVE_STOP = 0x320A,
+  MSG_MOVE_SET_FACING = 0x7914,
+
+  CMSG_MESSAGECHAT = 0x1154,
+  SMSG_MESSAGECHAT = 0x2026,
+
+  CMSG_LOG_DISCONNECT = 0x446D,
+};
 
 } // namespace Firelands
 

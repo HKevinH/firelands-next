@@ -30,11 +30,11 @@ This document serves as the single source of truth for the step-by-step developm
 ## Phase 5: Entering the World (IN PROGRESS)
 - [x] **Login to World:** Handle `CMSG_PLAYER_LOGIN` opcode.
 - [x] **Environment Handshake:** Send required initialization packets (`SMSG_LOGIN_VERIFY_WORLD`, `SMSG_TIME_SYNC_REQ`, `SMSG_TUTORIAL_FLAGS`).
-- [ ] **Object Instantiation (`SMSG_UPDATE_OBJECT`):** Implement the core entity update packet structure. Send the initial character state so the player entity spawns.
-- [ ] **Movement Network:** Basic handling and broadcasting of movement opcodes.
+- [x] **Object Instantiation (`SMSG_UPDATE_OBJECT`):** Implement the core entity update packet structure. Send the initial character state so the player entity spawns.
+- [x] **Movement Network:** Basic handling and broadcasting of movement opcodes.
 
 ## Phase 6: Gameplay Mechanics (Future)
-- [ ] **Chat System Base:** Implement spatial chat, server announcements, and whispers base.
+- [x] **Chat System Base:** Implement spatial chat, server announcements, and whispers base.
 - [ ] **Entity Spawning:** Creatures, GameObjects, and NPCs base grid architecture.
 - [ ] **Spells and Auras:** Basic spell casting flow and GCD (Global Cooldown) implementation.
 - [ ] **Map & Collision:** Setup map data extraction (mmap, vmap) to handle pathfinding and Line of Sight.

@@ -41,13 +41,17 @@ namespace Crypto {
         return hash;
     }
 
-    inline std::string ToHexString(const SHA1Hash& hash) {
+    inline std::string ToHexString(const uint8_t* data, size_t len) {
         std::stringstream ss;
         ss << std::hex << std::setfill('0') << std::uppercase;
-        for (auto byte : hash) {
-            ss << std::setw(2) << static_cast<int>(byte);
+        for (size_t i = 0; i < len; ++i) {
+            ss << std::setw(2) << static_cast<int>(data[i]);
         }
         return ss.str();
+    }
+
+    inline std::string ToHexString(const SHA1Hash& hash) {
+        return ToHexString(hash.data(), hash.size());
     }
     
     inline std::vector<uint8_t> FromHexString(const std::string& hex) {

@@ -6,8 +6,11 @@
 namespace Firelands {
 
     /**
-     * @brief A simple utility to handle bit-packing into a ByteBuffer.
+     * @brief A utility to handle bit-packing into a ByteBuffer.
      * Core for Cataclysm 4.3.4 network protocol.
+     *
+     * Bits are packed MSB-first (bit 7 down to bit 0) within each byte,
+     * matching the TrinityCore/TCPP reference implementation.
      */
     class BitWriter {
     public:
@@ -19,19 +22,28 @@ namespace Firelands {
                 _buffer.Append<uint8>(0);
                 _bitPos = 0;
             }
-            
-            // WoW 4.x BitStream packs bits from LSB to MSB within a byte.
+
+            // Cataclysm 4.3.4: pack bits MSB-first (position 7 down to 0)
+            ++_bitPos;
             if (bit) {
-                _buffer[_currentByteStep] |= (1 << _bitPos);
+                _buffer[_currentByteStep] |= (1 << (8 - _bitPos));
             }
-            
-            _bitPos++;
         }
 
         void WriteBits(uint32 value, uint8 count) {
-            for (uint8 i = 0; i < count; ++i) {
+            // Write most significant bit first, matching TCPP reference
+            for (int8 i = static_cast<int8>(count - 1); i >= 0; --i) {
                 WriteBit((value >> i) & 1);
             }
+        }
+
+        /**
+         * @brief Write a GUID mask bit.
+         * Writes 1 if the byte at this GUID position is non-zero, 0 otherwise.
+         * Used in Cata 4.3.4 scrambled GUID serialization.
+         */
+        void WriteBitMask(uint8 guidByte) {
+            WriteBit(guidByte != 0);
         }
 
         void Flush() {
