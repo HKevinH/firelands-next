@@ -1,8 +1,10 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <shared/Logger.h>
 #include <shared/Crypto.h>
+#include <shared/network/UpdateFields.h>
 #include <random>
 #include <algorithm>
+#include <ctime>
 
 namespace Firelands {
 
@@ -366,6 +368,11 @@ namespace Firelands {
 
         SendPacket(response);
         LOG_INFO("SMSG_AUTH_RESPONSE sent: AUTH_OK");
+
+        // 5. Send SMSG_ADDON_INFO (Empty for now)
+        WorldPacket addonInfo{SMSG_ADDON_INFO};
+        addonInfo.Append<uint32>(0); // Number of addons
+        SendPacket(addonInfo);
     }
 
     void WorldSession::HandleCharEnum(WorldPacket& /*packet*/) {
@@ -373,22 +380,55 @@ namespace Firelands {
         auto characters = _charService->GetCharactersForAccount(_accountId);
 
         WorldPacket response(SMSG_CHAR_ENUM);
-        // In 4.3.4 SMSG_CHAR_ENUM is bit-packed.
-        // Extremely simplified layout for 0 characters (common case for fresh accounts):
-        // [1 bit: Unk][21 bits: Count][... rest of characters]
+        BitWriter bw(response);
         
         uint32 count = static_cast<uint32>(characters.size());
         
-        // I'll implement a proper (but minimal) BitStream logic here for the count.
-        // Count is 21 bits.
-        uint32 packedCount = count; 
-        response.Append<uint8>(0); // Unk bit
-        response.Append<uint8>(packedCount & 0xFF);
-        response.Append<uint8>((packedCount >> 8) & 0xFF);
-        response.Append<uint8>((packedCount >> 16) & 0xFF);
+        // Cataclysm 4.3.4 Header: [Bit: Unk][Bit: Count (21)]
+        bw.WriteBit(false); // Unk
+        bw.WriteBits(count, 21);
         
-        // For each character, there's a lot of data.
-        // If count > 0, we'd append them here.
+        for (auto const& character : characters) {
+            WritePackedGuid(character->GetGuid(), bw, response);
+        }
+        
+        bw.Flush(); // Flush bits before appending bytes
+
+        for (auto const& character : characters) {
+            response.WriteString(character->GetName());
+            response.Append<uint8>(character->GetRace());
+            response.Append<uint8>(character->GetClass());
+            response.Append<uint8>(character->GetGender());
+            response.Append<uint8>(character->GetSkin());
+            response.Append<uint8>(character->GetFace());
+            response.Append<uint8>(character->GetHairStyle());
+            response.Append<uint8>(character->GetHairColor());
+            response.Append<uint8>(character->GetFacialHair());
+            response.Append<uint8>(character->GetLevel());
+            response.Append<uint32>(character->GetZoneId());
+            response.Append<uint32>(character->GetMapId());
+            response.Append<float>(character->GetX());
+            response.Append<float>(character->GetY());
+            response.Append<float>(character->GetZ());
+            response.Append<uint32>(character->GetGuildId());
+            response.Append<uint32>(character->GetCharacterFlags());
+            response.Append<uint32>(character->GetCustomizationFlags());
+            
+            BitWriter charBw(response);
+            charBw.WriteBit(character->IsFirstLogin());
+            charBw.Flush();
+
+            response.Append<uint32>(0); // Pet DisplayId
+            response.Append<uint32>(0); // Pet Level
+            response.Append<uint32>(0); // Pet Family
+
+            // Equipment: 19 slots
+            for (int i = 0; i < 19; ++i) {
+                response.Append<uint32>(0);  // Item DisplayId
+                response.Append<uint8>(0);   // Item InventoryType
+                response.Append<uint32>(0);  // Item EnchantmentId
+            }
+        }
         
         SendPacket(response);
         LOG_INFO("SMSG_CHAR_ENUM sent with {} characters", count);
@@ -516,7 +556,7 @@ namespace Firelands {
         // Movement Data Bytes
         packet.Append<uint32>(0);    // Movement Flags
         packet.Append<uint16>(0);    // Movement Flags 2
-        packet.Append<uint32>(0);    // Time
+        packet.Append<uint32>(static_cast<uint32>(std::time(nullptr))); // Time
         packet.Append<float>(0.0f);  // X
         packet.Append<float>(0.0f);  // Y
         packet.Append<float>(0.0f);  // Z
@@ -529,11 +569,36 @@ namespace Firelands {
         bw.WriteBit(false); // No pvp guid
         bw.Flush();
 
-        // Update Fields (Zero Mask = No fields sent)
-        packet.Append<uint32>(0); 
+        // Update Fields
+        // We need to send at least Object Type and GUID in the update fields for 4.x
+        std::map<uint16, uint32> fields;
+        fields[OBJECT_FIELD_GUID] = static_cast<uint32>(guid & 0xFFFFFFFF);
+        fields[OBJECT_FIELD_GUID + 1] = static_cast<uint32>(guid >> 32);
+        fields[OBJECT_FIELD_TYPE] = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3); // Type Mask
+        fields[UNIT_FIELD_HEALTH] = 100;
+        fields[UNIT_FIELD_MAXHEALTH] = 100;
+        fields[UNIT_FIELD_LEVEL] = 1;
+
+        // Field Mask (Roughly 4.x style)
+        uint32 maxField = UNIT_END;
+        uint32 maskSize = (maxField + 31) / 32;
+        
+        packet.Append<uint8>(maskSize);
+        std::vector<uint32> mask(maskSize, 0);
+        for (auto const& [index, value] : fields) {
+            mask[index / 32] |= (1 << (index % 32));
+        }
+        
+        for (uint32 m : mask) packet.Append<uint32>(m);
+
+        for (uint32 i = 0; i < maxField; ++i) {
+            if (mask[i / 32] & (1 << (i % 32))) {
+                packet.Append<uint32>(fields[i]);
+            }
+        }
 
         SendPacket(packet);
-        LOG_INFO("SMSG_UPDATE_OBJECT sent (Player Spawned)");
+        LOG_INFO("SMSG_UPDATE_OBJECT sent (Player Spawned with basic fields)");
     }
 
 } // namespace Firelands

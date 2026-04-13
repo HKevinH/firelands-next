@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.10)
 project(Firelands CXX)
 
+# Silence warnings from newer CMake versions
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW) # Use extraction time for FetchContent timestamps
+endif()
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD) # Keep using FindBoost module for now
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -8,10 +16,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # --- Optimization Settings ---
 
 # 1. ccache Support
-find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND)
-    set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
-    message(STATUS "ccache found and enabled.")
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    message(STATUS "ccache found and enabled: ${CCACHE_PROGRAM}")
 endif()
 
 # 2. Unity Build
@@ -104,6 +112,17 @@ FetchContent_Declare(
     PATCH_COMMAND sed -i "" "s/VERSION 3.1/VERSION 3.10/g" CMakeLists.txt
 )
 FetchContent_MakeAvailable(json)
+
+# 3.2 yaml-cpp
+FetchContent_Declare(
+    yaml-cpp
+    URL https://github.com/jbeder/yaml-cpp/archive/refs/tags/0.8.0.zip
+    PATCH_COMMAND sed -i "" "s/VERSION 3.4/VERSION 3.5/g" CMakeLists.txt
+)
+set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(yaml-cpp)
 
 # 4. MariaDB Connector/C++ 1.1.7
 FetchContent_Declare(

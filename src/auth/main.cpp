@@ -10,6 +10,7 @@
 
 #include <application/services/AuthService.h>
 #include <application/services/RealmListService.h>
+#include <shared/Config.h>
 #include <conncpp.hpp>
 #include <thread>
 #include <chrono>
@@ -32,12 +33,22 @@ int main() {
     PrintBanner(BannerType::Auth);
     LOG_INFO("Starting Authentication Server...");
 
+    if (!Config::Instance().Load("authserver.yaml")) {
+        LOG_WARN("Could not load authserver.yaml, using defaults...");
+    }
+
     try {
         // 1. Establish Database Connection
-        // Pre-requisite: MariaDB docker container must be running
+        std::string dbUser = Config::Instance().GetNested<std::string>({"Database", "User"}, "firelands");
+        std::string dbPass = Config::Instance().GetNested<std::string>({"Database", "Password"}, "firelands");
+        
+        std::string host = Config::Instance().GetNested<std::string>({"Database", "Auth", "Host"}, "127.0.0.1");
+        std::string port = Config::Instance().GetNested<std::string>({"Database", "Auth", "Port"}, "3306");
+        std::string db = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
+
         sql::Driver* driver = sql::mariadb::get_driver_instance();
-        sql::SQLString url("jdbc:mariadb://127.0.0.1:3306/firelands_auth");
-        sql::Properties properties({{"user", "firelands"}, {"password", "firelands"}});
+        sql::SQLString url("jdbc:mariadb://" + host + ":" + port + "/" + db);
+        sql::Properties properties({{"user", dbUser}, {"password", dbPass}});
 
         std::shared_ptr<sql::Connection> conn(driver->connect(url, properties));
         LOG_INFO("Database connection established.");
@@ -61,11 +72,15 @@ int main() {
         };
         AsyncNetworkServer authServer(sessionFactory);
 
-        if (authServer.Start("0.0.0.0", 3724)) {
-            LOG_INFO("Authentication Server listening on port 3724");
+        std::string bindIp = Config::Instance().GetNested<std::string>({"Network", "BindAddress"}, "0.0.0.0");
+        int netPort = Config::Instance().GetNested<int>({"Network", "Port"}, 3724);
 
+        if (authServer.Start(bindIp, netPort)) {
+            LOG_INFO("Authentication Server listening on {}:{}", bindIp, netPort);
             // 5. Initialize REST API
-            RestAuthServer restServer(authService, webSessionService, "0.0.0.0", 8081);
+            int restPort = Config::Instance().GetNested<int>({"Network", "RestPort"}, 8081);
+
+            RestAuthServer restServer(authService, webSessionService, "0.0.0.0", restPort);
 
             if (restServer.Start()) {
                 LOG_INFO("REST Authentication API listening on port 8081");

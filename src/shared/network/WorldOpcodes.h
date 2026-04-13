@@ -9,6 +9,7 @@ namespace Firelands {
         SMSG_AUTH_CHALLENGE              = 0x4542,
         CMSG_AUTH_SESSION                = 0x0449,
         SMSG_AUTH_RESPONSE               = 0x5DB6,
+        SMSG_ADDON_INFO                  = 0x2D54,
 
         CMSG_CHAR_ENUM                   = 0x3286,
         SMSG_CHAR_ENUM                   = 0x33A6,

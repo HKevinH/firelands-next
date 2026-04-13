@@ -5,6 +5,7 @@
 #include <infrastructure/persistence/MySqlAccountRepository.h>
 #include <infrastructure/persistence/MySqlCharacterRepository.h>
 #include <application/services/CharacterService.h>
+#include <shared/Config.h>
 #include <conncpp.hpp>
 #include <thread>
 #include <chrono>
@@ -26,15 +27,35 @@ int main() {
     PrintBanner(BannerType::World);
     LOG_INFO("Starting World Server...");
 
+    if (!Config::Instance().Load("worldserver.yaml")) {
+        LOG_ERROR("Could not load worldserver.yaml, using defaults or exiting...");
+        // In a real scenario, we might want to exit here
+    }
+
     try {
+        // General DB Setup
+        std::string dbUser = Config::Instance().GetNested<std::string>({"Database", "User"}, "firelands");
+        std::string dbPass = Config::Instance().GetNested<std::string>({"Database", "Password"}, "firelands");
+
         // 1. Establish Database Connection (Auth database for session validation)
+        std::string authHost = Config::Instance().GetNested<std::string>({"Database", "Auth", "Host"}, "127.0.0.1");
+        std::string authPort = Config::Instance().GetNested<std::string>({"Database", "Auth", "Port"}, "3306");
+
+
+        std::string authDb = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
+
         sql::Driver* driver = sql::mariadb::get_driver_instance();
-        sql::SQLString url("jdbc:mariadb://127.0.0.1:3306/firelands_auth");
-        sql::Properties properties({{"user", "firelands"}, {"password", "firelands"}});
-        std::shared_ptr<sql::Connection> authConn(driver->connect(url, properties));
+        sql::Properties properties({{"user", dbUser}, {"password", dbPass}});
+        
+        sql::SQLString authUrl("jdbc:mariadb://" + authHost + ":" + authPort + "/" + authDb);
+        std::shared_ptr<sql::Connection> authConn(driver->connect(authUrl, properties));
         
         // 2. Establish Character Database Connection
-        sql::SQLString charUrl("jdbc:mariadb://127.0.0.1:3306/firelands_characters");
+        std::string charHost = Config::Instance().GetNested<std::string>({"Database", "Characters", "Host"}, "127.0.0.1");
+        std::string charPort = Config::Instance().GetNested<std::string>({"Database", "Characters", "Port"}, "3306");
+        std::string charDb = Config::Instance().GetNested<std::string>({"Database", "Characters", "Database"}, "firelands_characters");
+
+        sql::SQLString charUrl("jdbc:mariadb://" + charHost + ":" + charPort + "/" + charDb);
         std::shared_ptr<sql::Connection> charConn(driver->connect(charUrl, properties));
         
         // 3. Initialize Repositories and Services
@@ -44,17 +65,17 @@ int main() {
         auto charRepo = std::make_shared<MySqlCharacterRepository>(charConn);
         auto charService = std::make_shared<CharacterService>(charRepo);
 
-        // TODO: Database Connections (World)
-        // TODO: Load Configuration using YAML
-
         auto sessionFactory = [authService, charService](boost::asio::ip::tcp::socket socket) {
             std::make_shared<WorldSession>(std::move(socket), authService, charService)->Start();
         };
 
         AsyncNetworkServer worldServer(sessionFactory);
 
-        if (worldServer.Start("0.0.0.0", 8085)) {
-            LOG_INFO("World Server listening on port 8085");
+        std::string bindIp = Config::Instance().GetNested<std::string>({"Network", "BindAddress"}, "0.0.0.0");
+        int port = Config::Instance().GetNested<int>({"Network", "Port"}, 8085);
+
+        if (worldServer.Start(bindIp, port)) {
+            LOG_INFO("World Server listening on {}:{}", bindIp, port);
             
             // Server Loop
             while (true) {

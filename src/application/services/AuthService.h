@@ -35,6 +35,13 @@ namespace Firelands {
             return _accountRepo->GetSessionKey(accountId);
         }
 
+        bool ValidateSession(uint32 accountId) {
+            // Formal validation: Check if account exists and has a session key
+            // Future: Check expiration, IP matches, etc.
+            auto key = _accountRepo->GetSessionKey(accountId);
+            return !key.empty();
+        }
+
     private:
         std::shared_ptr<IAccountRepository> _accountRepo;
     };

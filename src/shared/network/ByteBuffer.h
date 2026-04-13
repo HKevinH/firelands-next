@@ -5,7 +5,6 @@
 #include <vector>
 #include <string>
 #include <cstring>
-#include <algorithm>
 
 namespace Firelands {
 
@@ -23,9 +22,24 @@ namespace Firelands {
             Append((uint8*)&value, sizeof(value));
         }
 
-        void Append(const std::string& str) {
+        void WriteString(const std::string& str) {
             Append((uint8*)str.c_str(), str.length());
             Append((uint8)0); // Null terminator
+        }
+
+        void WriteString(const char* str) {
+            if (str) {
+                Append((uint8*)str, std::strlen(str));
+            }
+            Append((uint8)0); // Null terminator
+        }
+
+        void Append(const std::string& str) {
+            WriteString(str);
+        }
+
+        void Append(const char* str) {
+            WriteString(str);
         }
 
         template <typename T>

@@ -7,6 +7,7 @@
 #include <infrastructure/persistence/DatabaseService.h>
 #include <shared/Banner.h>
 #include <shared/Logger.h>
+#include <shared/Config.h>
 
 using namespace Firelands;
 
@@ -34,11 +35,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    if (!Config::Instance().Load("authserver.yaml")) {
+        LOG_WARN("Could not load authserver.yaml, using defaults...");
+    }
+
     std::string command = argv[1];
 
     try {
+        std::string host = Config::Instance().GetNested<std::string>({"Database", "Auth", "Host"}, "127.0.0.1");
+        std::string user = Config::Instance().GetNested<std::string>({"Database", "Auth", "User"}, "firelands");
+        std::string pass = Config::Instance().GetNested<std::string>({"Database", "Auth", "Password"}, "firelands");
+        std::string db = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
+
         LOG_INFO("Connecting to database...");
-        DatabaseService dbService("jdbc:mariadb://127.0.0.1:3306/firelands_auth", "firelands", "firelands");
+        DatabaseService dbService("jdbc:mariadb://" + host + ":3306/" + db, user, pass);
         auto conn = dbService.CreateConnection();
 
         if (command == "account") {

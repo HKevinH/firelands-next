@@ -1,0 +1,22 @@
+# Firelands Auth Server Configuration
+
+Network:
+  BindAddress: "0.0.0.0"
+  Port: 3724
+  RestPort: 8081
+
+Database:
+  User: "firelands"
+  Password: "firelands"
+  Auth:
+    Host: "127.0.0.1"
+    Port: 3306
+    Database: "firelands_auth"
+  Characters:
+    Host: "127.0.0.1"
+    Port: 3306
+    Database: "firelands_characters"
+
+Log:
+  Level: "Info"
+  File: "logs/firelands-auth.log"
