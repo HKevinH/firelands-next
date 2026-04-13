@@ -20,17 +20,16 @@ namespace Firelands {
                 _bitPos = 0;
             }
             
-            // Note: WoW 4.x BitStream usually packs bits from MSB to LSB within a byte 
-            // or follows a specific pattern. For now, we use a standard MSB-first packing.
+            // WoW 4.x BitStream packs bits from LSB to MSB within a byte.
             if (bit) {
-                _buffer[_currentByteStep] |= (1 << (7 - _bitPos));
+                _buffer[_currentByteStep] |= (1 << _bitPos);
             }
             
             _bitPos++;
         }
 
         void WriteBits(uint32 value, uint8 count) {
-            for (int i = count - 1; i >= 0; --i) {
+            for (uint8 i = 0; i < count; ++i) {
                 WriteBit((value >> i) & 1);
             }
         }

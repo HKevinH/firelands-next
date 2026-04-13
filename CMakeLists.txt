@@ -5,6 +5,49 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# --- Optimization Settings ---
+
+# 1. ccache Support
+find_program(CCACHE_FOUND ccache)
+if(CCACHE_FOUND)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+    message(STATUS "ccache found and enabled.")
+endif()
+
+# 2. Unity Build
+option(ENABLE_UNITY_BUILD "Enable Unity Builds" OFF)
+if(ENABLE_UNITY_BUILD)
+    set(CMAKE_UNITY_BUILD ON)
+endif()
+
+# 3. Precompiled Headers Definition
+set(PROJECT_PCH_HEADERS
+    <vector>
+    <string>
+    <map>
+    <unordered_map>
+    <set>
+    <unordered_set>
+    <memory>
+    <cstdint>
+    <algorithm>
+    <functional>
+    <iostream>
+    <chrono>
+    <thread>
+    <mutex>
+    <spdlog/spdlog.h>
+    <nlohmann/json.hpp>
+    <shared/Common.h>
+    <shared/Logger.h>
+)
+
+set(TEST_PCH_HEADERS
+    ${PROJECT_PCH_HEADERS}
+    <gtest/gtest.h>
+    <gmock/gmock.h>
+)
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
@@ -92,17 +135,20 @@ add_subdirectory(tests)
 
 # Main Executables
 add_executable(auth src/auth/main.cpp)
+target_precompile_headers(auth PRIVATE ${PROJECT_PCH_HEADERS})
 target_link_libraries(auth 
     PRIVATE FirelandsInfrastructure
 )
 
 add_executable(world src/world/main.cpp)
+target_precompile_headers(world PRIVATE ${PROJECT_PCH_HEADERS})
 target_link_libraries(world 
     PRIVATE FirelandsInfrastructure
 )
 
 # Tools
 add_executable(FirelandsDevTools src/tools/DevTools.cpp)
+target_precompile_headers(FirelandsDevTools PRIVATE ${PROJECT_PCH_HEADERS})
 target_link_libraries(FirelandsDevTools
     PRIVATE FirelandsInfrastructure
 )

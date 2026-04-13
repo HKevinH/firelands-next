@@ -2,6 +2,7 @@
 #include <conncpp.hpp>
 #include <sstream>
 #include <shared/Logger.h>
+#include <shared/Crypto.h>
 
 namespace Firelands {
 
@@ -122,7 +123,15 @@ namespace Firelands {
             std::unique_ptr<sql::ResultSet> res(stmnt->executeQuery());
             if (res->next()) {
                 auto keyStream = res->getBlob("session_key");
-                key.assign(std::istreambuf_iterator<char>(*keyStream), std::istreambuf_iterator<char>());
+                std::string rawData;
+                rawData.assign(std::istreambuf_iterator<char>(*keyStream), std::istreambuf_iterator<char>());
+                
+                // If it looks like a hex string (usually 80 chars for 40-byte key), convert it.
+                if (rawData.length() == 80) {
+                    key = Crypto::FromHexString(rawData);
+                } else {
+                    key.assign(rawData.begin(), rawData.end());
+                }
             }
         } catch (sql::SQLException& e) {
             LOG_ERROR("Database error in GetSessionKey: {}", e.what());

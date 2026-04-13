@@ -46,7 +46,9 @@ namespace Firelands {
         std::shared_ptr<CharacterService> _charService;
         uint32 _serverSeed;
         uint32 _accountId;
+        bool _initialized = false;
         uint8 _readBuffer[2048];
+        ByteBuffer _inBuffer;
     };
 
 } // namespace Firelands

@@ -4,6 +4,7 @@
 #include <shared/Common.h>
 #include <shared/network/ByteBuffer.h>
 #include <shared/network/WorldOpcodes.h>
+#include <sstream>
 
 namespace Firelands {
 
@@ -41,8 +42,9 @@ namespace Firelands {
          * but for now we just use the raw opcode)
          */
         std::string GetOpcodeName() const {
-            // This could eventually use a map to return "CMSG_AUTH_SESSION" etc.
-            return "Opcode 0x" + std::to_string(_opcode); 
+            std::stringstream ss;
+            ss << "Opcode 0x" << std::uppercase << std::hex << _opcode;
+            return ss.str();
         }
 
     private:

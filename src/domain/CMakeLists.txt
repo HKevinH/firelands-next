@@ -9,3 +9,4 @@ target_include_directories(FirelandsDomain PUBLIC
 target_link_libraries(FirelandsDomain PUBLIC 
     FirelandsShared
 )
+target_precompile_headers(FirelandsDomain PRIVATE ${PROJECT_PCH_HEADERS})

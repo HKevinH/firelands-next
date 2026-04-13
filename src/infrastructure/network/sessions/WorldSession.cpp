@@ -3,8 +3,6 @@
 #include <shared/Crypto.h>
 #include <random>
 #include <algorithm>
-#include <iomanip>
-#include <sstream>
 
 namespace Firelands {
 
@@ -15,13 +13,17 @@ namespace Firelands {
     void WorldSession::Start() {
         LOG_INFO("WorldSession started for {}", GetIpAddress());
         
-        // Generate Server Seed
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<uint32> dis(0, 0xFFFFFFFF);
-        _serverSeed = dis(gen);
-
-        SendAuthChallenge();
+        // Cataclysm 4.3.4 Handshake: Server sends initializer string first (NO OPCODES)
+        std::string initializer = "WORLD OF WARCRAFT CONNECTION - SERVER TO CLIENT";
+        ByteBuffer buffer;
+        
+        // Header for the initializer: just [Size:2 (BE)], followed by the string payload.
+        uint16 size = static_cast<uint16>(initializer.length());
+        buffer.Append<uint8>((size >> 8) & 0xFF);
+        buffer.Append<uint8>(size & 0xFF);
+        buffer.Append((const uint8*)initializer.c_str(), initializer.length());
+        
+        SendPacket(buffer);
         DoRead();
     }
 
@@ -31,7 +33,11 @@ namespace Firelands {
         uint16 size = static_cast<uint16>(packet.Size() + 2);
         buffer.Append<uint8>((size >> 8) & 0xFF);
         buffer.Append<uint8>(size & 0xFF);
-        buffer.Append<uint16>(static_cast<uint16>(packet.GetOpcode()));
+        
+        uint16 opcode = static_cast<uint16>(packet.GetOpcode());
+        buffer.Append<uint8>(opcode & 0xFF);
+        buffer.Append<uint8>((opcode >> 8) & 0xFF);
+        
         buffer.Append(packet.GetBuffer(), packet.Size());
 
         SendPacket(buffer);
@@ -39,8 +45,13 @@ namespace Firelands {
 
     void WorldSession::SendPacket(ByteBuffer& buffer) {
         auto self(shared_from_this());
-        boost::asio::async_write(_socket, boost::asio::buffer(buffer.GetBuffer(), buffer.Size()),
-            [this, self](boost::system::error_code ec, std::size_t /*length*/) {
+        
+        // We MUST capture the buffer data by shared_ptr to keep it alive 
+        // during the asynchronous write operation.
+        auto shared_buffer = std::make_shared<std::vector<uint8>>(buffer.GetBuffer(), buffer.GetBuffer() + buffer.Size());
+        
+        boost::asio::async_write(_socket, boost::asio::buffer(shared_buffer->data(), shared_buffer->size()),
+            [this, self, shared_buffer](boost::system::error_code ec, std::size_t /*length*/) {
                 if (ec) {
                     Close();
                 }
@@ -49,18 +60,20 @@ namespace Firelands {
 
     void WorldSession::SendAuthChallenge() {
         WorldPacket packet(SMSG_AUTH_CHALLENGE);
-        // In 4.3.4.15595 SMSG_AUTH_CHALLENGE: [uint8[32] dos_challenge][uint32 seed][uint8 flag]
-        // Reference: WorldPackets::Auth::AuthChallenge::Write()
         
-        // Append 32 bytes of zeros for DOS challenge (simplified initialization)
-        for (int i = 0; i < 32; ++i) packet.Append<uint8>(0);
+        // TCPP 4.3.4 (15595) structure:
+        // 1. DosChallenge (32 bytes - random)
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint32> dis(0, 0xFF);
+        for (int i = 0; i < 32; ++i) packet.Append<uint8>(static_cast<uint8>(dis(gen)));
         
-        // Append actual Server Seed (Challenge)
+        // 2. Server Seed (4 bytes)
         packet.Append<uint32>(_serverSeed);
-        
-        // Append DosZeroBits (flag)
-        packet.Append<uint8>(1);
 
+        // 3. DosZeroBits (1 byte flag)
+        packet.Append<uint8>(1);
+        
         SendPacket(packet);
         LOG_INFO("SMSG_AUTH_CHALLENGE sent (seed: 0x{:08X})", _serverSeed);
     }
@@ -79,12 +92,34 @@ namespace Firelands {
 
     void WorldSession::DoRead() {
         auto self(shared_from_this());
-        _socket.async_read_some(boost::asio::buffer(_readBuffer, 1024),
+        _socket.async_read_some(boost::asio::buffer(_readBuffer, sizeof(_readBuffer)),
             [this, self](boost::system::error_code ec, std::size_t length) {
                 if (!ec) {
-                    ByteBuffer buffer;
-                    buffer.Append(_readBuffer, length);
-                    HandlePacket(buffer);
+                    _inBuffer.Append(_readBuffer, length);
+                    
+                    // Process as many packets as possible from the buffer
+                    while (_inBuffer.Size() >= 6) {
+                        // Read size (BE)
+                        uint16 size = (_inBuffer[0] << 8) | _inBuffer[1];
+                        
+                        // Total packet length: 2 bytes size + payload (which includes 4 bytes opcode)
+                        // Wait, size is payload_length + 4.
+                        // Total on-wire: size + 2.
+                        if (_inBuffer.Size() < static_cast<size_t>(size + 2)) {
+                            break; // Wait for more data
+                        }
+                        
+                        // Extract one packet
+                        ByteBuffer packetData;
+                        packetData.Append(_inBuffer.GetBuffer(), size + 2);
+                        HandlePacket(packetData);
+                        
+                        // Remove processed packet from buffer
+                        std::vector<uint8> remaining(_inBuffer.GetBuffer() + size + 2, _inBuffer.GetBuffer() + _inBuffer.Size());
+                        _inBuffer.Clear();
+                        _inBuffer.Append(remaining.data(), remaining.size());
+                    }
+                    
                     DoRead();
                 } else if (ec != boost::asio::error::operation_aborted) {
                     Close();
@@ -93,7 +128,47 @@ namespace Firelands {
     }
 
     void WorldSession::HandlePacket(ByteBuffer& buffer) {
-        if (buffer.Size() < 4) return;
+        if (!_initialized) {
+            std::string expected = "WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER";
+            
+            // Expected packet from client is [Size:2 (BE)] followed by the string.
+            // So if buffer Size is smaller than expected string size + 2, we should wait.
+            // But we already know buffer has at least 6 bytes from DoRead logic.
+            // Let's just read the size.
+            uint16 size = buffer.Read<uint16>();
+            size = (size << 8) | (size >> 8);
+            
+            // Read exactly 'size' bytes for the string
+            std::string received;
+            for (uint16 i = 0; i < size; ++i) {
+                // ByteBuffer::Read bounds-checks internally
+                received += static_cast<char>(buffer.Read<uint8>());
+            }
+            
+            // Clean up trailing null bytes or newlines that might cause false negatives
+            while (!received.empty() && (received.back() == '\0' || received.back() == '\r' || received.back() == '\n')) {
+                received.pop_back();
+            }
+            
+            if (received == expected) {
+                LOG_INFO("WorldSession: Handshake string validated.");
+                _initialized = true;
+                
+                // Now that we are initialized, send the Auth Challenge
+                std::random_device rd;
+                std::mt19937 gen(rd());
+                std::uniform_int_distribution<uint32> dis(0, 0xFFFFFFFF);
+                _serverSeed = dis(gen);
+                
+                SendAuthChallenge();
+            } else {
+                LOG_ERROR("WorldSession: Invalid handshake string received. Expected '{}', got '{}'", expected, received);
+                Close();
+            }
+            return;
+        }
+
+        if (buffer.Size() < 6) return;
 
         // In WoW 4.3.4, Client header is [Size:2 (BE)][Opcode:4 (LE)]
         uint16 size = buffer.Read<uint16>();
@@ -101,13 +176,14 @@ namespace Firelands {
 
         uint32 opcode = buffer.Read<uint32>();
         
-        WorldPacket packet(opcode, size);
-        if (size > 0) {
-            // The size actually includes the opcode (4 bytes), so payload size is size - 4
-            // Wait, usually size is payload size + opcode size.
-            // In 4.3.4, size is indeed payload + opcode size.
-            // But let's check the buffer.
-            packet.Append(buffer.GetBuffer() + 6, buffer.Size() - 6);
+        // In 4.3.4, the size field includes the 4 bytes of the opcode.
+        // So payload size is size - 4.
+        uint32 payloadSize = (size >= 4) ? (size - 4) : 0;
+        
+        WorldPacket packet(opcode, payloadSize);
+        if (payloadSize > 0) {
+            // Read exactly payloadSize bytes from the buffer starting at current read position (6)
+            packet.Append(buffer.GetBuffer() + 6, std::min<size_t>(payloadSize, buffer.Size() - 6));
         }
 
         ProcessPacket(packet);
@@ -147,9 +223,9 @@ namespace Firelands {
         // Cata 4.3.4 CMSG_AUTH_SESSION is extremely scattered.
         // We must follow the order in WorldPackets::Auth::AuthSession::Read() exactly.
         
-        uint32 loginServerId = packet.Read<uint32>();
+        int32 loginServerId = packet.Read<int32>();
         uint32 battlegroupId = packet.Read<uint32>();
-        uint32 loginServerType = packet.Read<uint32>();
+        int8 loginServerType = packet.Read<int8>();
         
         uint8 digest[20];
         digest[10] = packet.Read<uint8>();
@@ -167,11 +243,11 @@ namespace Firelands {
         digest[16] = packet.Read<uint8>();
         digest[3] = packet.Read<uint8>();
         
-        uint32 build = packet.Read<uint32>();
+        uint16 build = packet.Read<uint16>();
         digest[8] = packet.Read<uint8>();
         
         uint32 realmId = packet.Read<uint32>();
-        uint32 buildType = packet.Read<uint32>();
+        int8 buildType = packet.Read<int8>();
         
         digest[17] = packet.Read<uint8>();
         digest[6] = packet.Read<uint8>();
@@ -179,7 +255,12 @@ namespace Firelands {
         digest[1] = packet.Read<uint8>();
         digest[11] = packet.Read<uint8>();
         
-        uint32 localChallenge = packet.Read<uint32>();
+        std::vector<uint8> localChallenge(4);
+        localChallenge[0] = packet.Read<uint8>();
+        localChallenge[1] = packet.Read<uint8>();
+        localChallenge[2] = packet.Read<uint8>();
+        localChallenge[3] = packet.Read<uint8>();
+
         digest[2] = packet.Read<uint8>();
         uint32 regionId = packet.Read<uint32>();
         
@@ -195,11 +276,28 @@ namespace Firelands {
         // Bit-packed fields at the end
         // UseIPv6 (1), AccountNameLength (12), AccountName (String)
         
-        // Logic for bit reading (manual version)
-        uint8 firstBitByte = packet.Read<uint8>();
-        bool useIPv6 = (firstBitByte & 0x01) != 0;
-        uint16 nameLen = (firstBitByte >> 1) | (static_cast<uint16>(packet.Read<uint8>()) << 7);
-        nameLen &= 0x0FFF; // 12 bits
+        // Logic for bit reading (matching TrinityCore's MSB-first logic)
+        uint32 bitPos = 8;
+        uint8 curBitVal = 0;
+
+        auto readBit = [&]() -> bool {
+            if (bitPos >= 8) {
+                curBitVal = packet.Read<uint8>();
+                bitPos = 0;
+            }
+            return ((curBitVal >> (8 - ++bitPos)) & 1) != 0;
+        };
+
+        auto readBits = [&](int32 bits) -> uint32 {
+            uint32 value = 0;
+            for (int32 i = bits - 1; i >= 0; --i) {
+                value |= static_cast<uint32>(readBit()) << i;
+            }
+            return value;
+        };
+
+        bool useIPv6 = readBit();
+        uint16 nameLen = static_cast<uint16>(readBits(12));
 
         std::string account;
         for (uint16 i = 0; i < nameLen; ++i) {
@@ -232,7 +330,7 @@ namespace Firelands {
         Crypto::SHA1 sha;
         sha.Update(Crypto::ToUpper(account));
         sha.Update<uint32>(0); // t = 0 in reference
-        sha.Update<uint32>(localChallenge);
+        sha.Update(localChallenge);
         sha.Update<uint32>(_serverSeed);
         sha.Update(K);
         auto calculatedDigest = sha.Finalize();
@@ -248,10 +346,13 @@ namespace Firelands {
 
         // 4. Send SMSG_AUTH_RESPONSE
         WorldPacket response(SMSG_AUTH_RESPONSE);
-        // In 4.3.4 SMSG_AUTH_RESPONSE: [Bit: HasWaitInfo][Bit: HasSuccessInfo][Flush][SuccessData...][uint8 Result][WaitData...]
-        // SuccessData: [uint32 TimeRemain][uint8 ActiveExp][uint32 PCKick][uint8 AccountExp][uint32 TimeRested][uint8 TimeOptions]
+        // In 4.3.4 SMSG_AUTH_RESPONSE: [Bit: HasWaitInfo][Bit: HasSuccessInfo][Flush][WaitData...][SuccessData...]
+        // [uint8 Result]
         
-        response.Append<uint8>(0x02); // Bits: HasWaitInfo=0, HasSuccessInfo=1 (binary 00000010)
+        BitWriter bw(response);
+        bw.WriteBit(false); // HasWaitInfo
+        bw.WriteBit(true);  // HasSuccessInfo
+        bw.Flush();
         
         // SuccessInfo Data
         response.Append<uint32>(0);    // TimeRemain
@@ -259,7 +360,7 @@ namespace Firelands {
         response.Append<uint32>(0);    // TimeSecondsUntilPCKick
         response.Append<uint8>(3);     // AccountExpansion (3 = Cataclysm)
         response.Append<uint32>(0);    // TimeRested
-        response.Append<uint8>(0);    // TimeOptions (0 = None)
+        response.Append<uint8>(0);     // TimeOptions (0 = None)
         
         response.Append<uint8>(0x0C); // Result (0x0C = AUTH_OK)
 

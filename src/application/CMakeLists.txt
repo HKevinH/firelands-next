@@ -10,3 +10,4 @@ target_link_libraries(FirelandsApplication PUBLIC
     FirelandsDomain
     FirelandsShared
 )
+target_precompile_headers(FirelandsApplication PRIVATE ${PROJECT_PCH_HEADERS})

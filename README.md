@@ -9,7 +9,8 @@ We operate under a strict set of "Skills" to maintain code quality and architect
 2.  **Hexagonal Architecture:** Decoupling business logic from external systems. [Skill 02](.skills/02-architecture.md)
 3.  **TDD (Test-Driven Development):** Logic is driven by tests. [Skill 03](.skills/03-tdd.md)
 4.  **Modern Tech Stack:** C++17, CMake, MySql, and RESTful APIs. [Skill 04](.skills/04-tech-stack.md)
-5.  **Cross-Platform:** Support for Windows, Linux, and macOS.
+5.  **Build Optimization:** Fast builds using ccache, Ninja, and PCH. [Skill 05](.skills/05-build-optimization.md)
+6.  **Cross-Platform:** Support for Windows, Linux, and macOS.
 
 ## Initial Setup
 To get started:

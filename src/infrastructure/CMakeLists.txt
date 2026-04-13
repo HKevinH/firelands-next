@@ -14,6 +14,7 @@ target_link_libraries(FirelandsInfrastructure
     PUBLIC Boost::thread
     PUBLIC nlohmann_json::nlohmann_json
 )
+target_precompile_headers(FirelandsInfrastructure PRIVATE ${PROJECT_PCH_HEADERS})
 
 target_include_directories(FirelandsInfrastructure PUBLIC 
     ${CMAKE_CURRENT_SOURCE_DIR}

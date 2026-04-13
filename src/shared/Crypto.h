@@ -49,6 +49,16 @@ namespace Crypto {
         }
         return ss.str();
     }
+    
+    inline std::vector<uint8_t> FromHexString(const std::string& hex) {
+        std::vector<uint8_t> bytes;
+        for (unsigned int i = 0; i < hex.length(); i += 2) {
+            std::string byteString = hex.substr(i, 2);
+            uint8_t byte = (uint8_t) strtoul(byteString.c_str(), nullptr, 16);
+            bytes.push_back(byte);
+        }
+        return bytes;
+    }
 
     class SHA1 {
     public:

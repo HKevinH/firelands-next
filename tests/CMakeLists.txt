@@ -17,6 +17,7 @@ target_link_libraries(FirelandsUnitTests
     GTest::gmock
     FirelandsInfrastructure
 )
+target_precompile_headers(FirelandsUnitTests PRIVATE ${TEST_PCH_HEADERS})
 
 include(GoogleTest)
 gtest_discover_tests(FirelandsUnitTests)

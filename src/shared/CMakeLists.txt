@@ -6,4 +6,5 @@ target_link_libraries(FirelandsShared INTERFACE
     OpenSSL::SSL
     OpenSSL::Crypto
     spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
