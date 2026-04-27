@@ -102,7 +102,7 @@ namespace Firelands {
          */
         void WriteByteSeq(uint8 b) {
             if (b != 0) {
-                Append<uint8>(b ^ 1);
+                Append<uint8>(b);
             }
         }
 

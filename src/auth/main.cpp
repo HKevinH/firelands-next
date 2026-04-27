@@ -8,6 +8,7 @@
 #include <infrastructure/persistence/MemoryWebSessionRepository.h>
 #include <application/services/WebSessionService.h>
 
+#include <infrastructure/persistence/DatabaseMigrator.h>
 #include <application/services/AuthService.h>
 #include <application/services/RealmListService.h>
 #include <shared/Config.h>
@@ -38,7 +39,7 @@ int main() {
     }
 
     try {
-        // 1. Establish Database Connection
+        // 1. Database Migration / Validation
         std::string dbUser = Config::Instance().GetNested<std::string>({"Database", "User"}, "firelands");
         std::string dbPass = Config::Instance().GetNested<std::string>({"Database", "Password"}, "firelands");
         
@@ -46,6 +47,10 @@ int main() {
         std::string port = Config::Instance().GetNested<std::string>({"Database", "Auth", "Port"}, "3306");
         std::string db = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
 
+        // Run automatic schema validation/creation
+        DatabaseMigrator::Migrate(host, port, dbUser, dbPass, "sql/auth_schema.sql");
+
+        // 2. Establish Database Connection
         sql::Driver* driver = sql::mariadb::get_driver_instance();
         sql::SQLString url("jdbc:mariadb://" + host + ":" + port + "/" + db);
         sql::Properties properties({{"user", dbUser}, {"password", dbPass}});

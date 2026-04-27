@@ -4,6 +4,7 @@
 #include <application/ports/IAuthSession.h>
 #include <application/services/AuthService.h>
 #include <application/services/CharacterService.h>
+#include <shared/network/BitReader.h>
 #include <shared/network/BitWriter.h>
 #include <shared/network/ByteBuffer.h>
 #include <shared/network/WorldPacket.h>
@@ -58,7 +59,7 @@ namespace Firelands {
         void SendAddonInfo();
         void SendClientCacheVersion();
         void SendTutorialFlags();
-        void SendAccountDataTimes();
+        void SendAccountDataTimes(uint32 mask);
         void SendFeatureSystemStatus();
         void SendRealmSplit(uint32 realmId);
         void SendLoginSetTimeSpeed();
@@ -74,11 +75,11 @@ namespace Firelands {
         tcp::socket _socket;
         std::shared_ptr<AuthService> _authService;
         std::shared_ptr<CharacterService> _charService;
+        bool _initialized = false;
         uint32 _serverSeed;
-        uint32 _accountId;
+        uint32 _accountId = 0;
         uint64 _playerGuid = 0;
         MovementInfo _position;
-        bool _initialized = false;
         uint8 _readBuffer[2048];
         ByteBuffer _inBuffer;
         WorldCrypt _crypt;

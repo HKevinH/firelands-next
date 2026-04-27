@@ -24,14 +24,14 @@ namespace Firelands {
             }
 
             // Cataclysm 4.3.4: pack bits MSB-first (position 7 down to 0)
-            ++_bitPos;
             if (bit) {
-                _buffer[_currentByteStep] |= (1 << (8 - _bitPos));
+                _buffer[_currentByteStep] |= (1 << (7 - _bitPos));
             }
+            ++_bitPos;
         }
 
         void WriteBits(uint32 value, uint8 count) {
-            // Write most significant bit first, matching TCPP reference
+            // Write most significant bit first
             for (int8 i = static_cast<int8>(count - 1); i >= 0; --i) {
                 WriteBit((value >> i) & 1);
             }

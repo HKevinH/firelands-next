@@ -14,7 +14,7 @@ WorldSession::WorldSession(tcp::socket socket,
                            std::shared_ptr<AuthService> authService,
                            std::shared_ptr<CharacterService> charService)
     : _socket(std::move(socket)), _authService(std::move(authService)),
-      _charService(std::move(charService)), _accountId(0) {}
+      _charService(std::move(charService)), _serverSeed(0), _accountId(0) {}
 
 void WorldSession::Start() {
   LOG_INFO("WorldSession started for {}", GetIpAddress());
@@ -37,7 +37,8 @@ void WorldSession::Start() {
 
 void WorldSession::SendPacket(WorldPacket &packet) {
   ByteBuffer buffer;
-  // In Cataclysm, Server header is [Size:2 (BE)][Opcode:2 (LE)]
+  // En Cataclysm, la cabecera del servidor es [Size:2 (BE)][Opcode:2 (LE)]
+  // El Size incluye los 2 bytes del Opcode.
   uint16 size = static_cast<uint16>(packet.Size() + 2);
 
   uint8 header[4];
@@ -47,11 +48,13 @@ void WorldSession::SendPacket(WorldPacket &packet) {
   header[2] = opcode & 0xFF;
   header[3] = (opcode >> 8) & 0xFF;
 
-  // Encrypt header if crypt is initialized (after CMSG_AUTH_SESSION)
+  // En Cataclysm 4.3.4, TODA la cabecera de 4 bytes se encripta
   _crypt.EncryptSend(header, 4);
 
   buffer.Append(header, 4);
-  buffer.Append(packet.GetBuffer(), packet.Size());
+  if (packet.Size() > 0) {
+    buffer.Append(packet.GetBuffer(), packet.Size());
+  }
 
   SendPacket(buffer);
 }
@@ -106,26 +109,36 @@ void WorldSession::DoWrite() {
 }
 
 void WorldSession::SendAuthChallenge() {
-  WorldPacket packet(SMSG_AUTH_CHALLENGE);
+  _serverSeed = static_cast<uint32>(std::rand());
 
-  // Cataclysm 4.3.4 (15595) structure:
-  // 1. DosChallenge (32 bytes - random)
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  std::uniform_int_distribution<uint32> dis(0, 0xFF);
-  for (int i = 0; i < 32; ++i)
-    packet.Append<uint8>(static_cast<uint8>(dis(gen)));
+  WorldPacket data(SMSG_AUTH_CHALLENGE);
 
-  // 2. Server Seed (4 bytes)
-  packet.Append<uint32>(_serverSeed);
+  // Cata 4.3.4 (15595) SMSG_AUTH_CHALLENGE (37 bytes):
+  // Estructura exacta de firelands-cata-ref:
+  // [32] DosChallenge (con sobreescritura parcial)
+  // [4]  Server Seed (uint32)
+  // [1]  DosZeroBits (uint8)
 
-  // 3. DosZeroBits (1 byte flag)
-  packet.Append<uint8>(1);
+  uint8 dosChallenge[32];
+  std::memset(dosChallenge, 0, 32);
 
-  SendPacket(packet);
-  LOG_INFO("SMSG_AUTH_CHALLENGE sent (seed: 0x{:08X})", _serverSeed);
+  uint8 encryptSeed[16], decryptSeed[16];
+  for (int i = 0; i < 16; ++i) {
+    encryptSeed[i] = static_cast<uint8>(std::rand() % 256);
+    decryptSeed[i] = static_cast<uint8>(std::rand() % 256);
+  }
+
+  // Replicamos el memcpy solapado de la referencia:
+  std::memcpy(&dosChallenge[0], encryptSeed, 16);
+  std::memcpy(&dosChallenge[4], decryptSeed, 16); // Sobreescribe índices 4-19
+
+  data.Append(dosChallenge, 32);
+  data.Append<uint32>(_serverSeed);
+  data.Append<uint8>(1);
+
+  SendPacket(data);
+  LOG_INFO("SMSG_AUTH_CHALLENGE sent (ServerSeed: 0x{:08X})", _serverSeed);
 }
-
 void WorldSession::Close() {
   if (_socket.is_open()) {
     LOG_INFO("Closing WorldSession for {}", GetIpAddress());
@@ -147,10 +160,6 @@ void WorldSession::DoRead() {
       boost::asio::buffer(_readBuffer, sizeof(_readBuffer)),
       [this, self](boost::system::error_code ec, std::size_t length) {
         if (!ec) {
-          // Log raw received data for debugging
-          LOG_INFO(
-              "[RECV] {} bytes: {}", length,
-              Crypto::ToHexString(_readBuffer, std::min<size_t>(length, 32)));
 
           _inBuffer.Append(_readBuffer, length);
 
@@ -181,9 +190,12 @@ void WorldSession::DoRead() {
             if (_inBuffer.Size() < 6)
               break;
 
-            // Decrypt header exactly once per packet (ARC4 is stateful)
+            // Decrypt header exactamente una vez por paquete (ARC4 tiene
+            // estado)
             if (_crypt.IsInitialized() && !_headerDecrypted) {
               std::memcpy(_decHeader, _inBuffer.GetBuffer(), 6);
+              // En Cataclysm 4.3.4, los 6 bytes de la cabecera CMSG están
+              // encriptados
               _crypt.DecryptRecv(_decHeader, 6);
               _headerDecrypted = true;
             } else if (!_crypt.IsInitialized() && !_headerDecrypted) {
@@ -191,7 +203,14 @@ void WorldSession::DoRead() {
               _headerDecrypted = true;
             }
 
+            // In Cataclysm, the Size field includes the 4-byte Opcode
             uint16 pktSize = (_decHeader[0] << 8) | _decHeader[1];
+            // Opcode is 4 bytes, LITTLE ENDIAN
+            uint32 opcode = _decHeader[2] | (_decHeader[3] << 8) |
+                            (_decHeader[4] << 16) | (_decHeader[5] << 24);
+
+            LOG_INFO("[DEBUG] Decrypted Header: Size {}, Opcode 0x{:08X}",
+                     pktSize, opcode);
 
             // Total on wire: 2 (size field) + pktSize
             if (_inBuffer.Size() < static_cast<size_t>(pktSize + 2)) {
@@ -204,8 +223,6 @@ void WorldSession::DoRead() {
 
             _headerDecrypted = false;
 
-            uint32 opcode = _decHeader[2] | (_decHeader[3] << 8) |
-                            (_decHeader[4] << 16) | (_decHeader[5] << 24);
             LOG_INFO("[PKT] Received: 0x{:04X} (Decrypted: {}), Size: {}",
                      opcode, _crypt.IsInitialized(), pktSize);
 
@@ -213,9 +230,7 @@ void WorldSession::DoRead() {
 
             WorldPacket packet(opcode, payloadSize);
             if (payloadSize > 0) {
-              packet.Append(
-                  _inBuffer.GetBuffer() + 6,
-                  std::min<size_t>(payloadSize, _inBuffer.Size() - 6));
+              packet.Append(_inBuffer.GetBuffer() + 6, payloadSize);
             }
 
             // Remove consumed bytes
@@ -238,13 +253,18 @@ void WorldSession::DoRead() {
 }
 
 void WorldSession::HandlePacket(ByteBuffer &buffer) {
-  // This method now ONLY handles the initial handshake.
-  // Post-init packet processing with encryption is done in DoRead.
-  std::string expected = "WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER";
+  // This method handles the initial handshake string.
+  // The buffer passed here contains [Size:2 BE][String]
+  if (buffer.Size() < 2)
+    return;
 
   uint16 size = buffer.Read<uint16>();
   size = (size << 8) | (size >> 8);
 
+  if (buffer.Size() < size)
+    return;
+
+  std::string expected = "WORLD OF WARCRAFT CONNECTION - CLIENT TO SERVER";
   std::string received;
   for (uint16 i = 0; i < size; ++i) {
     received += static_cast<char>(buffer.Read<uint8>());
@@ -259,11 +279,6 @@ void WorldSession::HandlePacket(ByteBuffer &buffer) {
   if (received == expected) {
     LOG_INFO("WorldSession: Handshake string validated.");
     _initialized = true;
-
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint32> dis(0, 0xFFFFFFFF);
-    _serverSeed = dis(gen);
 
     SendAuthChallenge();
   } else {
@@ -323,202 +338,85 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
 }
 
 void WorldSession::HandleAuthSession(WorldPacket &packet) {
-  // Cataclysm 4.3.4 (15595) can have different formats.
-  // Let's check the first 4 bytes to see if it's the build number (Standard
-  // format)
-  uint32 buildCheck = 0;
-  std::memcpy(&buildCheck, packet.GetBuffer(), 4);
-
-  // In Cataclysm 4.3.4, CMSG_AUTH_SESSION is almost always in the "Scattered"
-  // (obfuscated) format. The previously check (buildCheck != 15595) was
-  // unreliable because 15595 IS the build that uses scattered packets.
-  // We'll try to detect it by packet size or just default to scattered.
-  bool isScattered = (packet.Size() > 40);
-
-  std::string account;
-  uint16 build = 0;
-  uint32 realmId = 0;
-  int32 loginServerId = 0;
   uint8 digest[20];
-  std::memset(digest, 0, 20);
-  std::vector<uint8> localChallenge(4, 0);
+  std::vector<uint8> localChallenge(4);
+  uint16 build;
+  uint32 realmId;
+  int32 loginServerId;
 
-  if (isScattered) {
-    HandleAuthSessionScattered(packet, digest, localChallenge, build, realmId,
-                               loginServerId);
-  } else {
-    HandleAuthSessionStandard(packet, build, digest, localChallenge, realmId);
+  // 1. Read seeds, digest and build using the Scattered format
+  HandleAuthSessionScattered(packet, digest, localChallenge, build, realmId,
+                             loginServerId);
+
+  // 2. Read addon data size and skip it
+  uint32 addonDataSize = 0;
+  if (packet.GetReadPos() + 4 <= packet.Size()) {
+    addonDataSize = packet.Read<uint32>();
+  }
+  if (addonDataSize > 0 &&
+      (packet.GetReadPos() + addonDataSize) <= packet.Size()) {
+    packet.SetReadPos(packet.GetReadPos() + addonDataSize);
   }
 
-  // Cataclysm 4.3.4 (15595) Bit Packing
-  // The bits are located after the scattered fields.
-  // We need to be careful with byte alignment.
-
-  uint32 bitPos = 8;
-  uint8 curBitVal = 0;
-
-  auto readBit = [&]() -> bool {
-    if (bitPos >= 8) {
-      curBitVal = packet.Read<uint8>();
-      bitPos = 0;
-    }
-    // Cata payload uses LSB-first bit order
-    return ((curBitVal >> bitPos++) & 1) != 0;
-  };
-
-  auto readBits = [&](int32 bits) -> uint32 {
-    uint32 value = 0;
-    for (int32 i = 0; i < bits; ++i) {
-      if (readBit())
-        value |= (1 << i);
-    }
-    return value;
-  };
-
-  // 15595 Bit Order: nameLen (12), hasAddonData (1), useIPv6 (1)
-  uint16 nameLen = static_cast<uint16>(readBits(12));
-  bool useIPv6 = readBit();
-  bool hasAddonData = readBit();
-
-  if (hasAddonData) {
-    // In Build 15595, addonSize is actually bit-packed as 12 bits too!
-    uint32 addonSize = readBits(12);
-    // The addon data itself follows the bits.
-    // If it's compressed, we'll skip it for now to find the account name.
-    // If nameLen is small, it's likely after the addon data or bits.
-
-    // Diagnostic: if nameLen + currentPos > packetSize, something is wrong.
-    if (nameLen > 64 || nameLen == 0) {
-      LOG_DEBUG("Adjusting nameLen, suspicious value: {}", nameLen);
-      // Fallback: search for the string in the remaining packet.
-    }
-  }
-
-  for (uint16 i = 0; i < nameLen; ++i) {
-    if (packet.GetReadPos() < packet.Size())
-      account += static_cast<char>(packet.Read<uint8>());
-  }
-
-  // If account is still empty or looks like junk, try to read it from the end
-  if (account.empty() ||
-      account.find_first_of("\x01\x02\x03\x04\x05\x06\x78") !=
-          std::string::npos) {
-    // In some 15595 variants, Account is at the very end.
-    std::string lastDitch;
-    size_t endPos = packet.Size();
-    while (endPos > 0 && packet[endPos - 1] >= 0x20 &&
-           packet[endPos - 1] <= 0x7E) {
-      lastDitch = (char)packet[--endPos] + lastDitch;
-    }
-    if (!lastDitch.empty() && lastDitch.length() < 32) {
-      // Trim leading non-alphanumeric characters (like the mysterious 0x28
-      // prefix)
-      while (!lastDitch.empty() &&
-             !std::isalnum(static_cast<unsigned char>(lastDitch[0]))) {
-        lastDitch.erase(0, 1);
-      }
-      if (!lastDitch.empty()) {
-        LOG_INFO("AuthSession: Using extracted account name from end: '{}'",
-                 lastDitch);
-        account = lastDitch;
-      }
-    }
-  }
+  // 3. Extract Account Name using BitReader (Cataclysm 4.3.4 Build 15595)
+  BitReader br(packet);
+  br.ReadBit(); // UseIPv6
+  uint32 accountNameLength = br.ReadBits(12);
+  std::string account = br.ReadString(accountNameLength);
 
   LOG_INFO("CMSG_AUTH_SESSION: Account: '{}', Build: {}, RealmID: {}, "
-           "LoginServerID: {}, Packet Size: {}",
-           account, build, realmId, loginServerId, packet.Size());
+           "ClientSeed: {}, Packet Size: {}",
+           account, build, realmId,
+           Crypto::ToHexString(localChallenge.data(), 4), packet.Size());
 
-  // Diagnostic: Log the raw packet data for debugging
-  {
-    std::string hex;
-    for (size_t i = 0; i < packet.Size(); ++i) {
-      char buf[4];
-      std::snprintf(buf, sizeof(buf), "%02X ", packet[i]);
-      hex += buf;
-    }
-    LOG_INFO("CMSG_AUTH_SESSION RAW: {}", hex);
-  }
-
-  // 1. Find account to get ID
   auto accountOpt = _authService->FindAccount(account);
   if (!accountOpt) {
-    LOG_ERROR("CMSG_AUTH_SESSION: Account '{}' not found in database.",
-              account);
+    LOG_ERROR("CMSG_AUTH_SESSION: Account '{}' not found.", account);
     Close();
     return;
   }
 
-  // 2. Get saved Session Key K from database
   std::vector<uint8_t> K = _authService->GetSessionKey(accountOpt->id);
   if (K.empty()) {
-    LOG_ERROR("CMSG_AUTH_SESSION: No session key K found for account '{}'.",
-              account);
+    LOG_ERROR("CMSG_AUTH_SESSION: No session key K for account '{}'.", account);
     Close();
     return;
   }
 
-  LOG_INFO("CMSG_AUTH_SESSION: Retrieved session key K for {}, length: {}",
-           account, K.size());
+  // Initialize WorldCrypt IMMEDIATELY after getting K (Cataclysm requirement)
+  _crypt.Init(K);
+  LOG_INFO("[AUTH] WorldCrypt initialized with 40 bytes of K");
 
-  // 3. Perform Digest validation
-  // Cata 4.3.4: Digest = SHA1(Account, LoginServerID, LocalChallenge,
-  // ServerSeed, SessionKey K)
+  // 4. Perform Digest validation
+  // Referencia Cataclysm (WorldSocket.cpp:600):
+  // SHA1(Account, t(0), ClientChallenge, ServerSeed, SessionKey)
   Crypto::SHA1 sha;
   sha.Update(Crypto::ToUpper(account));
-  sha.Update<uint32>(static_cast<uint32>(loginServerId));
+
+  uint32 t = 0;
+  sha.Update(t);
+
   sha.Update(localChallenge.data(), 4);
-  sha.Update<uint32>(_serverSeed);
-  sha.Update(K);
-  auto calculatedDigest = sha.Finalize();
+  sha.Update(_serverSeed);
+  sha.Update(K.data(), K.size());
+
+  Crypto::SHA1Hash calculatedDigest = sha.Finalize();
 
   if (std::memcmp(calculatedDigest.data(), digest, 20) != 0) {
     LOG_ERROR("CMSG_AUTH_SESSION: Digest validation failed for account '{}'!",
               account);
-    LOG_DEBUG("Digest components:");
-    LOG_DEBUG("  - Account: {}", account);
-    LOG_DEBUG("  - LoginServerID: {}", loginServerId);
-    LOG_DEBUG("  - LocalChallenge: {}",
-              Crypto::ToHexString(localChallenge.data(), 4));
-    LOG_DEBUG("  - ServerSeed: 0x{:08X}", _serverSeed);
-    LOG_DEBUG("  - SessionKey K: {}", Crypto::ToHexString(K.data(), K.size()));
-    LOG_DEBUG("Received Digest: {}", Crypto::ToHexString(digest, 20));
-    LOG_DEBUG("Expected Digest: {}", Crypto::ToHexString(calculatedDigest));
+    LOG_INFO("Calculated: {}", Crypto::ToHexString(calculatedDigest));
+    LOG_INFO("Received:   {}", Crypto::ToHexString(digest, 20));
     Close();
     return;
   }
 
   _accountId = accountOpt->id;
-  LOG_INFO("CMSG_AUTH_SESSION: Digest validated successfully for account '{}' "
-           "(ID: {}).",
-           account, _accountId);
+  LOG_INFO("CMSG_AUTH_SESSION: Digest validated successfully for account '{}'.",
+           account);
 
-  // 4. Initialize ARC4 encryption BEFORE sending AUTH_RESPONSE.
-  // In Cataclysm 4.3.4 (15595), the client expects SMSG_AUTH_RESPONSE header to
-  // be encrypted.
-  _crypt.Init(K);
-  LOG_INFO("[AUTH] WorldCrypt (ARC4) initialized");
-
-  // 5. Send Authentication Handshake Sequence for 4.3.4 (15595)
-  // Precise order and content in 4.3.4 is critical for the client to proceed to
-  // Character Enum.
   SendAuthResponse();
   SendAddonInfo();
-  SendClientCacheVersion();
-  SendTutorialFlags();
-  SendAccountRestrictedUpdate();
-  SendRealmSplit(realmId);
-  SendSetTimeZoneInformation();
-  SendFeatureSystemStatus();
-  SendMotd();
-  SendLearnedDanceMoves();
-  SendInitialRaidGroupError();
-  SendSetDfFastLaunchResources();
-
-  // Note: SMSG_ACCOUNT_DATA_TIMES, SMSG_REALM_SPLIT, and
-  // SMSG_FEATURE_SYSTEM_STATUS are now sent reactively when the client requests
-  // them (via CMSG_READY_FOR_ACCOUNT_DATA_TIMES, etc.) Sending them proactively
-  // here can cause some 15595 clients to hang.
 }
 
 void WorldSession::HandleAuthSessionScattered(
@@ -587,43 +485,36 @@ void WorldSession::SendAuthResponse() {
   WorldPacket response(SMSG_AUTH_RESPONSE);
 
   // Cata 4.3.4 (15595) SMSG_AUTH_RESPONSE bit-packed structure
+  // Referencia: AuthenticationPackets.cpp:105
   BitWriter bw(response);
   bw.WriteBit(false); // hasWaitInfo
   bw.WriteBit(true);  // hasSuccessInfo
-
-  // If hasSuccessInfo is true, 15595 expects these bits:
-  bw.WriteBit(false); // isBattleNetAccount
-  bw.WriteBit(false); // isTrialAccount
-  // if (isBattleNetAccount) bw.WriteBit(false); // hasBattleNetName
-  bw.WriteBit(true); // isExpansionStandard
-
   bw.Flush();
 
-  // SuccessInfo fields (ordered according to 15595 reference)
-  response.Append<uint32>(0xFFFFFFFF); // TimeRemain
-  response.Append<uint8>(3);           // activeExpansionLevel
-  response.Append<uint32>(0);          // TimeSecondsUntilPCKick
-  response.Append<uint8>(3);           // accountExpansionLevel
-  response.Append<uint32>(0);          // TimeRested
-  response.Append<uint8>(0);           // TimeOptions
+  // SuccessInfo fields (if hasSuccessInfo was true)
+  response.Append<uint32>(0); // TimeRemain
+  response.Append<uint8>(3);  // ActiveExpansionLevel (Cata)
+  response.Append<uint32>(0); // TimeSecondsUntilPCKick
+  response.Append<uint8>(3);  // AccountExpansionLevel (Cata)
+  response.Append<uint32>(0); // TimeRested
+  response.Append<uint8>(0);  // TimeOptions
 
-  response.Append<uint8>(0x0C); // AUTH_OK (Result) at the end
+  // Result (AUTH_OK = 12)
+  response.Append<uint8>(12);
 
   SendPacket(response);
-  LOG_INFO("[AUTH] SMSG_AUTH_RESPONSE (AUTH_OK) sent (4.3.4 15595 format).");
+  LOG_INFO("[AUTH] SMSG_AUTH_RESPONSE (AUTH_OK) sent (Full Parity).");
 }
 
 void WorldSession::SendAddonInfo() {
   WorldPacket data(SMSG_ADDON_INFO);
 
-  // Cata 4.3.4 (15595) uses bit-packed counts (23 bits each)
-  BitWriter bw(data);
-  bw.WriteBits(0, 23); // addonCount
-  bw.WriteBits(0, 23); // bannedAddonCount
-  bw.Flush();
+  // In 15595, when no addons are sent, we just send two 0 uint32s (counts)
+  data.Append<uint32>(0); // Addon count
+  data.Append<uint32>(0); // Banned addon count
 
   SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_ADDON_INFO sent (4.3.4 15595 bit-packed format)");
+  LOG_INFO("[AUTH] SMSG_ADDON_INFO sent (Empty, 15595 parity)");
 }
 
 void WorldSession::SendClientCacheVersion() {
@@ -641,37 +532,44 @@ void WorldSession::SendTutorialFlags() {
   LOG_INFO("[AUTH] SMSG_TUTORIAL_FLAGS sent");
 }
 
-void WorldSession::SendAccountDataTimes() {
+void WorldSession::SendAccountDataTimes(uint32 mask) {
   WorldPacket data(SMSG_ACCOUNT_DATA_TIMES);
-  data.Append<uint32>(static_cast<uint32>(std::time(nullptr))); // ServerTime
-  data.Append<uint8>(1);                                        // Unk
-  data.Append<uint32>(0); // Mask (0 means no per-type times)
+  data.Append<uint32>(static_cast<uint32>(std::time(nullptr))); // Server time
+  data.Append<uint8>(1);     // Unknown byte from reference
+  data.Append<uint32>(mask); // type mask
+
+  for (int i = 0; i < 8; ++i) {
+    if (mask & (1 << i)) {
+      data.Append<uint32>(0); // Time for each data type
+    }
+  }
   SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_ACCOUNT_DATA_TIMES sent");
+  LOG_INFO("[AUTH] SMSG_ACCOUNT_DATA_TIMES sent (Full Parity, mask: 0x{:02X})",
+           mask);
 }
 
 void WorldSession::SendFeatureSystemStatus() {
   WorldPacket features(SMSG_FEATURE_SYSTEM_STATUS);
 
-  // Cata 4.3.4 (15595) fields
-  features.Append<uint8>(0);  // ScrollOfResurrectionDailyLimit
-  features.Append<uint8>(0);  // ScrollOfResurrectionDailyLimitTotal
-  features.Append<uint32>(0); // ScrollOfResurrectionMaxLevel
+  // Cata 4.3.4 (15595) Byte fields
+  features.Append<uint8>(0);  // ComplaintStatus
+  features.Append<uint32>(0); // ScrollOfResurrectionRequestsRemaining
+  features.Append<uint32>(0); // ScrollOfResurrectionMaxRequestsPerDay
+  features.Append<uint32>(0); // CfgRealmID
+  features.Append<uint32>(0); // CfgRealmRecID
 
+  // Bit fields (Exact order for 15595)
   BitWriter bw(features);
-  bw.WriteBit(false); // QuestHotfixesEnabled
-  bw.WriteBit(false); // EuropaEnabled
-  bw.WriteBit(false); // EquipmentManagerEnabled
-  bw.WriteBit(false); // CanPurchaseLevel
-  bw.WriteBit(false); // VoiceChatEnabled
+  bw.WriteBit(false); // EuropaTicketSystemStatus.has_value()
   bw.WriteBit(false); // ScrollOfResurrectionEnabled
-  bw.WriteBit(false); // ComplaintEnabled
-  bw.WriteBit(false); // SessionTimerEnabled
-  bw.WriteBit(false); // KioskModeEnabled
+  bw.WriteBit(false); // ItemRestorationButtonEnabled
+  bw.WriteBit(false); // SessionAlert.has_value()
+  bw.WriteBit(false); // VoiceEnabled
+  bw.WriteBit(false); // TravelPassEnabled
   bw.Flush();
 
   SendPacket(features);
-  LOG_INFO("[AUTH] SMSG_FEATURE_SYSTEM_STATUS sent (4.3.4 format)");
+  LOG_INFO("[AUTH] SMSG_FEATURE_SYSTEM_STATUS sent (15595 parity)");
 }
 
 void WorldSession::SendRealmSplit(uint32 realmId) {
@@ -718,8 +616,12 @@ void WorldSession::SendLearnedDanceMoves() {
 }
 
 void WorldSession::HandleReadyForAccountDataTimes(WorldPacket & /*packet*/) {
-  LOG_INFO("CMSG_READY_FOR_ACCOUNT_DATA_TIMES received");
-  SendAccountDataTimes();
+  LOG_INFO("CMSG_READY_FOR_ACCOUNT_DATA_TIMES received. Sending load sequence...");
+  SendClientCacheVersion();
+  SendTutorialFlags();
+  SendAccountDataTimes(0x15);
+  SendSetTimeZoneInformation();
+  SendRealmSplit(1);
 }
 
 void WorldSession::SendLoginSetTimeSpeed() {
@@ -734,19 +636,13 @@ void WorldSession::SendMotd() {
   WorldPacket motd(SMSG_MOTD);
   std::vector<std::string> lines = {"Welcome to Firelands WoW!"};
 
-  BitWriter bw(motd);
-  bw.WriteBits(static_cast<uint32>(lines.size()), 4);
+  motd.Append<uint32>(static_cast<uint32>(lines.size()));
   for (auto const &line : lines) {
-    bw.WriteBits(static_cast<uint32>(line.length()), 11);
-  }
-  bw.Flush();
-
-  for (auto const &line : lines) {
-    motd.WriteStringNoNull(line);
+    motd.WriteString(line); // Should be null-terminated
   }
 
   SendPacket(motd);
-  LOG_INFO("[AUTH] SMSG_MOTD sent (4.3.4 15595 Bit-packed)");
+  LOG_INFO("[AUTH] SMSG_MOTD sent (4.3.4 byte-oriented format)");
 }
 
 void WorldSession::SendAccountRestrictedUpdate() {
@@ -842,8 +738,8 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
 
     response.Append<uint8>(ch->GetClass());
 
-    // Equipment: 23 visual item slots
-    for (int slot = 0; slot < 23; ++slot) {
+    // Equipment: 19 visual item slots (Head to Tabard in Cataclysm)
+    for (int slot = 0; slot < 19; ++slot) {
       response.Append<uint8>(0);  // InvType
       response.Append<uint32>(0); // DisplayID
       response.Append<uint32>(0); // DisplayEnchantID
@@ -973,7 +869,7 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   SendInitialObjectUpdate(guid);
 
   // 5. Send Account Data Times
-  SendAccountDataTimes();
+  SendAccountDataTimes(0x15);
 
   // 6. Set Time Speed
   SendLoginSetTimeSpeed();

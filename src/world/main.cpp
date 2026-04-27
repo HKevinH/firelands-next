@@ -4,6 +4,7 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/persistence/MySqlAccountRepository.h>
 #include <infrastructure/persistence/MySqlCharacterRepository.h>
+#include <infrastructure/persistence/DatabaseMigrator.h>
 #include <application/services/CharacterService.h>
 #include <shared/Config.h>
 #include <conncpp.hpp>
@@ -37,11 +38,19 @@ int main() {
         std::string dbUser = Config::Instance().GetNested<std::string>({"Database", "User"}, "firelands");
         std::string dbPass = Config::Instance().GetNested<std::string>({"Database", "Password"}, "firelands");
 
-        // 1. Establish Database Connection (Auth database for session validation)
+        // 1. Database Migration / Validation
         std::string authHost = Config::Instance().GetNested<std::string>({"Database", "Auth", "Host"}, "127.0.0.1");
         std::string authPort = Config::Instance().GetNested<std::string>({"Database", "Auth", "Port"}, "3306");
+        
+        std::string charHost = Config::Instance().GetNested<std::string>({"Database", "Characters", "Host"}, "127.0.0.1");
+        std::string charPort = Config::Instance().GetNested<std::string>({"Database", "Characters", "Port"}, "3306");
 
+        // Validate all required schemas
+        DatabaseMigrator::Migrate(authHost, authPort, dbUser, dbPass, "sql/auth_schema.sql");
+        DatabaseMigrator::Migrate(charHost, charPort, dbUser, dbPass, "sql/characters_schema.sql");
+        DatabaseMigrator::Migrate(charHost, charPort, dbUser, dbPass, "sql/world_schema.sql");
 
+        // 2. Establish Database Connection (Auth database for session validation)
         std::string authDb = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
 
         sql::Driver* driver = sql::mariadb::get_driver_instance();
@@ -50,15 +59,13 @@ int main() {
         sql::SQLString authUrl("jdbc:mariadb://" + authHost + ":" + authPort + "/" + authDb);
         std::shared_ptr<sql::Connection> authConn(driver->connect(authUrl, properties));
         
-        // 2. Establish Character Database Connection
-        std::string charHost = Config::Instance().GetNested<std::string>({"Database", "Characters", "Host"}, "127.0.0.1");
-        std::string charPort = Config::Instance().GetNested<std::string>({"Database", "Characters", "Port"}, "3306");
+        // 3. Establish Character Database Connection
         std::string charDb = Config::Instance().GetNested<std::string>({"Database", "Characters", "Database"}, "firelands_characters");
 
         sql::SQLString charUrl("jdbc:mariadb://" + charHost + ":" + charPort + "/" + charDb);
         std::shared_ptr<sql::Connection> charConn(driver->connect(charUrl, properties));
         
-        // 3. Initialize Repositories and Services
+        // 4. Initialize Repositories and Services
         auto accountRepo = std::make_shared<MySqlAccountRepository>(authConn);
         auto authService = std::make_shared<AuthService>(accountRepo);
 
