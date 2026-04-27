@@ -2,6 +2,7 @@
 #define FIRELANDS_INFRASTRUCTURE_NETWORK_SESSIONS_WORLD_SESSION_H
 
 #include <application/ports/IAuthSession.h>
+#include <application/ports/ICommandService.h>
 #include <application/services/AuthService.h>
 #include <application/services/CharacterService.h>
 #include <shared/network/BitReader.h>
@@ -23,7 +24,8 @@ namespace Firelands {
 
     class WorldSession : public IAuthSession, public std::enable_shared_from_this<WorldSession> {
     public:
-        explicit WorldSession(tcp::socket socket, std::shared_ptr<AuthService> authService, std::shared_ptr<CharacterService> charService);
+        explicit WorldSession(tcp::socket socket, std::shared_ptr<AuthService> authService, 
+                             std::shared_ptr<CharacterService> charService, std::shared_ptr<ICommandService> commandService);
         
         void Start();
         
@@ -33,21 +35,31 @@ namespace Firelands {
         void Close() override;
         std::string GetIpAddress() const override;
 
+        // Command Support
+        void SendNotification(const std::string& message);
+        void TeleportTo(uint32 mapId, float x, float y, float z, float orientation = 0.0f);
+        uint64 GetPlayerGuid() const { return _playerGuid; }
+        const MovementInfo& GetPosition() const { return _position; }
+
     private:
         void DoRead();
         void HandlePacket(ByteBuffer& buffer);
         void ProcessPacket(WorldPacket& packet);
         
         void HandleAuthSession(WorldPacket& packet);
-        void HandlePing(WorldPacket& packet);
         void HandleCharEnum(WorldPacket& packet);
         void HandleCharCreate(WorldPacket& packet);
         void HandleCharDelete(WorldPacket& packet);
         void HandlePlayerLogin(WorldPacket& packet);
         void HandleMovement(WorldPacket& packet);
+        void HandlePing(WorldPacket& packet);
         void HandleMessageChat(WorldPacket& packet);
+        void HandleRealmSplit(WorldPacket& packet);
         void HandleReadyForAccountDataTimes(WorldPacket& packet);
+        void HandleUpdateAccountData(WorldPacket& packet);
         void SendInitialObjectUpdate(uint64 guid);
+        void SendInitialSpells();
+        void SendInitialActionButtons();
         
         void ReadMovementInfo(WorldPacket& packet, MovementInfo& move);
 
@@ -75,6 +87,7 @@ namespace Firelands {
         tcp::socket _socket;
         std::shared_ptr<AuthService> _authService;
         std::shared_ptr<CharacterService> _charService;
+        std::shared_ptr<ICommandService> _commandService;
         bool _initialized = false;
         uint32 _serverSeed;
         uint32 _accountId = 0;

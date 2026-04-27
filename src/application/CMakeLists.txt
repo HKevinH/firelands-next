@@ -1,5 +1,6 @@
 add_library(FirelandsApplication STATIC
     services/RealmListService.cpp
+    services/CommandService.cpp
 )
 
 target_include_directories(FirelandsApplication PUBLIC

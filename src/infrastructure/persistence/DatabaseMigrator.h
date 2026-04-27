@@ -1,10 +1,11 @@
 #ifndef FIRELANDS_INFRASTRUCTURE_PERSISTENCE_DATABASE_MIGRATOR_H
 #define FIRELANDS_INFRASTRUCTURE_PERSISTENCE_DATABASE_MIGRATOR_H
-
 #include <conncpp.hpp>
 #include <string>
 #include <vector>
 #include <fstream>
+#include <filesystem>
+#include <algorithm>
 #include <shared/Logger.h>
 
 namespace Firelands {
@@ -15,7 +16,36 @@ namespace Firelands {
     class DatabaseMigrator {
     public:
         /**
+         * @brief Validates and executes all SQL files in a directory in alphabetical order.
+         */
+        static void MigrateDirectory(const std::string& host, const std::string& port, 
+                                   const std::string& user, const std::string& password, 
+                                   const std::string& dirPath) {
+            if (!std::filesystem::exists(dirPath)) {
+                LOG_ERROR("Migration directory does not exist: {}", dirPath);
+                return;
+            }
+
+            std::vector<std::string> sqlFiles;
+            for (const auto& entry : std::filesystem::directory_iterator(dirPath)) {
+                if (entry.is_regular_file() && entry.path().extension() == ".sql") {
+                    sqlFiles.push_back(entry.path().string());
+                }
+            }
+
+            // Ordenar alfabéticamente para asegurar el orden de ejecución (ej: 0_..., 1_...)
+            std::sort(sqlFiles.begin(), sqlFiles.end());
+
+            LOG_INFO("Starting database migrations from directory: {}", dirPath);
+            for (const auto& file : sqlFiles) {
+                Migrate(host, port, user, password, file);
+            }
+            LOG_INFO("All migrations from {} completed.", dirPath);
+        }
+
+        /**
          * @brief Validates and executes an SQL schema file.
+...
          * 
          * @param host Database host
          * @param port Database port

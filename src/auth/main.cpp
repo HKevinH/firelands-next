@@ -31,7 +31,7 @@ int main() {
             .Build()
     );
 
-    PrintBanner(BannerType::Auth);
+    PrintBanner(BannerType::Auth, true);
     LOG_INFO("Starting Authentication Server...");
 
     if (!Config::Instance().Load("authserver.yaml")) {
@@ -48,7 +48,7 @@ int main() {
         std::string db = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
 
         // Run automatic schema validation/creation
-        DatabaseMigrator::Migrate(host, port, dbUser, dbPass, "sql/auth_schema.sql");
+        DatabaseMigrator::MigrateDirectory(host, port, dbUser, dbPass, "sql");
 
         // 2. Establish Database Connection
         sql::Driver* driver = sql::mariadb::get_driver_instance();

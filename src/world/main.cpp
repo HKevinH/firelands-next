@@ -6,6 +6,7 @@
 #include <infrastructure/persistence/MySqlCharacterRepository.h>
 #include <infrastructure/persistence/DatabaseMigrator.h>
 #include <application/services/CharacterService.h>
+#include <application/services/CommandService.h>
 #include <shared/Config.h>
 #include <conncpp.hpp>
 #include <thread>
@@ -25,7 +26,7 @@ int main() {
             .Build()
     );
 
-    PrintBanner(BannerType::World);
+    PrintBanner(BannerType::World, true);
     LOG_INFO("Starting World Server...");
 
     if (!Config::Instance().Load("worldserver.yaml")) {
@@ -45,10 +46,8 @@ int main() {
         std::string charHost = Config::Instance().GetNested<std::string>({"Database", "Characters", "Host"}, "127.0.0.1");
         std::string charPort = Config::Instance().GetNested<std::string>({"Database", "Characters", "Port"}, "3306");
 
-        // Validate all required schemas
-        DatabaseMigrator::Migrate(authHost, authPort, dbUser, dbPass, "sql/auth_schema.sql");
-        DatabaseMigrator::Migrate(charHost, charPort, dbUser, dbPass, "sql/characters_schema.sql");
-        DatabaseMigrator::Migrate(charHost, charPort, dbUser, dbPass, "sql/world_schema.sql");
+        // Validate and apply all migrations in the sql/ directory
+        DatabaseMigrator::MigrateDirectory(authHost, authPort, dbUser, dbPass, "sql");
 
         // 2. Establish Database Connection (Auth database for session validation)
         std::string authDb = Config::Instance().GetNested<std::string>({"Database", "Auth", "Database"}, "firelands_auth");
@@ -71,9 +70,10 @@ int main() {
 
         auto charRepo = std::make_shared<MySqlCharacterRepository>(charConn);
         auto charService = std::make_shared<CharacterService>(charRepo);
+        auto commandService = std::make_shared<CommandService>();
 
-        auto sessionFactory = [authService, charService](boost::asio::ip::tcp::socket socket) {
-            std::make_shared<WorldSession>(std::move(socket), authService, charService)->Start();
+        auto sessionFactory = [authService, charService, commandService](boost::asio::ip::tcp::socket socket) {
+            std::make_shared<WorldSession>(std::move(socket), authService, charService, commandService)->Start();
         };
 
         AsyncNetworkServer worldServer(sessionFactory);

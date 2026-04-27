@@ -1,7 +1,8 @@
 CREATE DATABASE IF NOT EXISTS `firelands_characters`;
 USE `firelands_characters`;
 
-CREATE TABLE IF NOT EXISTS `characters` (
+DROP TABLE IF EXISTS `characters`;
+CREATE TABLE `characters` (
   `guid` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `account` int(10) unsigned NOT NULL DEFAULT '0',
   `name` varchar(12) NOT NULL DEFAULT '',

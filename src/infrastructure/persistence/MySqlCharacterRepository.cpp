@@ -83,7 +83,8 @@ namespace Firelands {
             stmnt->executeUpdate();
             return true;
         } catch (sql::SQLException& e) {
-            LOG_ERROR("Database error in CreateCharacter: {}", e.what());
+            LOG_ERROR("Database error in CreateCharacter: {} (SQLState: {}, ErrorCode: {})", 
+                      e.what(), e.getSQLState().c_str(), e.getErrorCode());
             return false;
         }
     }
