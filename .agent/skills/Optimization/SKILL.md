@@ -1,3 +1,7 @@
+---
+name: build-optimization
+description: Optimizes build times using Ninja, ccache, and Precompiled Headers (PCH). Use when adding new targets or heavy dependencies.
+---
 # SKILL-005: Build Optimization & Performance
 
 ## Core Principles
@@ -20,3 +24,10 @@ To maintain a fast development cycle, the build system is optimized for speed an
   ```cmake
   target_precompile_headers(<target_name> PRIVATE ${PROJECT_PCH_HEADERS})
   ```
+
+## Workflow Integration
+- **Understand:** Assess the impact of new code on build times and runtime performance.
+- **Plan:** Choose appropriate header inclusion methods (forward declarations vs. includes) and ensure new targets use PCH.
+- **Implement:** Apply build optimization best practices when creating or modifying targets.
+- **Verify (Tests):** Monitor compilation times and run benchmarks if performance-critical code is changed.
+- **Verify (Standards):** Verify that all new build targets are correctly configured for PCH and follow unity build compatibility rules.

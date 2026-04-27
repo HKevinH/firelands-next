@@ -1,3 +1,7 @@
+---
+name: tech-stack
+description: Defines C++17, CMake, and MySQL standards for cross-platform support. Use to ensure compatibility across Windows, Linux, and macOS.
+---
 # SKILL-004: Technical Stack & Platform Support
 
 ## Stack Definition
@@ -17,3 +21,10 @@
     - **Windows:** MSVC or MinGW.
     - **Linux:** GCC or Clang.
     - **macOS:** Clang (Apple Clang).
+
+## Workflow Integration
+- **Understand:** Review the required tech stack and platform constraints before starting the task.
+- **Plan:** Ensure the proposed solution utilizes C++17 standard features and cross-platform CMake practices.
+- **Implement:** Write code adhering to the language and platform-abstraction guidelines.
+- **Verify (Tests):** Ensure tests are compatible with the cross-platform nature of the codebase.
+- **Verify (Standards):** Build the project on the relevant target platforms (or simulate as appropriate) and ensure strict adherence to C++17 and standard library usage.
