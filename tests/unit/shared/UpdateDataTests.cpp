@@ -27,6 +27,7 @@ TEST(UpdateDataTest, BuildCreateObjectPacketForPlayer) {
     
     // Check structure
     packet.SetReadPos(0);
+    EXPECT_EQ(packet.Read<uint16>(), 0); // MapId
     ASSERT_EQ(packet.Read<uint32>(), 1); // 1 block
-    EXPECT_EQ(packet.Read<uint8>(), UPDATETYPE_CREATE_OBJECT);
+    EXPECT_EQ(packet.Read<uint8>(), UPDATETYPE_CREATE_OBJECT2);
 }

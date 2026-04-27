@@ -9,6 +9,7 @@
 #include <shared/network/BitWriter.h>
 #include <shared/network/ByteBuffer.h>
 #include <shared/network/WorldPacket.h>
+#include <shared/network/ServerPacket.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/MovementInfo.h>
 #include <shared/network/WorldCrypt.h>
@@ -30,6 +31,7 @@ namespace Firelands {
         void Start();
         
         void SendPacket(WorldPacket& packet);
+        void SendPacket(ServerPacket* packet);
         void SendPacket(ByteBuffer& buffer) override;
         void SendAuthChallenge();
         void Close() override;
@@ -53,6 +55,8 @@ namespace Firelands {
         void HandlePlayerLogin(WorldPacket& packet);
         void HandleMovement(WorldPacket& packet);
         void HandlePing(WorldPacket& packet);
+        void HandleTimeSyncResp(WorldPacket& packet);
+        void HandleMoveTimeSkipped(WorldPacket& packet);
         void HandleMessageChat(WorldPacket& packet);
         void HandleRealmSplit(WorldPacket& packet);
         void HandleReadyForAccountDataTimes(WorldPacket& packet);
@@ -60,7 +64,20 @@ namespace Firelands {
         void SendInitialObjectUpdate(uint64 guid);
         void SendInitialSpells();
         void SendInitialActionButtons();
+        void SendInitWorldStates();
+        void SendSetupCurrency();
         
+        void SendClientControlUpdate(uint64 guid);
+        void SendBindPointUpdate();
+        void SendWorldServerInfo();
+        void SendLoadCUFProfiles();
+        void SendForcedReactions();
+        void SendSetProficiency(uint8 itemClass, uint32 itemMask);
+        void SendTalentsInfo();
+        void SendInitialFactions();
+        void SendLoginVerifyWorld();
+        void SendClientCacheVersion(uint32 version);
+
         void ReadMovementInfo(WorldPacket& packet, MovementInfo& move);
 
         // Auth Refactor

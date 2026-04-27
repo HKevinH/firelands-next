@@ -17,3 +17,8 @@ All development must strictly follow these instructions and the directives defin
 - **SKILL-004 (Tech Stack):** C++17, CMake, MySql 8.0+, REST API. Multi-platform support via `std::filesystem` and CMake abstraction.
 - **SKILL-005 (Build Optimization):** Use Ninja for compilation (do not use CMake directly) + ccache. Use Precompiled Headers (PCH) for all targets. Forward declarations preferred.
 - **SKILL-006 (Strategic Delegation):** Use specialized sub-agents (Auth, World, Data, Core) for task execution.
+
+## Operational Mandates
+
+- **Build:** ALWAYS recompile the project after making any adjustments or code changes to verify build integrity.
+- **Inheritance:** Use inheritance to share implementation logic where it applies and improves code reuse.

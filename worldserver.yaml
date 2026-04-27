@@ -21,3 +21,7 @@ Database:
 Log:
   Level: "Info"
   File: "logs/firelands-world.log"
+
+Motd:
+  - "Welcome to Firelands WoW!"
+  - "Enjoy your stay in the lands of Fire and Ice."

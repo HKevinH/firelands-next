@@ -27,11 +27,11 @@ Creates or updates a user account in the `auth` database. It handles password ha
 - **username**: The name used for login.
 - **password**: The plain-text password (hashed by the tool).
 - **email**: (Optional) User's email address. Defaults to `<username>@firelands.com`.
-- **expansion**: (Optional) Expansion access (0-4). Defaults to `4` (Cataclysm).
+- **expansion**: (Optional) Expansion access (0-3). Defaults to `3` (Cataclysm).
 
 **Example:**
 ```bash
-./FirelandsDevTools account admin admin123 admin@example.com 4
+./FirelandsDevTools account admin admin123 admin@example.com 3
 ```
 
 #### 2. Realm Management

@@ -13,7 +13,7 @@ using namespace Firelands;
 
 void PrintUsage(const char* progName) {
     LOG_ERROR("Usage:");
-    LOG_ERROR("  {} account <username> <password> [email] [expansion (0-4)]", progName);
+    LOG_ERROR("  {} account <username> <password> [email] [expansion (0-3)]", progName);
     LOG_ERROR("  {} realm <id> <name> <address> <port> [icon] [timezone] [secLevel] [population]", progName);
 }
 
@@ -59,7 +59,13 @@ int main(int argc, char** argv) {
             std::string user = argv[2];
             std::string pass = argv[3];
             std::string email = (argc >= 5) ? argv[4] : (user + "@firelands.com");
-            uint8 expansion = (argc >= 6) ? static_cast<uint8>(std::stoi(argv[5])) : 4;
+            uint8 expansion = (argc >= 6) ? static_cast<uint8>(std::stoi(argv[5])) : 3;
+
+            if (expansion > 3) {
+                LOG_ERROR("Invalid expansion level: {}. Maximum allowed is 3 (Cataclysm).", (int)expansion);
+                Logger::Shutdown();
+                return 1;
+            }
 
             auto accountRepo = std::make_shared<MySqlAccountRepository>(conn);
 
