@@ -130,6 +130,10 @@ private:
   // Write queue: serializes async_write calls to prevent interleaving
   std::deque<std::shared_ptr<std::vector<uint8>>> _writeQueue;
   bool _writing = false;
+
+  // Diagnostics: last SMSG sent (helps correlate client disconnect/crash)
+  uint32 _lastSentOpcode = 0;
+  uint32 _lastSentPayloadSize = 0;
 };
 
 } // namespace Firelands

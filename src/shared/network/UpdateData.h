@@ -19,6 +19,11 @@ public:
   UpdateData() : _count(0), _mapId(0) {}
   explicit UpdateData(uint16 mapId) : _count(0), _mapId(mapId) {}
 
+  // Update flags (Cataclysm 4.3.4 / build 15595) aligned with FirelandsCore reference.
+  // We only define the ones we currently emit.
+  static constexpr uint32 UPDATEFLAG_SELF = 0x00001;
+  static constexpr uint32 UPDATEFLAG_LIVING = 0x00020;
+
   /**
    * @brief Adds a CreateObject block to the update data.
    * @param guid The GUID of the object being created.
@@ -33,65 +38,71 @@ public:
     _data.WritePackedGuid(guid);
     _data.Append<uint8>(static_cast<uint8>(typeId));
 
-    // Cataclysm 4.3.4 Build 15595 Movement Flags Bit Order
-    uint32 flags = 0x20; // UPDATEFLAG_SELF (0x20)
-    if (typeId == TYPEID_PLAYER || typeId == TYPEID_UNIT) {
-      flags |= 0x80; // UPDATEFLAG_LIVING (0x80)
-    }
+    // Cataclysm 4.3.4 (15595) movement update block.
+    // We currently build the minimal "self living unit" movement update matching FirelandsCore.
+    uint32 flags = UPDATEFLAG_SELF;
+    if (typeId == TYPEID_PLAYER || typeId == TYPEID_UNIT)
+      flags |= UPDATEFLAG_LIVING;
+
+    uint8 guidBytes[8];
+    for (int i = 0; i < 8; ++i)
+      guidBytes[i] = (guid >> (i * 8)) & 0xFF;
+
+    bool isZeroOrientation = (move.orientation == 0.0f);
+    uint32 movementFlags0 = 0;
+    uint16 movementFlags1 = 0;
+    bool hasPitch = false;
+    bool hasFallData = false;
+    bool hasSpline = false;
+    bool hasSplineElevation = false;
+    bool hasTransport = false;
 
     BitWriter bw(_data);
-    bw.WriteBit(false);        // UPDATEFLAG_PLAY_HOVER_ANIM
-    bw.WriteBit(false);        // UPDATEFLAG_SUPPRESSED_GREETINGS
-    bw.WriteBit(false);        // UPDATEFLAG_ROTATION
-    bw.WriteBit(false);        // UPDATEFLAG_ANIMKITS
-    bw.WriteBit(false);        // UPDATEFLAG_HAS_TARGET
-    bw.WriteBit(flags & 0x20); // UPDATEFLAG_SELF
-    bw.WriteBit(false);        // UPDATEFLAG_VEHICLE
-    bw.WriteBit(flags & 0x80); // UPDATEFLAG_LIVING
-    bw.WriteBits(0, 24);       // PauseTimes size
-    bw.WriteBit(false);        // UPDATEFLAG_NO_BIRTH_ANIM
-    bw.WriteBit(false);        // UPDATEFLAG_GO_TRANSPORT_POSITION
-    bw.WriteBit(false);        // UPDATEFLAG_STATIONARY_POSITION
-    bw.WriteBit(false);        // UPDATEFLAG_AREATRIGGER
-    bw.WriteBit(false);        // UPDATEFLAG_ENABLE_PORTALS
-    bw.WriteBit(false);        // UPDATEFLAG_TRANSPORT
+    bw.WriteBit(false); // UPDATEFLAG_PLAY_HOVER_ANIM
+    bw.WriteBit(false); // UPDATEFLAG_SUPPRESSED_GREETINGS
+    bw.WriteBit(false); // UPDATEFLAG_ROTATION
+    bw.WriteBit(false); // UPDATEFLAG_ANIMKITS
+    bw.WriteBit(false); // UPDATEFLAG_HAS_TARGET
+    bw.WriteBit((flags & UPDATEFLAG_SELF) != 0);
+    bw.WriteBit(false); // UPDATEFLAG_VEHICLE
+    bw.WriteBit((flags & UPDATEFLAG_LIVING) != 0);
+    bw.WriteBits(0, 24); // PauseTimes size
+    bw.WriteBit(false);  // UPDATEFLAG_NO_BIRTH_ANIM
+    bw.WriteBit(false);  // UPDATEFLAG_GO_TRANSPORT_POSITION
+    bw.WriteBit(false);  // UPDATEFLAG_STATIONARY_POSITION
+    bw.WriteBit(false);  // UPDATEFLAG_AREATRIGGER
+    bw.WriteBit(false);  // UPDATEFLAG_ENABLE_PORTALS
+    bw.WriteBit(false);  // UPDATEFLAG_TRANSPORT
 
-    if (flags & 0x80) { // LIVING bits (exact 15595 sequence)
-      uint8 guidBytes[8];
-      for (int i = 0; i < 8; ++i)
-        guidBytes[i] = (guid >> (i * 8)) & 0xFF;
-      bool isZeroOrientation = (move.orientation == 0.0f);
-
-      bw.WriteBit(true); // !Has MoveFlags0 (using 0 for now)
+    if (flags & UPDATEFLAG_LIVING) {
+      bw.WriteBit(!movementFlags0); // !Has MoveFlags0
       bw.WriteBit(isZeroOrientation);
       bw.WriteBit(guidBytes[7] != 0);
       bw.WriteBit(guidBytes[3] != 0);
       bw.WriteBit(guidBytes[2] != 0);
+      // movementFlags0 == 0 => no bits written
 
-      bw.WriteBit(true);  // !Has player spline data
-      bw.WriteBit(true);  // !Has pitch
-      bw.WriteBit(false); // Has spline data
-      bw.WriteBit(false); // Has fall data
-      bw.WriteBit(true);  // !Has spline elevation
+      bw.WriteBit(false);     // !Has player spline data (hasSpline && !isPlayer)
+      bw.WriteBit(!hasPitch); // !Has pitch
+      bw.WriteBit(hasSpline); // Has spline data
+      bw.WriteBit(hasFallData);
+      bw.WriteBit(!hasSplineElevation); // !Has spline elevation
       bw.WriteBit(guidBytes[5] != 0);
-      bw.WriteBit(false); // Has transport data
-      bw.WriteBit(false); // !HasTime (we write 0, so HasTime is true)
+      bw.WriteBit(!hasTransport); // Has transport data
+      bw.WriteBit(false);         // !HasTime (always send time in bytes)
 
       bw.WriteBit(guidBytes[4] != 0);
       bw.WriteBit(guidBytes[6] != 0);
       bw.WriteBit(guidBytes[0] != 0);
       bw.WriteBit(guidBytes[1] != 0);
-      bw.WriteBit(false); // HeightChangeFailed
-      bw.WriteBit(true);  // !Has MoveFlags1
+      bw.WriteBit(false);           // HeightChangeFailed
+      bw.WriteBit(!movementFlags1); // !Has MoveFlags1
+      // movementFlags1 == 0 => no bits written
     }
 
     bw.Flush();
 
-    if (flags & 0x80) { // LIVING bytes
-      uint8 guidBytes[8];
-      for (int i = 0; i < 8; ++i)
-        guidBytes[i] = (guid >> (i * 8)) & 0xFF;
-
+    if (flags & UPDATEFLAG_LIVING) {
       _data.WriteByteSeq(guidBytes[4]);
       _data.Append<float>(4.5f); // MOVE_RUN_BACK
       _data.Append<float>(4.5f); // MOVE_SWIM_BACK
@@ -106,12 +117,15 @@ public:
       _data.WriteByteSeq(guidBytes[7]);
       _data.WriteByteSeq(guidBytes[1]);
       _data.WriteByteSeq(guidBytes[2]);
-      _data.Append<float>(2.5f);                            // MOVE_WALK
-      _data.Append<uint32>(static_cast<uint32>(move.time)); // GameTime
-      _data.Append<float>(3.14159f);                        // MOVE_TURN_RATE
+      _data.Append<float>(2.5f); // MOVE_WALK
+
+      // Time is expected to be present (FirelandsCore always writes it)
+      _data.Append<uint32>(static_cast<uint32>(move.time));
+
+      _data.Append<float>(3.14159f); // MOVE_TURN_RATE
       _data.WriteByteSeq(guidBytes[6]);
       _data.Append<float>(7.0f); // MOVE_FLIGHT
-      if (move.orientation != 0.0f)
+      if (!isZeroOrientation)
         _data.Append<float>(move.orientation);
       _data.Append<float>(7.0f); // MOVE_RUN
       _data.Append<float>(4.5f); // MOVE_FLIGHT_BACK

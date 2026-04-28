@@ -44,6 +44,9 @@ void WorldSession::Start() {
 }
 
 void WorldSession::SendPacket(WorldPacket &packet) {
+  _lastSentOpcode = packet.GetOpcode();
+  _lastSentPayloadSize = static_cast<uint32>(packet.Size());
+
   ByteBuffer buffer;
   // En Cataclysm, la cabecera del servidor es [Size:2 (BE)][Opcode:2 (LE)]
   // El Size incluye los 2 bytes del Opcode.
@@ -63,6 +66,10 @@ void WorldSession::SendPacket(WorldPacket &packet) {
   if (packet.Size() > 0) {
     buffer.Append(packet.GetBuffer(), packet.Size());
   }
+
+  LOG_DEBUG("[SMSG] opcode=0x{:04X} payload={} total_on_wire={}",
+            static_cast<uint32>(packet.GetOpcode()), packet.Size(),
+            static_cast<uint32>(buffer.Size()));
 
   SendPacket(buffer);
 }
@@ -262,6 +269,10 @@ void WorldSession::DoRead() {
           DoRead();
         } else if (ec != boost::asio::error::operation_aborted) {
           LOG_ERROR("DoRead error: {} ({})", ec.message(), ec.value());
+          if (_lastSentOpcode) {
+            LOG_ERROR("Last SMSG before disconnect: opcode=0x{:04X} payload={}",
+                      _lastSentOpcode, _lastSentPayloadSize);
+          }
           Close();
         }
       });
@@ -451,6 +462,10 @@ void WorldSession::HandleAuthSession(WorldPacket &packet) {
 
   SendAuthResponse();
   SendAddonInfo();
+  // Reference parity: after auth success, send cache version and tutorial flags.
+  // FirelandsCore does: SendAddonsInfo(); SendClientCacheVersion(...); SendTutorialsData();
+  SendClientCacheVersion(0);
+  SendTutorialFlags();
 }
 
 void WorldSession::HandleAuthSessionScattered(
@@ -558,6 +573,7 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
   bw.WriteBits(count, 17);
 
   if (count == 0) {
+    bw.Flush();
     SendPacket(response);
     return;
   }
@@ -727,36 +743,34 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   }
   const auto &character = *characterOpt;
 
-  SendFeatureSystemStatus();
+  // Reference parity (FirelandsCore): keep "before add to map" packets separate
+  // from "after add to map" packets. Some packets (world states, time sync) are
+  // expected only once the player is actually in the map.
   SendAccountDataTimes(0x15);
-  SendMotd();
-  SendTutorialFlags();
-  SendInitWorldStates(character.GetMapId(), character.GetZoneId());
-  SendSetupCurrency();
   SendLearnedDanceMoves();
-  SendInitialSpells();
-  SendInitialActionButtons();
-  
-  WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
-  timeSync.Append<uint32>(0);
-  SendPacket(timeSync);
 
-  SendLoginSetTimeSpeed();
-  SendSetTimeZoneInformation();
+  SendMotd();
+  SendFeatureSystemStatus();
+  SendTutorialFlags();
+
+  // Rough equivalent of Player::SendInitialPacketsBeforeAddToMap
   SendClientControlUpdate(guid);
   SendBindPointUpdate();
   SendWorldServerInfo();
-  SendLoadCUFProfiles();
   SendForcedReactions();
+  SendSetupCurrency();
+  SendLoginSetTimeSpeed();
+  SendSetTimeZoneInformation();
   SendSetProficiency(1, 0xFFFFFFFF);
   SendSetProficiency(2, 0xFFFFFFFF);
   SendTalentsInfo();
+  SendInitialSpells();
+  SendInitialActionButtons();
   SendInitialFactions();
   SendClientCacheVersion(0);
 
-  SendLoginVerifyWorld(character.GetMapId(), character.GetX(), character.GetY(), character.GetZ(), character.GetOrientation());
-
-  UpdateData update(character.GetMapId());
+  // Create in-memory player and add to map BEFORE sending verify-world + worldstates
+  _mapId = character.GetMapId();
   MovementInfo move;
   static auto startTime = std::chrono::steady_clock::now();
   auto now = std::chrono::steady_clock::now();
@@ -765,6 +779,16 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   move.y = character.GetY();
   move.z = character.GetZ();
   move.orientation = character.GetOrientation();
+
+  auto player = std::make_shared<Player>(guid, shared_from_this());
+  player->SetPosition(move);
+  WorldService::Instance().AddPlayerToMap(_mapId, player);
+
+  SendLoginVerifyWorld(character.GetMapId(), character.GetX(), character.GetY(),
+                       character.GetZ(), character.GetOrientation());
+
+  // Now that the player is on the map, send create/update data and "after add" packets
+  UpdateData update(character.GetMapId());
 
   std::map<uint16, uint32> fields;
   fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
@@ -787,10 +811,12 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   update.Build(updatePacket);
   SendPacket(updatePacket);
 
-  _mapId = character.GetMapId();
-  auto player = std::make_shared<Player>(guid, shared_from_this());
-  player->SetPosition(move);
-  WorldService::Instance().AddPlayerToMap(_mapId, player);
+  // Equivalent of Player::SendInitialPacketsAfterAddToMap
+  SendInitWorldStates(character.GetMapId(), character.GetZoneId());
+  WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
+  timeSync.Append<uint32>(0);
+  SendPacket(timeSync);
+  SendLoadCUFProfiles();
 
   LOG_INFO("Player {} logged in and spawned at Map {}", guid, _mapId);
 }
@@ -852,9 +878,27 @@ void WorldSession::HandleReadyForAccountDataTimes(WorldPacket & /*packet*/) {
 }
 
 void WorldSession::HandleUpdateAccountData(WorldPacket &packet) {
-  packet.Read<uint32>(); // type
-  packet.Read<uint32>(); // time
-  packet.Read<uint32>(); // size
+  // Reference behavior: always ACK with SMSG_UPDATE_ACCOUNT_DATA_COMPLETE.
+  // We don't persist the data yet, but the client expects the completion packet.
+  uint32 type = packet.Read<uint32>();
+  uint32 timestamp = packet.Read<uint32>();
+  uint32 decompressedSize = packet.Read<uint32>();
+
+  (void)timestamp;
+
+  // In reference, NUM_ACCOUNT_DATA_TYPES bounds are enforced. We keep it permissive for now,
+  // but still ACK to avoid client-side crashes.
+  if (decompressedSize > 0) {
+    // Skip remaining compressed payload (if any)
+    while (packet.GetReadPos() < packet.Size()) {
+      packet.Read<uint8>();
+    }
+  }
+
+  WorldPacket ack(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE);
+  ack.Append<uint32>(type);
+  ack.Append<uint32>(0); // result (0 = OK)
+  SendPacket(ack);
 }
 
 void WorldSession::HandleMovement(WorldPacket &packet) {
