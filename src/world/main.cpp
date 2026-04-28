@@ -17,6 +17,13 @@ using namespace Firelands;
 int main() {
   PrintBanner(BannerType::World, true);
 
+  // Initial logging setup before config load
+  Logger::Init(LoggerBuilder()
+                   .WithName("firelands-world")
+                   .WithConsole(true)
+                   .WithConsoleLevel(LogLevel::Info)
+                   .Build());
+
   if (!Config::Instance().Load("worldserver.yaml")) {
     LOG_ERROR("Could not load worldserver.yaml, using defaults or exiting...");
     return 1;
@@ -24,12 +31,15 @@ int main() {
 
   auto config = Config::Instance();
 
+  // Re-initialize logger with config values
+  Logger::Shutdown();
   Logger::Init(LoggerBuilder()
                    .WithName("firelands-world")
                    .WithConsole(true)
                    .WithConsoleLevel(config.GetNested<LogLevel>(
-                       {"Logging", "Console"}, LogLevel::Info))
-                   .WithFile(true, "logs/firelands-world.log")
+                       {"Log", "Level"}, LogLevel::Info))
+                   .WithFile(true, config.GetNested<std::string>(
+                       {"Log", "File"}, "logs/firelands-world.log"))
                    .WithFileLevel(LogLevel::Debug)
                    .WithRotatingFile(10 * 1024 * 1024, 5)
                    .Build());

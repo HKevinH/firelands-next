@@ -7,6 +7,7 @@ add_executable(FirelandsUnitTests
     unit/shared/UpdateDataTests.cpp
     unit/shared/AuthPacketsTests.cpp
     unit/shared/LoggerTests.cpp
+    unit/shared/ConfigTests.cpp
     unit/application/SRPServiceTests.cpp
     unit/application/RealmListServiceTests.cpp
     unit/application/AuthServiceTests.cpp

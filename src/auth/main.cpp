@@ -21,18 +21,29 @@ using namespace Firelands;
 int main() {
   PrintBanner(BannerType::Auth, true);
 
+  // Initialize logging before config load
+  Logger::Init(LoggerBuilder()
+                   .WithName("firelands-auth")
+                   .WithConsole(true)
+                   .WithConsoleLevel(LogLevel::Info)
+                   .Build());
+
   auto config = Config::Instance();
 
   if (!config.Load("authserver.yaml")) {
     LOG_WARN("Could not load authserver.yaml, using defaults...");
   }
 
-  // Initialize logging: console (Info+) and rotating file (Debug+)
+  // Update logging with config values if needed
+  LogLevel consoleLevel = config.GetNested<LogLevel>({"Log", "Level"}, LogLevel::Info);
+  std::string logFile = config.GetNested<std::string>({"Log", "File"}, "logs/firelands-auth.log");
+
+  Logger::Shutdown();
   Logger::Init(LoggerBuilder()
                    .WithName("firelands-auth")
                    .WithConsole(true)
-                   .WithConsoleLevel(LogLevel::Info)
-                   .WithFile(true, "logs/firelands-auth.log")
+                   .WithConsoleLevel(consoleLevel)
+                   .WithFile(true, logFile)
                    .WithFileLevel(LogLevel::Debug)
                    .WithRotatingFile(10 * 1024 * 1024, 5)
                    .Build());
@@ -82,20 +93,15 @@ int main() {
     };
     AsyncNetworkServer authServer(sessionFactory);
 
-    auto networkConfig =
-        config.GetNested<std::unordered_map<std::string, std::string>>(
-            {"Network"}, {});
-    std::string bindIp = networkConfig["BindAddress"];
-    int netPort = std::stoi(networkConfig["Port"]);
+    std::string bindIp = config.GetNested<std::string>({"Network", "BindAddress"}, "0.0.0.0");
+    int netPort = config.GetNested<int>({"Network", "Port"}, 3724);
 
     if (authServer.Start(bindIp, netPort)) {
+
       LOG_INFO("Authentication Server listening on {}:{}", bindIp, netPort);
       // 5. Initialize REST API
-      auto restConfig =
-          config.GetNested<std::unordered_map<std::string, std::string>>(
-              {"Network"}, {});
-      std::string restBindIp = restConfig["RestBindAddress"];
-      int restPort = std::stoi(restConfig["RestPort"]);
+      std::string restBindIp = config.GetNested<std::string>({"Network", "BindAddress"}, "0.0.0.0");
+      int restPort = config.GetNested<int>({"Network", "RestPort"}, 8081);
 
       RestAuthServer restServer(authService, webSessionService, restBindIp,
                                 restPort);
