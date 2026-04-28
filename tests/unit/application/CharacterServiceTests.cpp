@@ -12,6 +12,7 @@ public:
     MOCK_METHOD(bool, CreateCharacter, (const Character&), (override));
     MOCK_METHOD(bool, DeleteCharacter, (uint32_t, uint32_t), (override));
     MOCK_METHOD(bool, IsNameAvailable, (const std::string&), (override));
+    MOCK_METHOD(std::optional<Character>, GetCharacterByGuid, (uint64_t), (override));
 };
 
 TEST(CharacterServiceTests, GetCharacters_ReturnsCharactersFromRepository) {
@@ -19,7 +20,7 @@ TEST(CharacterServiceTests, GetCharacters_ReturnsCharactersFromRepository) {
     CharacterService service(repo);
 
     uint32_t accountId = 1;
-    auto mockChar = std::make_shared<Character>(1, accountId, "Test", 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.0f, 0.0f, 0.0f, 0, 0, 0, true);
+    auto mockChar = std::make_shared<Character>(1, accountId, "Test", 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0, true);
     std::vector<std::shared_ptr<Character>> characters = { mockChar };
 
     EXPECT_CALL(*repo, GetCharactersByAccount(accountId))

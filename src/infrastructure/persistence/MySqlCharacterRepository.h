@@ -16,7 +16,7 @@ namespace Firelands {
         bool CreateCharacter(const Character& character) override;
         bool DeleteCharacter(uint32_t guid, uint32_t accountId) override;
         bool IsNameAvailable(const std::string& name) override;
-
+        std::optional<Character> GetCharacterByGuid(uint64_t guid) override;
     private:
         std::shared_ptr<sql::Connection> _connection;
     };

@@ -35,3 +35,38 @@ TEST(ByteBufferTest, ResizeAndAccess) {
     EXPECT_EQ(buffer.Data()[5], 0xAA);
     EXPECT_EQ(buffer.Size(), 10);
 }
+
+TEST(ByteBufferTest, AppendPackedTime) {
+    ByteBuffer buffer;
+    // 2026-04-27 18:10:00 (Mon)
+    // tm_year = 126 (2026 - 1900)
+    // tm_mon = 3 (April, 0-indexed)
+    // tm_mday = 27
+    // tm_wday = 1 (Monday)
+    // tm_hour = 18
+    // tm_min = 10
+    
+    std::tm t = {};
+    t.tm_year = 126;
+    t.tm_mon = 3;
+    t.tm_mday = 27;
+    t.tm_wday = 1;
+    t.tm_hour = 18;
+    t.tm_min = 10;
+    
+    time_t timeVal = mktime(&t);
+    buffer.AppendPackedTime(timeVal);
+    
+    uint32 packed = buffer.Read<uint32>();
+    
+    // Expected: (126-100)<<24 | 3<<20 | (27-1)<<14 | 1<<11 | 18<<6 | 10
+    // 26 << 24 = 0x1A000000
+    // 3 << 20  = 0x00300000
+    // 26 << 14 = 0x00068000
+    // 1 << 11  = 0x00000800
+    // 18 << 6  = 0x00000480
+    // 10       = 0x0000000A
+    // Sum      = 0x1A368C8A
+    
+    EXPECT_EQ(packed, 0x1A368C8A);
+}

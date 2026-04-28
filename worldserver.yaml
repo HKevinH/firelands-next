@@ -8,15 +8,9 @@ Database:
   User: "firelands"
   Password: "firelands"
   Auth:
-    Host: "127.0.0.1"
-    Port: 3306
-    Database: "firelands_auth"
+    URI: "jdbc:mariadb://127.0.0.1:3306/firelands_auth"
   Characters:
-    Host: "127.0.0.1"
-    Port: 3306
-    User: "firelands"
-    Password: "firelands"
-    Database: "firelands_characters"
+    URI: "jdbc:mariadb://127.0.0.1:3306/firelands_characters"
 
 Log:
   Level: "Info"

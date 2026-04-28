@@ -1,11 +1,11 @@
 #pragma once
 
-#include <openssl/hmac.h>
-#include <openssl/evp.h>
-#include <shared/Common.h>
-#include <vector>
 #include <algorithm>
 #include <cstring>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <shared/Common.h>
+#include <vector>
 
 namespace Firelands {
 
@@ -45,8 +45,12 @@ private:
 class WorldCrypt {
 public:
   void Init(const std::vector<uint8_t> &sessionKey) {
-    static const uint8_t ServerEncryptionKeySeed[] = { 0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA, 0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57 };
-    static const uint8_t ServerDecryptionKeySeed[] = { 0xC2, 0xB3, 0x72, 0x3C, 0xC6, 0xAE, 0xD9, 0xB5, 0x34, 0x3C, 0x53, 0xEE, 0x2F, 0x43, 0x67, 0xCE };
+    static const uint8_t ServerEncryptionKeySeed[] = {
+        0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA,
+        0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57};
+    static const uint8_t ServerDecryptionKeySeed[] = {
+        0xC2, 0xB3, 0x72, 0x3C, 0xC6, 0xAE, 0xD9, 0xB5,
+        0x34, 0x3C, 0x53, 0xEE, 0x2F, 0x43, 0x67, 0xCE};
 
     uint8_t encryptHash[20], decryptHash[20];
     unsigned int hashLen = 20;
@@ -54,9 +58,11 @@ public:
     // HMAC(evp, key, key_len, data, data_len, digest, digest_len)
     // REFERENCIA: Key = Seed, Data = SessionKey (K)
     HMAC(EVP_sha1(), ServerEncryptionKeySeed, sizeof(ServerEncryptionKeySeed),
-         sessionKey.data(), static_cast<int>(sessionKey.size()), encryptHash, &hashLen);
+         sessionKey.data(), static_cast<int>(sessionKey.size()), encryptHash,
+         &hashLen);
     HMAC(EVP_sha1(), ServerDecryptionKeySeed, sizeof(ServerDecryptionKeySeed),
-         sessionKey.data(), static_cast<int>(sessionKey.size()), decryptHash, &hashLen);
+         sessionKey.data(), static_cast<int>(sessionKey.size()), decryptHash,
+         &hashLen);
 
     _encrypt.Init(encryptHash, 20);
     _decrypt.Init(decryptHash, 20);
@@ -74,11 +80,13 @@ public:
   bool IsInitialized() const { return _initialized; }
 
   void EncryptSend(uint8 *header, size_t len) {
-    if (_initialized) _encrypt.Process(header, len);
+    if (_initialized)
+      _encrypt.Process(header, len);
   }
 
   void DecryptRecv(uint8 *header, size_t len) {
-    if (_initialized) _decrypt.Process(header, len);
+    if (_initialized)
+      _decrypt.Process(header, len);
   }
 
 private:

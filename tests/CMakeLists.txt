@@ -11,6 +11,7 @@ add_executable(FirelandsUnitTests
     unit/application/RealmListServiceTests.cpp
     unit/application/AuthServiceTests.cpp
     unit/application/CharacterServiceTests.cpp
+    unit/domain/MapTests.cpp
 )
 
 target_link_libraries(FirelandsUnitTests

@@ -1,14 +1,17 @@
-#include <algorithm>
-#include <ctime>
-#include <random>
+#include <application/services/WorldService.h>
 #include <domain/models/Chat.h>
+#include <domain/world/Player.h>
 #include <infrastructure/network/sessions/WorldSession.h>
+#include <shared/Config.h>
 #include <shared/Crypto.h>
 #include <shared/Logger.h>
-#include <shared/Config.h>
 #include <shared/network/UpdateData.h>
 #include <shared/network/UpdateFields.h>
 #include <shared/network/packets/MotdPacket.h>
+#include <shared/network/packets/VerifyWorldPacket.h>
+#include <shared/network/packets/SetProficiencyPacket.h>
+#include <ctime>
+#include <chrono>
 
 namespace Firelands {
 
@@ -17,8 +20,9 @@ WorldSession::WorldSession(tcp::socket socket,
                            std::shared_ptr<CharacterService> charService,
                            std::shared_ptr<ICommandService> commandService)
     : _socket(std::move(socket)), _authService(std::move(authService)),
-      _charService(std::move(charService)), _commandService(std::move(commandService)),
-      _serverSeed(0), _accountId(0) {}
+      _charService(std::move(charService)),
+      _commandService(std::move(commandService)), _serverSeed(0),
+      _accountId(0) {}
 
 void WorldSession::Start() {
   LOG_INFO("WorldSession started for {}", GetIpAddress());
@@ -39,7 +43,7 @@ void WorldSession::Start() {
   DoRead();
 }
 
-void WorldSession::SendPacket(WorldPacket& packet) {
+void WorldSession::SendPacket(WorldPacket &packet) {
   ByteBuffer buffer;
   // En Cataclysm, la cabecera del servidor es [Size:2 (BE)][Opcode:2 (LE)]
   // El Size incluye los 2 bytes del Opcode.
@@ -63,11 +67,11 @@ void WorldSession::SendPacket(WorldPacket& packet) {
   SendPacket(buffer);
 }
 
-void WorldSession::SendPacket(ServerPacket* packet) {
-    if (packet) {
-        SendPacket(*const_cast<WorldPacket*>(packet->Write()));
-        delete packet;
-    }
+void WorldSession::SendPacket(ServerPacket *packet) {
+  if (packet) {
+    SendPacket(*const_cast<WorldPacket *>(packet->Write()));
+    delete packet;
+  }
 }
 
 void WorldSession::SendPacket(ByteBuffer &buffer) {
@@ -309,20 +313,48 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_AUTH_SESSION:
     HandleAuthSession(packet);
     break;
-  case CMSG_CHAR_ENUM:
-    HandleCharEnum(packet);
-    break;
   case CMSG_CHAR_CREATE:
     HandleCharCreate(packet);
     break;
   case CMSG_CHAR_DELETE:
     HandleCharDelete(packet);
     break;
-  case CMSG_PLAYER_LOGIN:
-    HandlePlayerLogin(packet);
+  case CMSG_CHAR_ENUM:
+    HandleCharEnum(packet);
+    break;
+  case CMSG_LOADING_SCREEN_NOTIFY:
+    // Simply acknowledge loading screen progress
+    break;
+  case CMSG_LOG_DISCONNECT:
+    LOG_INFO("Client disconnected (CMSG_LOG_DISCONNECT)");
+    Close();
     break;
   case CMSG_MESSAGECHAT:
     HandleMessageChat(packet);
+    break;
+  case CMSG_MOVE_TIME_SKIPPED:
+    HandleMoveTimeSkipped(packet);
+    break;
+  case CMSG_PING:
+    HandlePing(packet);
+    break;
+  case CMSG_PLAYER_LOGIN:
+    HandlePlayerLogin(packet);
+    break;
+  case CMSG_READY_FOR_ACCOUNT_DATA_TIMES:
+    HandleReadyForAccountDataTimes(packet);
+    break;
+  case CMSG_REALM_SPLIT:
+    HandleRealmSplit(packet);
+    break;
+  case CMSG_TIME_SYNC_RESP:
+    HandleTimeSyncResp(packet);
+    break;
+  case CMSG_UPDATE_ACCOUNT_DATA:
+    HandleUpdateAccountData(packet);
+    break;
+  case CMSG_VIOLENCE_LEVEL:
+    // Ignore violence level settings
     break;
   case MSG_MOVE_HEARTBEAT:
   case MSG_MOVE_START_FORWARD:
@@ -331,34 +363,14 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case MSG_MOVE_SET_FACING:
     HandleMovement(packet);
     break;
-  case CMSG_PING:
-    HandlePing(packet);
-    break;
-  case CMSG_TIME_SYNC_RESP:
-    HandleTimeSyncResp(packet);
-    break;
-  case CMSG_MOVE_TIME_SKIPPED:
-    HandleMoveTimeSkipped(packet);
-    break;
-  case CMSG_REALM_SPLIT:
-    HandleRealmSplit(packet);
-    break;
-  case CMSG_READY_FOR_ACCOUNT_DATA_TIMES:
-    HandleReadyForAccountDataTimes(packet);
-    break;
-  case CMSG_UPDATE_ACCOUNT_DATA:
-    HandleUpdateAccountData(packet);
-    break;
-  case CMSG_LOG_DISCONNECT:
-    LOG_INFO("Client disconnected (CMSG_LOG_DISCONNECT)");
-    Close();
-    break;
   default:
     LOG_WARN("[PACKET] Unknown/unhandled opcode: 0x{:04X} (size: {})", opcode,
              packet.Size());
     break;
   }
 }
+
+// --- Client Packet Handlers (CMSG) ---
 
 void WorldSession::HandleAuthSession(WorldPacket &packet) {
   uint8 digest[20];
@@ -411,7 +423,6 @@ void WorldSession::HandleAuthSession(WorldPacket &packet) {
   LOG_INFO("[AUTH] WorldCrypt initialized with 40 bytes of K");
 
   // 4. Perform Digest validation
-  // Referencia Cataclysm (WorldSocket.cpp:600):
   // SHA1(Account, t(0), ClientChallenge, ServerSeed, SessionKey)
   Crypto::SHA1 sha;
   sha.Update(Crypto::ToUpper(account));
@@ -506,208 +517,37 @@ void WorldSession::HandleAuthSessionStandard(WorldPacket &packet, uint16 &build,
 
 void WorldSession::SendAuthResponse() {
   WorldPacket response(SMSG_AUTH_RESPONSE);
-
-  // Cata 4.3.4 (15595) SMSG_AUTH_RESPONSE bit-packed structure
-  // Referencia: AuthenticationPackets.cpp:105
   BitWriter bw(response);
   bw.WriteBit(false); // hasWaitInfo
   bw.WriteBit(true);  // hasSuccessInfo
   bw.Flush();
 
-  // SuccessInfo fields (if hasSuccessInfo was true)
   response.Append<uint32>(0); // TimeRemain
   response.Append<uint8>(3);  // ActiveExpansionLevel (Cata)
   response.Append<uint32>(0); // TimeSecondsUntilPCKick
   response.Append<uint8>(3);  // AccountExpansionLevel (Cata)
   response.Append<uint32>(0); // TimeRested
   response.Append<uint8>(0);  // TimeOptions
-
-  // Result (AUTH_OK = 12)
-  response.Append<uint8>(12);
+  response.Append<uint8>(12); // Result (AUTH_OK = 12)
 
   SendPacket(response);
-  LOG_INFO("[AUTH] SMSG_AUTH_RESPONSE (AUTH_OK) sent (Full Parity).");
+  LOG_INFO("[AUTH] SMSG_AUTH_RESPONSE (AUTH_OK) sent.");
 }
 
 void WorldSession::SendAddonInfo() {
   WorldPacket data(SMSG_ADDON_INFO);
-
-  // In 15595, when no addons are sent, we just send two 0 uint32s (counts)
-  data.Append<uint32>(0); // Addon count
-  data.Append<uint32>(0); // Banned addon count
+  data.Append<uint32>(0); // Banned addon count (0)
 
   SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_ADDON_INFO sent (Empty, 15595 parity)");
-}
-
-void WorldSession::SendClientCacheVersion() {
-  WorldPacket cacheVer(SMSG_CLIENTCACHE_VERSION);
-  cacheVer.Append<uint32>(0);
-  SendPacket(cacheVer);
-  LOG_INFO("[AUTH] SMSG_CLIENTCACHE_VERSION sent");
-}
-
-void WorldSession::SendTutorialFlags() {
-  WorldPacket tutorials(SMSG_TUTORIAL_FLAGS);
-  for (int i = 0; i < 8; ++i)
-    tutorials.Append<uint32>(0xFFFFFFFF);
-  SendPacket(tutorials);
-  LOG_INFO("[AUTH] SMSG_TUTORIAL_FLAGS sent");
-}
-
-void WorldSession::SendAccountDataTimes(uint32 mask) {
-  WorldPacket data(SMSG_ACCOUNT_DATA_TIMES);
-  data.Append<uint32>(static_cast<uint32>(std::time(nullptr))); // Server time
-  data.Append<uint8>(1);     // Unknown byte from reference
-  data.Append<uint32>(mask); // type mask
-
-  for (int i = 0; i < 8; ++i) {
-    if (mask & (1 << i)) {
-      data.Append<uint32>(0); // Time for each data type
-    }
-  }
-  SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_ACCOUNT_DATA_TIMES sent (Full Parity, mask: 0x{:02X})",
-           mask);
-}
-
-void WorldSession::SendFeatureSystemStatus() {
-  WorldPacket features(SMSG_FEATURE_SYSTEM_STATUS);
-
-  // Cata 4.3.4 (15595) Byte fields
-  features.Append<uint8>(0);  // ComplaintStatus
-  features.Append<uint32>(0); // ScrollOfResurrectionRequestsRemaining
-  features.Append<uint32>(0); // ScrollOfResurrectionMaxRequestsPerDay
-  features.Append<uint32>(0); // CfgRealmID
-  features.Append<uint32>(0); // CfgRealmRecID
-
-  // Bit fields (Exact order for 15595)
-  BitWriter bw(features);
-  bw.WriteBit(false); // ItemRestorationButtonEnabled
-  bw.WriteBit(false); // TravelPassEnabled
-  bw.WriteBit(false); // ScrollOfResurrectionEnabled
-  bw.WriteBit(false); // EuropaTicketSystemStatus.has_value()
-  bw.WriteBit(false); // SessionAlert.has_value()
-  bw.WriteBit(false); // VoiceEnabled
-  bw.Flush();
-
-  SendPacket(features);
-  LOG_INFO("[AUTH] SMSG_FEATURE_SYSTEM_STATUS sent (15595 parity)");
-}
-
-void WorldSession::SendRealmSplit(uint32 realmId) {
-  WorldPacket split(SMSG_REALM_SPLIT);
-  std::string splitDate = "01/01/01";
-
-  split.Append<uint32>(realmId); // Realm ID
-  split.Append<uint32>(0);       // State (0 = Normal)
-
-  BitWriter bw(split);
-  bw.WriteBits(static_cast<uint32>(splitDate.length()), 7);
-  bw.Flush();
-
-  split.WriteStringNoNull(splitDate);
-
-  SendPacket(split);
-  LOG_INFO("[AUTH] SMSG_REALM_SPLIT sent (Bit-packed 4.3.4)");
-}
-
-void WorldSession::SendSetTimeZoneInformation() {
-  WorldPacket data(SMSG_SET_TIME_ZONE_INFORMATION);
-  std::string serverTz = "UTC";
-  std::string localTz = "UTC";
-
-  BitWriter bw(data);
-  bw.WriteBits(static_cast<uint32>(serverTz.length()), 7);
-  bw.WriteBits(static_cast<uint32>(localTz.length()), 7);
-  bw.Flush();
-
-  data.WriteStringNoNull(serverTz);
-  data.WriteStringNoNull(localTz);
-
-  SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_SET_TIME_ZONE_INFORMATION sent (Bit-packed 4.3.4)");
-}
-
-void WorldSession::SendLearnedDanceMoves() {
-  WorldPacket data(SMSG_LEARNED_DANCE_MOVES);
-  BitWriter bw(data);
-  bw.WriteBits(0, 23); // Count (23 bits in Cata 4.3.4)
-  bw.Flush();
-  SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_LEARNED_DANCE_MOVES sent (0 moves, bit-packed)");
-}
-
-void WorldSession::HandleReadyForAccountDataTimes(WorldPacket & /*packet*/) {
-  LOG_INFO("CMSG_READY_FOR_ACCOUNT_DATA_TIMES received. Sending AccountDataTimes.");
-  SendAccountDataTimes(0x15); // GLOBAL_CACHE_MASK
-}
-
-void WorldSession::HandleUpdateAccountData(WorldPacket &packet) {
-  uint32 type = packet.Read<uint32>();
-  uint32 time = packet.Read<uint32>();
-  uint32 decompressedSize = packet.Read<uint32>();
-  
-  LOG_INFO("CMSG_UPDATE_ACCOUNT_DATA: Type {}, Time {}, Size {}. Absorbing to break sync loop.", 
-           type, time, decompressedSize);
-}
-
-void WorldSession::SendMotd() {
-  std::vector<std::string> lines = Firelands::Config::Instance().Get<std::vector<std::string>>("Motd", {"Welcome to Firelands WoW!"});
-  SendPacket(new Firelands::WorldPackets::Misc::Motd(lines));
-  LOG_INFO("[AUTH] SMSG_MOTD sent (4.3.4 format)");
-}
-
-void WorldSession::SendLoginSetTimeSpeed() {
-  WorldPacket speed(SMSG_LOGIN_SET_TIME_SPEED);
-  speed.Append<uint32>(static_cast<uint32>(std::time(nullptr)));
-  speed.Append<float>(0.01666667f); // Speed
-  SendPacket(speed);
-  LOG_INFO("[AUTH] SMSG_LOGIN_SET_TIME_SPEED sent");
-}
-
-#include <shared/Config.h>
-#include <shared/network/packets/MotdPacket.h>
-#include <shared/network/packets/VerifyWorldPacket.h>
-
-// ... inside WorldSession.cpp ...
-
-void WorldSession::SendLoginVerifyWorld() {
-  // 4.3.4 (15595) expects: 4 bytes MapID + 16 bytes Pos (XYZ) + 4 bytes Orientation (O)
-  // Total 24 bytes? Let's re-verify: int32 (4) + 4 * float (16) = 20. Correct.
-  SendPacket(new Firelands::WorldPackets::Login::VerifyWorld(0, 0.0f, 0.0f, 0.0f, 0.0f));
-  LOG_INFO("[LOGIN] SMSG_LOGIN_VERIFY_WORLD sent");
-}
-
-void WorldSession::SendAccountRestrictedUpdate() {
-  WorldPacket data(SMSG_ACCOUNT_RESTRICTED_UPDATE);
-  BitWriter bw(data);
-  bw.WriteBit(false); // isRestricted
-  bw.Flush();
-  SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_ACCOUNT_RESTRICTED_UPDATE sent");
-}
-
-void WorldSession::SendSetDfFastLaunchResources() {
-  WorldPacket data(SMSG_SET_DF_FAST_LAUNCH_RESOURCES);
-  BitWriter bw(data);
-  bw.WriteBits(0, 32); // Count (32 bits for bits count?)
-  bw.Flush();
-  SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_SET_DF_FAST_LAUNCH_RESOURCES sent (Empty)");
-}
-
-void WorldSession::SendInitialRaidGroupError() {
-  WorldPacket data(SMSG_INITIAL_RAID_GROUP_ERROR);
-  SendPacket(data);
-  LOG_INFO("[AUTH] SMSG_INITIAL_RAID_GROUP_ERROR sent");
+  LOG_INFO("[AUTH] SMSG_ADDON_INFO sent (15595 parity).");
 }
 
 void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
   auto characters = _charService->GetCharactersForAccount(_accountId);
   uint32 count = static_cast<uint32>(characters.size());
 
-  LOG_INFO("CMSG_CHAR_ENUM: Found {} characters for account {}", count, _accountId);
+  LOG_INFO("CMSG_CHAR_ENUM: Found {} characters for account {}", count,
+           _accountId);
 
   WorldPacket response(SMSG_CHAR_ENUM);
   BitWriter bw(response);
@@ -718,8 +558,8 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
   bw.WriteBits(count, 17);
 
   if (count == 0) {
-      SendPacket(response);
-      return;
+    SendPacket(response);
+    return;
   }
 
   struct GuidData {
@@ -731,13 +571,13 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
   for (uint32 i = 0; i < count; ++i) {
     uint64 guid = characters[i]->GetGuid();
     uint64 guildGuid = 0; // Guilds not implemented
-    
+
     for (int b = 0; b < 8; ++b) {
       gd_list[i].g[b] = (guid >> (b * 8)) & 0xFF;
       gd_list[i].gg[b] = (guildGuid >> (b * 8)) & 0xFF;
     }
 
-    auto& gd = gd_list[i];
+    auto &gd = gd_list[i];
     // Exact bit order for 15595 Character Enum
     bw.WriteBit(gd.g[3]);
     bw.WriteBit(gd.gg[1]);
@@ -768,11 +608,10 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
     response.Append<uint8>(ch->GetClass());
 
     // Equipment (VisualItems) - 23 slots in Cata
-    // Order: InvType (uint8), DisplayID (uint32), DisplayEnchantID (uint32)
     for (int slot = 0; slot < 23; ++slot) {
-        response.Append<uint8>(0);  // InvType
-        response.Append<uint32>(0); // DisplayID
-        response.Append<uint32>(0); // DisplayEnchantID
+      response.Append<uint8>(0);  // InvType
+      response.Append<uint32>(0); // DisplayID
+      response.Append<uint32>(0); // DisplayEnchantID
     }
 
     response.Append<uint32>(0); // PetCreatureFamilyID
@@ -795,7 +634,7 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
     response.Append<uint8>(ch->GetFacialHair());
     response.WriteByteSeq(gd.g[7]);
     response.Append<uint8>(ch->GetGender());
-    response.WriteStringNoNull(ch->GetName());
+    response.WriteStringNoNull(ch->GetName()); // Length is already in bitstream
     response.Append<uint8>(ch->GetFace());
     response.WriteByteSeq(gd.g[0]);
     response.WriteByteSeq(gd.g[2]);
@@ -814,30 +653,7 @@ void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
   }
 
   SendPacket(response);
-  LOG_INFO("SMSG_CHAR_ENUM sent with {} characters (Full 15595 Parity)", count);
-}
-
-void WorldSession::HandleRealmSplit(WorldPacket &packet) {
-  uint32 unk = packet.Read<uint32>();
-  std::string splitDate = "01/01/01";
-
-  WorldPacket data(SMSG_REALM_SPLIT);
-  data.Append<uint32>(unk);
-  data.Append<uint32>(0); // Normal state
-  data.WriteString(splitDate);
-
-  SendPacket(data);
-  LOG_INFO("CMSG_REALM_SPLIT handled (Date: {})", splitDate);
-}
-
-void WorldSession::HandlePing(WorldPacket &packet) {
-  uint32 latency = packet.Read<uint32>();
-  uint32 serial = packet.Read<uint32>();
-  LOG_INFO("CMSG_PING: latency={}, serial={}", latency, serial);
-
-  WorldPacket pong(SMSG_PONG);
-  pong.Append<uint32>(serial);
-  SendPacket(pong);
+  LOG_INFO("SMSG_CHAR_ENUM sent.");
 }
 
 void WorldSession::HandleCharCreate(WorldPacket &packet) {
@@ -852,47 +668,33 @@ void WorldSession::HandleCharCreate(WorldPacket &packet) {
   uint8 facialHair = packet.Read<uint8>();
   uint8 outfitId = packet.Read<uint8>();
 
-  LOG_INFO("CMSG_CHAR_CREATE: Name='{}', Race={}, Class={}, Gender={}, Skin={}, Face={}, HairStyle={}, HairColor={}, FacialHair={}, Outfit={}", 
-           name, race, klass, gender, skin, face, hairStyle, hairColor, facialHair, outfitId);
+  LOG_INFO("CMSG_CHAR_CREATE: Name='{}', Race={}, Class={}", name, race, klass);
 
   bool success =
       _charService->CreateCharacter(_accountId, name, race, klass, gender, skin,
                                     face, hairStyle, hairColor, facialHair);
 
   WorldPacket response(SMSG_CHAR_CREATE);
-  // 4.3.4 SMSG_CHAR_CREATE Response codes
-  // CHAR_CREATE_SUCCESS = 0x2F
-  // CHAR_CREATE_ERROR   = 0x30
-  response.Append<uint8>(success ? 0x2F : 0x30); 
-
+  response.Append<uint8>(success ? 0x2F : 0x30);
   SendPacket(response);
-  LOG_INFO("SMSG_CHAR_CREATE sent result: {}", success ? "SUCCESS" : "FAIL");
 }
 
 void WorldSession::HandleCharDelete(WorldPacket &packet) {
   uint64 guid = packet.Read<uint64>();
-
   LOG_INFO("CMSG_CHAR_DELETE for GUID: {}", guid);
 
   bool success =
       _charService->DeleteCharacter(static_cast<uint32>(guid), _accountId);
 
   WorldPacket response(SMSG_CHAR_DELETE);
-  // 4.3.4 SMSG_CHAR_DELETE Response
-  // Success = 0x47, Error = 0x48 (Legacy but usually works)
   response.Append<uint8>(success ? 0x47 : 0x48);
-
   SendPacket(response);
-  LOG_INFO("SMSG_CHAR_DELETE sent result: {}", success ? "SUCCESS" : "FAIL");
 }
 
 void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   uint8 guid_bytes[8] = {0};
-
   BitReader br(packet);
 
-  // Cataclysm 4.3.4 (15595) CMSG_PLAYER_LOGIN GUID Bit Order (Reference)
-  // No dummy bit at the start.
   bool g2 = br.ReadBit();
   bool g3 = br.ReadBit();
   bool g0 = br.ReadBit();
@@ -917,89 +719,67 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   LOG_INFO("CMSG_PLAYER_LOGIN for GUID: {}", guid);
   _playerGuid = guid;
 
-  // 1. Send SMSG_FEATURE_SYSTEM_STATUS
+  auto characterOpt = _charService->GetCharacterByGuid(guid);
+  if (!characterOpt) {
+    LOG_ERROR("CMSG_PLAYER_LOGIN: Character not found.");
+    Close();
+    return;
+  }
+  const auto &character = *characterOpt;
+
   SendFeatureSystemStatus();
-
-  // 2. Send SMSG_ACCOUNT_DATA_TIMES
   SendAccountDataTimes(0x15);
-
-  // 3. Send MOTD
   SendMotd();
-
-  // 4. Send SMSG_TUTORIAL_FLAGS (all zero)
   SendTutorialFlags();
-
-  // 6. Send Init World States (Required to close loading screen)
-  SendInitWorldStates();
-
-  // 6.5 Send Setup Currency
+  SendInitWorldStates(character.GetMapId(), character.GetZoneId());
   SendSetupCurrency();
-
-  // 6. Send Learned Dance Moves (Required for some clients)
-
   SendLearnedDanceMoves();
-
-  // 7. Send SMSG_INITIAL_SPELLS
   SendInitialSpells();
-
-  // 8. Send SMSG_ACTION_BUTTONS
   SendInitialActionButtons();
-
-  // 9. Send SMSG_TIME_SYNC_REQ
+  
   WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
-  timeSync.Append<uint32>(0); // Counter
+  timeSync.Append<uint32>(0);
   SendPacket(timeSync);
 
-  // 10. Send Set Time Speed
   SendLoginSetTimeSpeed();
-
-  // 11. Send Time Zone Info
   SendSetTimeZoneInformation();
-
-  // 12. Send Fast Launch Resources
-  SendAccountRestrictedUpdate();
-  SendSetDfFastLaunchResources();
-
-  // 12.5 Send Initial Player setup
   SendClientControlUpdate(guid);
   SendBindPointUpdate();
   SendWorldServerInfo();
   SendLoadCUFProfiles();
   SendForcedReactions();
-  SendSetProficiency(1, 0xFFFFFFFF); // Weapon
-  SendSetProficiency(2, 0xFFFFFFFF); // Armor
+  SendSetProficiency(1, 0xFFFFFFFF);
+  SendSetProficiency(2, 0xFFFFFFFF);
   SendTalentsInfo();
   SendInitialFactions();
   SendClientCacheVersion(0);
 
-  // 13. Send SMSG_LOGIN_VERIFY_WORLD (Confirm world load before spawning objects)
-  SendLoginVerifyWorld();
+  SendLoginVerifyWorld(character.GetMapId(), character.GetX(), character.GetY(), character.GetZ(), character.GetOrientation());
 
-  // 14. Send Initial Object Update (Spawn Player)
-  // Re-creating the packet structure to include TypeID
-  UpdateData update(0);
-  
+  UpdateData update(character.GetMapId());
+  MovementInfo move;
+  static auto startTime = std::chrono::steady_clock::now();
+  auto now = std::chrono::steady_clock::now();
+  move.time = static_cast<uint32>(std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count());
+  move.x = character.GetX();
+  move.y = character.GetY();
+  move.z = character.GetZ();
+  move.orientation = character.GetOrientation();
+
   std::map<uint16, uint32> fields;
   fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
   fields[OBJECT_FIELD_GUID + 1] = (uint32)(guid >> 32);
-  fields[OBJECT_FIELD_TYPE] =
-      (1 << TYPEID_OBJECT) | (1 << TYPEID_UNIT) | (1 << TYPEID_PLAYER);
-  fields[OBJECT_FIELD_SCALE_X] = 0x3F800000; // 1.0f
+  fields[OBJECT_FIELD_TYPE] = (1 << TYPEID_OBJECT) | (1 << TYPEID_UNIT) | (1 << TYPEID_PLAYER);
+  fields[OBJECT_FIELD_SCALE_X] = 0x3F800000;
 
-  // UNIT_FIELD_BYTES_0 (OBJECT_END + 0x0011)
-  uint8 bytes0[4] = { 1, 1, 0, 0 }; // Race (1), Class (1), Gender (0), Power (0)
+  uint8 bytes0[4] = {character.GetRace(), character.GetClass(), character.GetGender(), 0};
   std::memcpy(&fields[UNIT_FIELD_BYTES_0], bytes0, 4);
-  
-  fields[UNIT_FIELD_HEALTH] = 100;
-  fields[UNIT_FIELD_MAXHEALTH] = 100;
-  fields[UNIT_FIELD_LEVEL] = 1;
-  fields[UNIT_FIELD_FACTIONTEMPLATE] = 1; // Human
-  fields[UNIT_FIELD_DISPLAYID] = 49;       // Human Male
-  fields[UNIT_FIELD_FLAGS] = 0;
-  fields[UNIT_FIELD_FLAGS_2] = 0;
 
-  MovementInfo move;
-  move.x = 0.0f; move.y = 0.0f; move.z = 0.0f; move.orientation = 0.0f;
+  fields[UNIT_FIELD_HEALTH] = character.GetHealth();
+  fields[UNIT_FIELD_MAXHEALTH] = character.GetMaxHealth();
+  fields[UNIT_FIELD_LEVEL] = character.GetLevel();
+  fields[UNIT_FIELD_FACTIONTEMPLATE] = character.GetFactionTemplate();
+  fields[UNIT_FIELD_DISPLAYID] = character.GetDisplayId();
 
   update.AddCreateObject(guid, TYPEID_PLAYER, move, fields);
 
@@ -1007,138 +787,282 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   update.Build(updatePacket);
   SendPacket(updatePacket);
 
-  LOG_INFO("Handshake completed for GUID: {}", guid);
-  }
+  _mapId = character.GetMapId();
+  auto player = std::make_shared<Player>(guid, shared_from_this());
+  player->SetPosition(move);
+  WorldService::Instance().AddPlayerToMap(_mapId, player);
 
-
-void WorldSession::SendInitialSpells() {
-  WorldPacket data(SMSG_INITIAL_SPELLS);
-  data.Append<uint8>(0);      // Gender (not used in packet?)
-  data.Append<uint16>(0);     // Spell Count
-  // If count > 0, append pairs of <uint32 spellId, uint16 unk>
-  data.Append<uint16>(0);     // Cooldown Count
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_INITIAL_SPELLS sent (Empty)");
+  LOG_INFO("Player {} logged in and spawned at Map {}", guid, _mapId);
 }
 
-void WorldSession::SendInitialActionButtons() {
-  WorldPacket data(SMSG_ACTION_BUTTONS);
-  data.Append<uint8>(0); // Clear all existing
-  for (int i = 0; i < 144; ++i) {
-      data.Append<uint32>(0); // Action
-  }
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_ACTION_BUTTONS sent (Empty, 144 slots)");
+void WorldSession::HandlePing(WorldPacket &packet) {
+  uint32 serial = packet.Read<uint32>();
+  WorldPacket pong(SMSG_PONG);
+  pong.Append<uint32>(serial);
+  SendPacket(pong);
 }
 
-void WorldSession::SendInitialObjectUpdate(uint64 guid) {
-  UpdateData update(0); // Map 0
+void WorldSession::HandleTimeSyncResp(WorldPacket &packet) {
+  uint32 counter = packet.Read<uint32>();
+  uint32 clientTime = packet.Read<uint32>();
+  LOG_INFO("CMSG_TIME_SYNC_RESP: Counter: {}, ClientTime: {}", counter, clientTime);
+}
 
-  MovementInfo move;
-  move.time = static_cast<uint32>(std::time(nullptr));
-  // In a real scenario, we would load X, Y, Z from the character object
-  // For now, use 0,0,0 as in the previous implementation
-
-  std::map<uint16, uint32> fields;
-  fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
-  fields[OBJECT_FIELD_GUID + 1] = (uint32)(guid >> 32);
-  fields[OBJECT_FIELD_TYPE] =
-      (1 << TYPEID_OBJECT) | (1 << TYPEID_UNIT) | (1 << TYPEID_PLAYER);
-  fields[OBJECT_FIELD_SCALE_X] = 0x3F800000; // 1.0f
-
-  // UNIT_FIELD_BYTES_0 (OBJECT_END + 0x0011)
-  uint8 bytes0[4] = { 1, 1, 0, 0 }; // Race (1), Class (1), Gender (0), Power (0)
-  std::memcpy(&fields[UNIT_FIELD_BYTES_0], bytes0, 4);
-  
-  fields[UNIT_FIELD_HEALTH] = 100;
-  fields[UNIT_FIELD_MAXHEALTH] = 100;
-  fields[UNIT_FIELD_LEVEL] = 1;
-  fields[UNIT_FIELD_FACTIONTEMPLATE] = 1; // Human
-  fields[UNIT_FIELD_DISPLAYID] = 49;       // Human Male
-  fields[UNIT_FIELD_FLAGS] = 0;
-  fields[UNIT_FIELD_FLAGS_2] = 0;
-
-  update.AddCreateObject(guid, TYPEID_PLAYER, move, fields);
-
-  WorldPacket packet;
-  update.Build(packet);
-
-  SendPacket(packet);
-  LOG_INFO("SMSG_UPDATE_OBJECT sent (Player Spawned with basic fields using "
-           "UpdateData)");
+void WorldSession::HandleMoveTimeSkipped(WorldPacket &packet) {
+  uint32 time = packet.Read<uint32>();
+  BitReader br(packet);
+  for (int i = 0; i < 8; ++i) { if (br.ReadBit()) packet.Read<uint8>(); }
+  LOG_INFO("CMSG_MOVE_TIME_SKIPPED: Time: {}", time);
 }
 
 void WorldSession::HandleMessageChat(WorldPacket &packet) {
   uint32 type = packet.Read<uint32>();
   uint32 language = packet.Read<uint32>();
-
-  std::string target;
-  if (type == CHAT_MSG_WHISPER || type == CHAT_MSG_CHANNEL) {
-    target = packet.ReadString();
-  }
-
+  if (type == CHAT_MSG_WHISPER || type == CHAT_MSG_CHANNEL) packet.ReadString();
   std::string message = packet.ReadString();
-  LOG_INFO("Chat from {}: [{}] {}", _playerGuid, type, message);
 
-  // GM Command handling
   if (_commandService->IsCommand(message)) {
-      _commandService->ExecuteCommand(shared_from_this(), message);
-      return;
+    _commandService->ExecuteCommand(shared_from_this(), message);
+    return;
   }
 
-  // Echo back to nearby players (spatial chat base)
-  // For now, only send back to the sender
   WorldPacket response(SMSG_MESSAGECHAT);
   response.Append<uint8>(static_cast<uint8>(type));
   response.Append<uint32>(language);
   response.Append<uint64>(_playerGuid);
-  response.Append<uint32>(0);           // Unk
-  response.Append<uint64>(_playerGuid); // Target? or Sender? depends on type
+  response.Append<uint32>(0);
+  response.Append<uint64>(_playerGuid);
   response.Append<uint32>(static_cast<uint32>(message.length() + 1));
   response.WriteString(message);
-  response.Append<uint8>(0); // Tag
-
+  response.Append<uint8>(0);
   SendPacket(response);
+}
+
+void WorldSession::HandleRealmSplit(WorldPacket &packet) {
+  uint32 unk = packet.Read<uint32>();
+  WorldPacket data(SMSG_REALM_SPLIT);
+  data.Append<uint32>(unk);
+  data.Append<uint32>(0);
+  data.WriteString("01/01/01");
+  SendPacket(data);
+}
+
+void WorldSession::HandleReadyForAccountDataTimes(WorldPacket & /*packet*/) {
+  SendAccountDataTimes(0x15);
+}
+
+void WorldSession::HandleUpdateAccountData(WorldPacket &packet) {
+  packet.Read<uint32>(); // type
+  packet.Read<uint32>(); // time
+  packet.Read<uint32>(); // size
 }
 
 void WorldSession::HandleMovement(WorldPacket &packet) {
   MovementInfo move;
   ReadMovementInfo(packet, move);
-
-  // Update internal state
   _position = move;
 
-  LOG_TRACE("Player {} moved to ({:.2f}, {:.2f}, {:.2f}) O:{:.2f}", _playerGuid,
-            move.x, move.y, move.z, move.orientation);
-
-  // Broadcast movement (Echo back to client for now, or broadcast to others if
-  // any) In WoW, we typically echo back the movement packet if it's an MSG
-  // opcode
-  if (packet.GetOpcode() >= 0x2000) { // Rough check for MSG opcodes if needed,
-                                      // but we listed them explicitly
-    // echo back
-    WorldPacket echo(packet.GetOpcode(), packet.Size());
-    echo.Append(packet.GetBuffer(), packet.Size());
-    SendPacket(echo);
+  if (packet.GetOpcode() >= 0x2000) {
+    auto map = WorldService::Instance().GetMap(_mapId);
+    if (map) {
+      map->UpdateObjectPosition(_playerGuid, move);
+      WorldPacket broadcast(packet.GetOpcode(), packet.Size());
+      broadcast.Append(packet.GetBuffer(), packet.Size());
+      map->BroadcastPacketToNearby(_playerGuid, broadcast);
+      SendPacket(broadcast);
+    }
   }
 }
 
+// --- Server Packet Senders (SMSG) ---
+
+void WorldSession::SendClientCacheVersion(uint32 version) {
+  WorldPacket data(SMSG_CLIENTCACHE_VERSION);
+  data.Append<uint32>(version);
+  SendPacket(data);
+}
+
+void WorldSession::SendTutorialFlags() {
+  WorldPacket data(SMSG_TUTORIAL_FLAGS);
+  for (int i = 0; i < 8; ++i) data.Append<uint32>(0xFFFFFFFF);
+  SendPacket(data);
+}
+
+void WorldSession::SendAccountDataTimes(uint32 mask) {
+  WorldPacket data(SMSG_ACCOUNT_DATA_TIMES);
+  data.Append<uint32>(static_cast<uint32>(std::time(nullptr)));
+  data.Append<uint8>(1);
+  data.Append<uint32>(mask);
+  for (int i = 0; i < 8; ++i) { if (mask & (1 << i)) data.Append<uint32>(0); }
+  SendPacket(data);
+}
+
+void WorldSession::SendFeatureSystemStatus() {
+  WorldPacket features(SMSG_FEATURE_SYSTEM_STATUS);
+  features.Append<uint8>(0);
+  features.Append<uint32>(0);
+  features.Append<uint32>(0);
+  features.Append<uint32>(0);
+  features.Append<uint32>(0);
+
+  BitWriter bw(features);
+  for (int i = 0; i < 6; ++i) bw.WriteBit(false);
+  bw.Flush();
+  SendPacket(features);
+}
+
+void WorldSession::SendRealmSplit(uint32 realmId) {
+  WorldPacket split(SMSG_REALM_SPLIT);
+  split.Append<uint32>(realmId);
+  split.Append<uint32>(0);
+  BitWriter bw(split);
+  bw.WriteBits(8, 7);
+  bw.Flush();
+  split.WriteStringNoNull("01/01/01");
+  SendPacket(split);
+}
+
+void WorldSession::SendLoginSetTimeSpeed(float speed) {
+  WorldPacket data(SMSG_LOGIN_SET_TIME_SPEED);
+  data.AppendPackedTime(static_cast<uint32>(std::time(nullptr)));
+  data.Append<float>(speed);
+  data.Append<uint32>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendSetTimeZoneInformation() {
+  WorldPacket data(SMSG_SET_TIME_ZONE_INFORMATION);
+  BitWriter bw(data);
+  bw.WriteBits(3, 7);
+  bw.WriteBits(3, 7);
+  bw.Flush();
+  data.WriteStringNoNull("UTC");
+  data.WriteStringNoNull("UTC");
+  SendPacket(data);
+}
+
+void WorldSession::SendLearnedDanceMoves() {
+  WorldPacket data(SMSG_LEARNED_DANCE_MOVES);
+  BitWriter bw(data);
+  bw.WriteBits(0, 23);
+  bw.Flush();
+  SendPacket(data);
+}
+
+void WorldSession::SendMotd() {
+  std::vector<std::string> lines = Firelands::Config::Instance().Get<std::vector<std::string>>("Motd", {"Welcome to Firelands WoW!"});
+  SendPacket(new Firelands::WorldPackets::Misc::Motd(lines));
+}
+
+void WorldSession::SendInitialRaidGroupError() {
+  WorldPacket data(SMSG_INITIAL_RAID_GROUP_ERROR);
+  SendPacket(data);
+}
+
+void WorldSession::SendInitialSpells() {
+  WorldPacket data(SMSG_INITIAL_SPELLS);
+  data.Append<uint8>(1);
+  data.Append<uint16>(0);
+  data.Append<uint16>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendInitialActionButtons() {
+  WorldPacket data(SMSG_ACTION_BUTTONS);
+  for (int i = 0; i < 144; ++i) data.Append<uint32>(0);
+  data.Append<uint8>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendInitWorldStates(uint32 mapId, uint32 zoneId, uint32 areaId) {
+  WorldPacket data(SMSG_INIT_WORLD_STATES);
+  data.Append<uint32>(mapId);
+  data.Append<uint32>(zoneId);
+  data.Append<uint32>(areaId);
+  data.Append<uint16>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendSetupCurrency() {
+  WorldPacket data(SMSG_SETUP_CURRENCY);
+  data.Append<uint32>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendClientControlUpdate(uint64 guid) {
+  WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE);
+  data.WritePackedGuid(guid);
+  data.Append<uint8>(1);
+  SendPacket(data);
+}
+
+void WorldSession::SendBindPointUpdate() {
+  WorldPacket data(SMSG_BIND_POINT_UPDATE);
+  data.Append<float>(0.0f);
+  data.Append<float>(0.0f);
+  data.Append<float>(0.0f);
+  data.Append<uint32>(0);
+  data.Append<uint32>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendWorldServerInfo() {
+  WorldPacket data(SMSG_WORLD_SERVER_INFO);
+  BitWriter bw(data);
+  bw.WriteBit(false);
+  bw.WriteBit(false);
+  bw.WriteBit(false);
+  bw.Flush();
+  data.Append<uint8>(0);
+  data.Append<uint32>(0);
+  data.Append<uint32>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendLoadCUFProfiles() {
+  WorldPacket data(SMSG_LOAD_CUF_PROFILES);
+  data.Append<uint32>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendForcedReactions() {
+  WorldPacket data(SMSG_SET_FORCED_REACTIONS);
+  data.Append<uint32>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendSetProficiency(uint8 itemClass, uint32 itemMask) {
+  SendPacket(new Firelands::WorldPackets::Item::SetProficiency(itemClass, itemMask));
+}
+
+void WorldSession::SendTalentsInfo() {
+  WorldPacket data(SMSG_TALENTS_INFO);
+  data.Append<uint8>(0);
+  data.Append<uint32>(0);
+  data.Append<uint8>(0);
+  data.Append<uint8>(0);
+  SendPacket(data);
+}
+
+void WorldSession::SendInitialFactions() {
+  uint16 count = 256;
+  WorldPacket data(SMSG_INITIALIZE_FACTIONS, 4 + count * 5);
+  data.Append<uint32>(static_cast<uint32>(count));
+  for (uint16 i = 0; i < count; ++i) {
+    data.Append<uint8>(0);
+    data.Append<uint32>(0);
+  }
+  SendPacket(data);
+}
+
+void WorldSession::SendLoginVerifyWorld(uint32 mapId, float x, float y, float z, float o) {
+  SendPacket(new Firelands::WorldPackets::Login::VerifyWorld(mapId, x, y, z, o));
+}
+
+// --- Helpers ---
+
 void WorldSession::ReadMovementInfo(WorldPacket &packet, MovementInfo &move) {
-  // Cataclysm 4.3.4: MovementInfo usually starts with the GUID
-  // But some MSG opcodes have the GUID packed.
-  // For simplicity, let's assume it matches our struct for now or handle the
-  // common format
-
-  // Skip GUID if present (it's usually 8 bytes or packed)
-  // For build 15595, it's often PackedGuid.
-
-  // We'll use a hack for now: try to read common field order
-  // In a real emulator, we'd have a BitStream reader for the complex 4.x
-  // packing
-
-  // If the packet size is enough for our struct:
   if (packet.Size() >= 26) {
-    // Basic structure: Flags(4), Flags2(2), Time(4), X, Y, Z, O (16) = 26 bytes
     move.flags = packet.Read<uint32>();
     move.flags2 = packet.Read<uint16>();
     move.time = packet.Read<uint32>();
@@ -1149,153 +1073,26 @@ void WorldSession::ReadMovementInfo(WorldPacket &packet, MovementInfo &move) {
   }
 }
 
-void WorldSession::SendNotification(const std::string& message) {
-    WorldPacket response(SMSG_MESSAGECHAT);
-    response.Append<uint8>(CHAT_MSG_SYSTEM);
-    response.Append<uint32>(LANG_UNIVERSAL);
-    response.Append<uint64>(0);           // Sender GUID
-    response.Append<uint32>(0);           // Unk
-    response.Append<uint64>(0);           // Target GUID
-    response.Append<uint32>(static_cast<uint32>(message.length() + 1));
-    response.WriteString(message);
-    response.Append<uint8>(0);            // Tag
-    SendPacket(response);
+void WorldSession::SendNotification(const std::string &message) {
+  WorldPacket response(SMSG_MESSAGECHAT);
+  response.Append<uint8>(CHAT_MSG_SYSTEM);
+  response.Append<uint32>(LANG_UNIVERSAL);
+  response.Append<uint64>(0);
+  response.Append<uint32>(0);
+  response.Append<uint64>(0);
+  response.Append<uint32>(static_cast<uint32>(message.length() + 1));
+  response.WriteString(message);
+  response.Append<uint8>(0);
+  SendPacket(response);
 }
 
 void WorldSession::TeleportTo(uint32 /*mapId*/, float x, float y, float z, float orientation) {
-    _position.x = x;
-    _position.y = y;
-    _position.z = z;
-    _position.orientation = orientation;
-    
-    // In Cata 4.3.4, a teleport requires SMSG_TRANSFER_PENDING then SMSG_NEW_WORLD if map changes
-    // or SMSG_MONSTER_MOVE (for self) or UpdateObject for position reset.
-    // For now, we just notify and update internal state for .gps
-    SendNotification("Teleported to: " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
-}
-
-void WorldSession::HandleTimeSyncResp(WorldPacket& packet) {
-    uint32 counter = packet.Read<uint32>();
-    uint32 clientTime = packet.Read<uint32>();
-    LOG_INFO("CMSG_TIME_SYNC_RESP: Counter: {}, ClientTime: {}", counter, clientTime);
-}
-
-void WorldSession::HandleMoveTimeSkipped(WorldPacket& packet) {
-    uint32 time = packet.Read<uint32>();
-    // Guid is bit-packed in 4.3.4
-    uint8 guid_bytes[8] = {0};
-    BitReader br(packet);
-    
-    // We only need to consume it to avoid warnings and keep packet sync
-    for (int i = 0; i < 8; ++i) {
-        if (br.ReadBit()) {
-            packet.Read<uint8>();
-        }
-    }
-    LOG_INFO("CMSG_MOVE_TIME_SKIPPED: Time: {}", time);
-}
-
-void WorldSession::SendInitWorldStates() {
-    WorldPacket data(SMSG_INIT_WORLD_STATES);
-    data.Append<uint32>(0); // Map ID
-    data.Append<uint32>(0); // Area ID
-    data.Append<uint32>(0); // Subarea ID
-    data.Append<uint16>(0); // Count
-    SendPacket(data);
-    LOG_INFO("[LOGIN] SMSG_INIT_WORLD_STATES sent (Empty)");
-}
-
-void WorldSession::SendSetupCurrency() {
-    WorldPacket data(SMSG_SETUP_CURRENCY);
-    data.Append<uint32>(0); // Count
-    SendPacket(data);
-    LOG_INFO("[LOGIN] SMSG_SETUP_CURRENCY sent (Empty)");
-}
-
-void WorldSession::SendClientControlUpdate(uint64 guid) {
-  WorldPacket data(SMSG_CLIENT_CONTROL_UPDATE);
-  data.WritePackedGuid(guid);
-  data.Append<uint8>(1); // allowMove
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_CLIENT_CONTROL_UPDATE sent");
-}
-
-void WorldSession::SendBindPointUpdate() {
-  WorldPacket data(SMSG_BIND_POINT_UPDATE);
-  data.Append<float>(0.0f); // X
-  data.Append<float>(0.0f); // Y
-  data.Append<float>(0.0f); // Z
-  data.Append<uint32>(0);   // MapID
-  data.Append<uint32>(0);   // AreaID
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_BIND_POINT_UPDATE sent");
-}
-
-void WorldSession::SendWorldServerInfo() {
-  WorldPacket data(SMSG_WORLD_SERVER_INFO);
-  BitWriter bw(data);
-  bw.WriteBit(false); // RestrictedAccountMaxLevel
-  bw.WriteBit(false); // RestrictedAccountMaxMoney
-  bw.WriteBit(false); // IneligibleForLootMask
-  bw.Flush();
-
-  data.Append<uint8>(0); // IsTournamentRealm
-  data.Append<uint32>(0); // WeeklyReset
-  data.Append<uint32>(0); // DifficultyID
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_WORLD_SERVER_INFO sent");
-}
-
-void WorldSession::SendLoadCUFProfiles() {
-  WorldPacket data(SMSG_LOAD_CUF_PROFILES);
-  data.Append<uint32>(0); // Profile Count
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_LOAD_CUF_PROFILES sent");
-}
-
-#include <shared/network/packets/SetProficiencyPacket.h>
-
-// ... inside WorldSession.cpp ...
-
-void WorldSession::SendForcedReactions() {
-  WorldPacket data(SMSG_SET_FORCED_REACTIONS);
-  data.Append<uint32>(0); // Forced Reactions Count
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_SET_FORCED_REACTIONS sent");
-}
-
-void WorldSession::SendSetProficiency(uint8 itemClass, uint32 itemMask) {
-    SendPacket(new Firelands::WorldPackets::Item::SetProficiency(itemClass, itemMask));
-    LOG_INFO("[LOGIN] SMSG_SET_PROFICIENCY sent for class: {}", itemClass);
-}
-
-void WorldSession::SendTalentsInfo() {
-  WorldPacket data(SMSG_TALENTS_INFO);
-  data.Append<uint32>(0); // FreeTalentPoints
-  data.Append<uint8>(0);  // SpecCount
-  data.Append<uint8>(0);  // ActiveSpecIndex
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_TALENTS_INFO sent");
-}
-
-void WorldSession::SendInitialFactions() {
-  uint16 count = 256;
-  WorldPacket data(SMSG_INITIALIZE_FACTIONS, 4 + count * 5);
-  data.Append<uint32>(static_cast<uint32>(count));
-
-  for (uint16 i = 0; i < count; ++i) {
-      data.Append<uint8>(0); // Flags
-      data.Append<uint32>(0); // Standing
-  }
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_INITIALIZE_FACTIONS sent");
-}
-
-void WorldSession::SendClientCacheVersion(uint32 version) {
-  WorldPacket data(SMSG_CLIENTCACHE_VERSION);
-  data.Append<uint32>(version);
-  SendPacket(data);
-  LOG_INFO("[LOGIN] SMSG_CLIENTCACHE_VERSION sent: {}", version);
+  _position.x = x;
+  _position.y = y;
+  _position.z = z;
+  _position.orientation = orientation;
+  SendNotification("Teleported to: " + std::to_string(x) + ", " +
+                   std::to_string(y) + ", " + std::to_string(z));
 }
 
 } // namespace Firelands

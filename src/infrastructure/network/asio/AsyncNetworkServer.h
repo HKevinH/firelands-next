@@ -2,35 +2,33 @@
 #define FIRELANDS_INFRASTRUCTURE_NETWORK_ASIO_ASYNC_NETWORK_SERVER_H
 
 #include <application/ports/INetworkServer.h>
-#include <application/ports/INetworkServer.h>
 #include <boost/asio.hpp>
 #include <functional>
-#include <boost/asio.hpp>
 #include <memory>
 #include <string>
 
 namespace Firelands {
 
-    using boost::asio::ip::tcp;
+using boost::asio::ip::tcp;
 
-    class AsyncNetworkServer : public INetworkServer {
-    public:
-        using SessionFactory = std::function<void(tcp::socket)>;
-        
-        explicit AsyncNetworkServer(SessionFactory sessionFactory);
-        ~AsyncNetworkServer() override;
+class AsyncNetworkServer : public INetworkServer {
+public:
+  using SessionFactory = std::function<void(tcp::socket)>;
 
-        bool Start(const std::string& address, uint16 port) override;
-        void Stop() override;
-        void Update() override;
+  explicit AsyncNetworkServer(SessionFactory sessionFactory);
+  ~AsyncNetworkServer() override;
 
-    private:
-        void DoAccept();
+  bool Start(const std::string &address, uint16 port) override;
+  void Stop() override;
+  void Update() override;
 
-        boost::asio::io_context _ioContext;
-        std::unique_ptr<tcp::acceptor> _acceptor;
-        SessionFactory _sessionFactory;
-    };
+private:
+  void DoAccept();
+
+  boost::asio::io_context _ioContext;
+  std::unique_ptr<tcp::acceptor> _acceptor;
+  SessionFactory _sessionFactory;
+};
 
 } // namespace Firelands
 

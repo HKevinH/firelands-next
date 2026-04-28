@@ -1,20 +1,20 @@
 #pragma once
 
-#include <vector>
-#include <memory>
 #include <domain/models/Realm.h>
 #include <domain/repositories/IRealmRepository.h>
+#include <memory>
+#include <vector>
 
 namespace Firelands {
 
 class RealmListService {
 public:
-    explicit RealmListService(std::shared_ptr<IRealmRepository> repository);
+  explicit RealmListService(std::shared_ptr<IRealmRepository> repository);
 
-    std::vector<Realm> GetRealmList();
+  std::vector<Realm> GetRealmList();
 
 private:
-    std::shared_ptr<IRealmRepository> m_repository;
+  std::shared_ptr<IRealmRepository> m_repository;
 };
 
 } // namespace Firelands

@@ -5,27 +5,28 @@
 #include <memory>
 
 // Forward declaration for MariaDB/JDBC types
-namespace sql { 
-    class Connection; 
+namespace sql {
+class Connection;
 }
 
 namespace Firelands {
 
-    class MySqlAccountRepository : public IAccountRepository {
-    public:
-        explicit MySqlAccountRepository(std::shared_ptr<sql::Connection> connection);
+class MySqlAccountRepository : public IAccountRepository {
+public:
+  explicit MySqlAccountRepository(std::shared_ptr<sql::Connection> connection);
 
-        std::optional<Account> FindByUsername(const std::string& username) override;
-        void Create(const Account& account) override;
-        void Update(const Account& account) override;
-        void DeleteByUsername(const std::string& username) override;
+  std::optional<Account> FindByUsername(const std::string &username) override;
+  void Create(const Account &account) override;
+  void Update(const Account &account) override;
+  void DeleteByUsername(const std::string &username) override;
 
-        void CreateSession(uint32 accountId, const std::vector<uint8_t>& sessionKey) override;
-        std::vector<uint8_t> GetSessionKey(uint32 accountId) override;
+  void CreateSession(uint32 accountId,
+                     const std::vector<uint8_t> &sessionKey) override;
+  std::vector<uint8_t> GetSessionKey(uint32 accountId) override;
 
-    private:
-        std::shared_ptr<sql::Connection> _connection;
-    };
+private:
+  std::shared_ptr<sql::Connection> _connection;
+};
 
 } // namespace Firelands
 

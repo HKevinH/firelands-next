@@ -7,15 +7,15 @@
 
 namespace Firelands {
 
-    class IWebSessionRepository {
-    public:
-        virtual ~IWebSessionRepository() = default;
+class IWebSessionRepository {
+public:
+  virtual ~IWebSessionRepository() = default;
 
-        virtual void Save(const WebSession& session) = 0;
-        virtual std::optional<WebSession> FindByToken(const std::string& token) = 0;
-        virtual void DeleteByToken(const std::string& token) = 0;
-        virtual void DeleteExpired() = 0;
-    };
+  virtual void Save(const WebSession &session) = 0;
+  virtual std::optional<WebSession> FindByToken(const std::string &token) = 0;
+  virtual void DeleteByToken(const std::string &token) = 0;
+  virtual void DeleteExpired() = 0;
+};
 
 } // namespace Firelands
 

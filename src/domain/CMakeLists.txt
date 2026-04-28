@@ -1,5 +1,6 @@
 add_library(FirelandsDomain STATIC
     models/Realm.cpp
+    world/Map.cpp
 )
 
 target_include_directories(FirelandsDomain PUBLIC 
