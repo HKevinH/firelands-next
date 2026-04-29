@@ -426,17 +426,25 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_UNREGISTER_ALL_ADDON_PREFIXES:
   case CMSG_BATTLEFIELD_STATUS:
   case CMSG_QUERY_BATTLEFIELD_STATE:
-  case CMSG_LFG_GET_STATUS:
-  case CMSG_LFG_LOCK_INFO_REQUEST:
-  case CMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY_QUERY:
   case CMSG_VOICE_SESSION_ENABLE:
   case CMSG_GUILD_SET_ACHIEVEMENT_TRACKING:
   case CMSG_REQUEST_CATEGORY_COOLDOWNS:
   case CMSG_DB_QUERY_BULK:
   case CMSG_WORLD_STATE_UI_TIMER_UPDATE:
-  case CMSG_REQUEST_CEMETERY_LIST:
     // Client probes features we haven't implemented yet. For stability we safely
     // ignore these requests (no side effects, no disconnect).
+    break;
+  case CMSG_LFG_GET_STATUS:
+    HandleLfgGetStatus(packet);
+    break;
+  case CMSG_LFG_LOCK_INFO_REQUEST:
+    HandleLfgLockInfoRequest(packet);
+    break;
+  case CMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY_QUERY:
+    HandleGuildBankRemainingWithdrawMoneyQuery(packet);
+    break;
+  case CMSG_REQUEST_CEMETERY_LIST:
+    HandleRequestCemeteryList(packet);
     break;
   case CMSG_LOADING_SCREEN_NOTIFY:
     // Simply acknowledge loading screen progress
@@ -990,6 +998,68 @@ void WorldSession::HandleZoneUpdate(WorldPacket &packet) {
 
   if (newZone != 0)
     _zoneId = newZone;
+}
+
+void WorldSession::HandleGuildBankRemainingWithdrawMoneyQuery(WorldPacket & /*packet*/) {
+  // Reference: firelands-cata-ref GuildHandler.cpp HandleGuildBankMoneyWithdrawn
+  // and Guild.cpp Guild::SendMoneyInfo → SMSG_GUILD_BANK_MONEY_WITHDRAWN(int64).
+  //
+  // We don't implement guilds yet → respond with 0 so the UI doesn't hang.
+  WorldPacket data(SMSG_GUILD_BANK_MONEY_WITHDRAWN, 8);
+  data.Append<int64>(0);
+  SendPacket(data);
+}
+
+void WorldSession::HandleLfgGetStatus(WorldPacket & /*packet*/) {
+  // Reference: firelands-cata-ref LFGHandler.cpp HandleLfgGetStatus
+  // Minimal "not queued / not using LFG" response.
+  WorldPacket data(SMSG_LFG_UPDATE_STATUS_NONE, 0);
+  SendPacket(data);
+}
+
+void WorldSession::HandleLfgLockInfoRequest(WorldPacket &packet) {
+  // Reference: firelands-cata-ref LFGHandler.cpp HandleLfgGetLockInfoOpcode
+  // Client payload: one bit ("player" vs "party"). We parse it, but respond with
+  // empty data either way for now.
+  bool forPlayer = true;
+  if (packet.Size() - packet.GetReadPos() >= 1) {
+    BitReader br(packet);
+    forPlayer = br.ReadBit();
+  }
+
+  if (forPlayer) {
+    // SMSG_LFG_PLAYER_INFO:
+    // - uint8  dungeonCount
+    // - [dungeon entries...]
+    // - uint32 blacklistCount
+    // - [blacklist slots...]
+    WorldPacket playerInfo(SMSG_LFG_PLAYER_INFO, 1 + 4);
+    playerInfo.Append<uint8>(0);
+    playerInfo.Append<uint32>(0);
+    SendPacket(playerInfo);
+    return;
+  }
+
+  // SMSG_LFG_PARTY_INFO:
+  // - uint8 playerCount
+  // - [blacklist entries...]
+  WorldPacket partyInfo(SMSG_LFG_PARTY_INFO, 1);
+  partyInfo.Append<uint8>(0);
+  SendPacket(partyInfo);
+}
+
+void WorldSession::HandleRequestCemeteryList(WorldPacket & /*packet*/) {
+  // Reference: firelands-cata-ref MiscPackets.cpp RequestCemeteryListResponse::Write
+  // Layout (bit-packed):
+  // - 1 bit  IsGossipTriggered
+  // - 24 bits CemeteryID.size()
+  // - [uint32 cemeteryId...]
+  WorldPacket response(SMSG_REQUEST_CEMETERY_LIST_RESPONSE, 4);
+  BitWriter bits(response);
+  bits.WriteBit(false);
+  bits.WriteBits(0, 24);
+  bits.Flush();
+  SendPacket(response);
 }
 
 void WorldSession::HandleNameQuery(WorldPacket &packet) {

@@ -70,10 +70,10 @@ Goal: mantener UI consistente sin implementar sistemas completos todavía.
 - [x] **Mail time**: `MSG_QUERY_NEXT_MAIL_TIME` → response (0 / no mail)
 - [x] **Calendar pending**: `CMSG_CALENDAR_GET_NUM_PENDING` → `SMSG_CALENDAR_SEND_NUM_PENDING` (0)
 - [x] **Zone update**: `CMSG_ZONEUPDATE` guarda `zoneId` en sesión (futuro: estado Player + hook Lua)
-- [ ] **Guild bank withdraw query**: `CMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY_QUERY` → response (0 / no guild)
-- [ ] **Battlefield status/state**: `CMSG_BATTLEFIELD_STATUS`, `CMSG_QUERY_BATTLEFIELD_STATE` → “not in queue / not in BG”
-- [ ] **LFG**: `CMSG_LFG_GET_STATUS`, `CMSG_LFG_LOCK_INFO_REQUEST` → “no group / locked info empty”
-- [ ] **Cemetery list**: `CMSG_REQUEST_CEMETERY_LIST` → respuesta mínima (si el cliente la usa para UI/rez)
+- [x] **Guild bank withdraw query**: `CMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY_QUERY` → `SMSG_GUILD_BANK_MONEY_WITHDRAWN` (0)
+- [ ] **Battlefield status/state**: `CMSG_BATTLEFIELD_STATUS`, `CMSG_QUERY_BATTLEFIELD_STATE` → (ref: sin respuesta si no hay queue/BG)
+- [x] **LFG**: `CMSG_LFG_GET_STATUS` → `SMSG_LFG_UPDATE_STATUS_NONE`; `CMSG_LFG_LOCK_INFO_REQUEST` → `SMSG_LFG_PLAYER_INFO`/`SMSG_LFG_PARTY_INFO` vacíos
+- [x] **Cemetery list**: `CMSG_REQUEST_CEMETERY_LIST` → `SMSG_REQUEST_CEMETERY_LIST_RESPONSE` (lista vacía)
 
 ### Bitácora (stability)
 

@@ -88,6 +88,10 @@ private:
   void HandleQueryNextMailTime(WorldPacket &packet);
   void HandleCalendarGetNumPending(WorldPacket &packet);
   void HandleZoneUpdate(WorldPacket &packet);
+  void HandleGuildBankRemainingWithdrawMoneyQuery(WorldPacket &packet);
+  void HandleLfgGetStatus(WorldPacket &packet);
+  void HandleLfgLockInfoRequest(WorldPacket &packet);
+  void HandleRequestCemeteryList(WorldPacket &packet);
 
   // Server Packet Senders (SMSG)
   void SendAuthResponse();
