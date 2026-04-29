@@ -66,6 +66,30 @@ static void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
   dst.Append<uint8>(0); // DeclinedNames.has_value() == false
 }
 
+static uint64 ReadClientTargetGuid(WorldPacket &packet) {
+  const size_t rem = packet.Size() - packet.GetReadPos();
+  if (rem >= sizeof(uint64)) {
+    return packet.Read<uint64>();
+  }
+  if (rem > 0) {
+    return packet.ReadPackedGuid();
+  }
+  return 0;
+}
+
+static bool IsClientMovementOpcode(WorldOpcode opcode) {
+  switch (opcode) {
+  case MSG_MOVE_HEARTBEAT:
+  case MSG_MOVE_START_FORWARD:
+  case MSG_MOVE_START_BACKWARD:
+  case MSG_MOVE_STOP:
+  case MSG_MOVE_SET_FACING:
+    return true;
+  default:
+    return false;
+  }
+}
+
 } // namespace
 
 WorldSession::WorldSession(tcp::socket socket,
@@ -395,6 +419,12 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
     break;
   case CMSG_MESSAGECHAT:
     HandleMessageChat(packet);
+    break;
+  case CMSG_GOSSIP_HELLO:
+    HandleGossipHello(packet);
+    break;
+  case CMSG_GOSSIP_SELECT_OPTION:
+    HandleGossipSelectOption(packet);
     break;
   case CMSG_NAME_QUERY:
     HandleNameQuery(packet);
@@ -889,6 +919,10 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   SendLoadCUFProfiles();
 
   LOG_INFO("Player {} logged in and spawned at Map {}", guid, _mapId);
+
+  if (auto host = WorldService::Instance().GetScriptHost()) {
+    host->FireEvent("player_login", guid);
+  }
 }
 
 void WorldSession::HandleNameQuery(WorldPacket &packet) {
@@ -984,6 +1018,32 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
   response.WriteString(message);
   response.Append<uint8>(0);
   SendPacket(response);
+
+  if (_playerGuid != 0 &&
+      (type == CHAT_MSG_SAY || type == CHAT_MSG_YELL)) {
+    if (auto map = WorldService::Instance().GetMap(_mapId)) {
+      map->BroadcastPacketToNearby(_playerGuid, response, false);
+    }
+  }
+}
+
+void WorldSession::HandleGossipHello(WorldPacket &packet) {
+  const uint64 npcGuid = ReadClientTargetGuid(packet);
+  if (auto host = WorldService::Instance().GetScriptHost()) {
+    host->FireGossipHello(npcGuid);
+  }
+}
+
+void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
+  const uint64 npcGuid = ReadClientTargetGuid(packet);
+  if (npcGuid == 0 || packet.GetReadPos() + sizeof(uint32) * 2 > packet.Size()) {
+    return;
+  }
+  const uint32 menuId = packet.Read<uint32>();
+  const uint32 listId = packet.Read<uint32>();
+  if (auto host = WorldService::Instance().GetScriptHost()) {
+    host->FireGossipSelect(npcGuid, menuId, listId);
+  }
 }
 
 void WorldSession::HandleRealmSplit(WorldPacket &packet) {
@@ -1028,7 +1088,7 @@ void WorldSession::HandleMovement(WorldPacket &packet) {
   ReadMovementInfo(packet, move);
   _position = move;
 
-  if (packet.GetOpcode() >= 0x2000) {
+  if (IsClientMovementOpcode(static_cast<WorldOpcode>(packet.GetOpcode()))) {
     auto map = WorldService::Instance().GetMap(_mapId);
     if (map) {
       map->UpdateObjectPosition(_playerGuid, move);

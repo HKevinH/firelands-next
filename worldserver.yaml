@@ -12,6 +12,10 @@ World:
 Scripting:
   ScriptsDirectory: "scripts/lua"
 
+# Optional root for mmap/vmap data (see firelands-cata-ref extractors). Empty = stub LoS.
+Collision:
+  DataRoot: ""
+
 Database:
   User: "firelands"
   Password: "firelands"

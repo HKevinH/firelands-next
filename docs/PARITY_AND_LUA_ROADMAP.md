@@ -2,7 +2,7 @@
 
 Documento vivo para **seguimiento**: enlaza el roadmap de alto nivel con tareas concretas y el estado (hecho / pendiente). Actualizarlo al cerrar PRs o hitos.
 
-**Relacionado:** [implementation_plan.md](../implementation_plan.md) (fases 1–6 del emulador). Este archivo amplía la visión hacia **paridad con el core de referencia** y la decisión de **Lua** en lugar de lógica tipo Smart Scripts en base de datos.
+**Relacionado:** [implementation_plan.md](../implementation_plan.md) (fases 1–6 del emulador), [parity_matrix.md](parity_matrix.md) (matriz subsistema × ref × estado). Este archivo amplía la visión hacia **paridad con el core de referencia** y la decisión de **Lua** en lugar de lógica tipo Smart Scripts en base de datos.
 
 ---
 
@@ -12,12 +12,12 @@ Documento vivo para **seguimiento**: enlaza el roadmap de alto nivel con tareas 
 
 | ID | Hito | Estado |
 |----|------|--------|
-| parity-matrix | Matriz de paridad (subsistema × ref × componente next × criterio de hecho) | Pendiente |
+| parity-matrix | Matriz de paridad (subsistema × ref × componente next × criterio de hecho) | Hecho (`docs/parity_matrix.md`) |
 | lua-foundation | Lua 5.4 en CMake (walterschell), `infrastructure/scripting`, puerto `IGameScriptHost`, tests del bridge. *Bridge con API C de Lua; sol2 posible más adelante por compatibilidad libc++.* | Primera iteración hecha |
-| world-core-gap | Cerrar gaps fase 5–6 (opcodes / mundo vacío / broadcast) vs ref | Pendiente |
-| entities-combat | Creature/GO en dominio + combate/hechizos mínimos + hooks Lua | Pendiente |
-| maps-collision | mmap/vmap y APIs de colisión alineadas al ref | Pendiente |
-| quests-instances | Quest / loot / gossip + instancias con Lua + SQL/DBC | Pendiente |
+| world-core-gap | Cerrar gaps fase 5–6 (opcodes / mundo vacío / broadcast) vs ref | Parcial hecho: gossip opcodes, SAY/YELL nearby, movimiento con filtro opcode, `player_login` → Lua |
+| entities-combat | Creature/GO en dominio + combate/hechizos mínimos + hooks Lua | Dominio Creature/GO + test Map; combate pendiente |
+| maps-collision | mmap/vmap y APIs de colisión alineadas al ref | Puerto `IMapCollisionQueries` + stub + config `Collision.DataRoot` |
+| quests-instances | Quest / loot / gossip + instancias con Lua + SQL/DBC | Gossip CMSG → Lua; quest SMSG / instancias pendientes |
 
 **Leyenda:** Pendiente → En progreso → Hecho (sustituir texto o usar ✅ en la celda).
 
@@ -26,10 +26,10 @@ Documento vivo para **seguimiento**: enlaza el roadmap de alto nivel con tareas 
 | Fase | Objetivo | Estado |
 |------|----------|--------|
 | A | Fase 5–6: cliente estable en mundo vacío, broadcast consistente | Parcial (ver implementation_plan) |
-| B | Unidades: Creature / GameObject, spawn, grid | Pendiente |
+| B | Unidades: Creature / GameObject, spawn, grid | En curso (tipos dominio + grid) |
 | C | Combate y hechizos mínimos (GCD, cast, efectos simples) | Pendiente |
-| D | Misiones, loot, gossip | Pendiente |
-| E | Mapas y colisión (herramientas en ref `src/tools`) | Pendiente |
+| D | Misiones, loot, gossip | Parcial (Lua gossip) |
+| E | Mapas y colisión (herramientas en ref `src/tools`) | Puerto + stub |
 | F | Instancias y fases (lógica en Lua) | Pendiente |
 | G | Ampliar matriz hasta PvE/PvP/social según prioridad | Pendiente |
 
@@ -37,6 +37,7 @@ Documento vivo para **seguimiento**: enlaza el roadmap de alto nivel con tareas 
 
 | Fecha | Cambio |
 |-------|--------|
+| 2026-04-28 | Matriz `parity_matrix.md`, `WorldService` script+collision, gossip/movement/chat hooks, `Creature`/`GameObject`, `IMapCollisionQueries` stub |
 | 2026-04-28 | `LuaGameScriptHost`, `IGameScriptHost`, FetchContent Lua 5.4, `worldserver.yaml` `Scripting.ScriptsDirectory`, tests `LuaGameScriptHostTests`, `scripts/lua/bootstrap.lua` |
 | *(ej.)* | Documento creado en `docs/PARITY_AND_LUA_ROADMAP.md` |
 

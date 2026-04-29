@@ -19,6 +19,27 @@ TEST(LuaGameScriptHost, RunChunkSyntaxError) {
   EXPECT_FALSE(err.empty());
 }
 
+TEST(LuaGameScriptHost, FireGossipSelectSetsContextGlobals) {
+  LuaGameScriptHost host;
+  ASSERT_TRUE(host.Init(""));
+  std::string err;
+  ASSERT_TRUE(host.RunChunk(R"(
+    function OnScriptEvent(name, guid)
+      if name == "gossip_select" then
+        _capture = tostring(guid) .. ":" .. tostring(_gossipMenuId) .. ":" .. tostring(_gossipListId)
+      end
+    end
+  )",
+                            &err))
+      << err;
+
+  host.FireGossipSelect(77, 100, 200);
+
+  std::string cap;
+  ASSERT_TRUE(host.TryGetGlobalString("_capture", &cap));
+  EXPECT_EQ(cap, "77:100:200");
+}
+
 TEST(LuaGameScriptHost, FireEventInvokesGlobal) {
   LuaGameScriptHost host;
   ASSERT_TRUE(host.Init(""));

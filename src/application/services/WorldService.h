@@ -1,5 +1,9 @@
 #pragma once
 
+#include <application/ports/IGameScriptHost.h>
+#include <application/ports/IMapCollisionQueries.h>
+#include <domain/world/Creature.h>
+#include <domain/world/GameObject.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
 #include <memory>
@@ -8,6 +12,8 @@
 
 namespace Firelands {
 
+/// Singleton world state (maps, shared script host, collision port).
+/// Populated from `world` executable after config load.
 class WorldService {
 public:
   static WorldService &Instance() {
@@ -32,10 +38,27 @@ public:
     GetMap(mapId)->RemoveObject(guid);
   }
 
+  /// Adds a creature to the map grid and notifies Lua (`creature_spawn`).
+  void AddCreatureToMap(uint32 mapId, std::shared_ptr<Creature> creature);
+
+  /// Adds a game object to the map grid and notifies Lua (`gameobject_spawn`).
+  void AddGameObjectToMap(uint32 mapId, std::shared_ptr<GameObject> object);
+
+  void SetScriptHost(std::shared_ptr<IGameScriptHost> host);
+  std::shared_ptr<IGameScriptHost> GetScriptHost();
+
+  void SetCollisionQueries(std::shared_ptr<IMapCollisionQueries> queries);
+  std::shared_ptr<IMapCollisionQueries> GetCollisionQueries();
+
 private:
   WorldService() = default;
-  std::unordered_map<uint32, std::shared_ptr<Map>> m_maps;
+
   std::mutex m_worldMutex;
+  std::unordered_map<uint32, std::shared_ptr<Map>> m_maps;
+
+  std::mutex m_auxMutex;
+  std::shared_ptr<IGameScriptHost> m_scriptHost;
+  std::shared_ptr<IMapCollisionQueries> m_collisionQueries;
 };
 
 } // namespace Firelands

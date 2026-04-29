@@ -7,6 +7,7 @@ add_library(FirelandsInfrastructure STATIC
     network/asio/AsyncNetworkServer.cpp
     network/rest/RestAuthServer.cpp
     scripting/LuaGameScriptHost.cpp
+    world/MapCollisionQueriesStub.cpp
 )
 
 set_source_files_properties(scripting/LuaGameScriptHost.cpp

@@ -85,6 +85,22 @@ bool LuaGameScriptHost::RunChunk(const std::string &source,
   return true;
 }
 
+void LuaGameScriptHost::FireGossipHello(uint64_t npcGuid) {
+  FireEvent("gossip_hello", npcGuid);
+}
+
+void LuaGameScriptHost::FireGossipSelect(uint64_t npcGuid, uint32_t menuId,
+                                         uint32_t gossipListId) {
+  if (!_L) {
+    return;
+  }
+  lua_pushinteger(_L, static_cast<lua_Integer>(menuId));
+  lua_setglobal(_L, "_gossipMenuId");
+  lua_pushinteger(_L, static_cast<lua_Integer>(gossipListId));
+  lua_setglobal(_L, "_gossipListId");
+  FireEvent("gossip_select", npcGuid);
+}
+
 void LuaGameScriptHost::FireEvent(const std::string &eventName,
                                   uint64_t contextGuid) {
   if (!_L) {

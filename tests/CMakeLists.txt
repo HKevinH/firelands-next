@@ -12,8 +12,10 @@ add_executable(FirelandsUnitTests
     unit/application/RealmListServiceTests.cpp
     unit/application/AuthServiceTests.cpp
     unit/application/CharacterServiceTests.cpp
+    unit/application/WorldServiceCreatureScriptTests.cpp
     unit/domain/MapTests.cpp
     unit/infrastructure/LuaGameScriptHostTests.cpp
+    unit/infrastructure/MapCollisionQueriesStubTests.cpp
 )
 
 target_link_libraries(FirelandsUnitTests

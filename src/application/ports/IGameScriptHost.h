@@ -27,6 +27,14 @@ public:
   virtual void FireEvent(const std::string &eventName,
                            uint64_t contextGuid = 0) = 0;
 
+  /// NPC gossip open (maps to Lua `gossip_hello` via `OnScriptEvent`).
+  virtual void FireGossipHello(uint64_t npcGuid) = 0;
+
+  /// Gossip menu option chosen; Lua may read globals `_gossipMenuId` and
+  /// `_gossipListId` during `OnScriptEvent("gossip_select", ...)`.
+  virtual void FireGossipSelect(uint64_t npcGuid, uint32_t menuId,
+                                uint32_t gossipListId) = 0;
+
   /// Reads a global as UTF-8 string (for tests and admin tooling).
   virtual bool TryGetGlobalString(const std::string &globalName,
                                   std::string *out) const = 0;

@@ -32,15 +32,17 @@ This document serves as the single source of truth for the step-by-step developm
 - [x] **Environment Handshake:** Send required initialization packets (`SMSG_LOGIN_VERIFY_WORLD`, `SMSG_TIME_SYNC_REQ`, `SMSG_TUTORIAL_FLAGS`).
 - [x] **Character Data Loading:** Implement `GetCharacterByGuid` in `ICharacterRepository` and `MySqlCharacterRepository` to load the player's character data upon `CMSG_PLAYER_LOGIN`.
 - [x] **Object Instantiation (`SMSG_UPDATE_OBJECT`):** Use the loaded character data to dynamically populate the core entity update packet structure. Send the initial character state so the player entity spawns.
-- [x] **Movement Network:** Basic handling and broadcasting of movement opcodes. (Basic handling implemented, broadcasting to other players pending further network implementation)
+- [x] **Movement Network:** Movement opcodes filtered explicitly; `Map::BroadcastPacketToNearby` relays to other players (see `WorldSession::HandleMovement`).
 
 ## Phase 6: Gameplay Mechanics (IN PROGRESS)
+- [x] **Parity matrix:** Subsystem tracking vs `firelands-cata-ref` in [docs/parity_matrix.md](docs/parity_matrix.md).
 - [x] **Lua scripting host (MVP):** `IGameScriptHost`, `LuaGameScriptHost`, config `Scripting.ScriptsDirectory`, bootstrap under `scripts/lua/`. Tracked in [docs/PARITY_AND_LUA_ROADMAP.md](docs/PARITY_AND_LUA_ROADMAP.md).
-- [x] **Chat System Base:** Implement spatial chat, server announcements, and whispers base. (Basic echo implemented; spatial chat and broadcasting to other players pending further network implementation)
-- [ ] **Entity Spawning:** Creatures, GameObjects, and NPCs base grid architecture.
+- [x] **WorldService wiring:** Shared `IGameScriptHost` + `IMapCollisionQueries` stub; `player_login`, gossip, and `creature_spawn` / `gameobject_spawn` events.
+- [x] **Chat System Base:** SAY/YELL echoed to nearby players on the same `Map`; whispers/commands unchanged.
+- [x] **Entity Spawning (foundation):** `Creature` / `GameObject` domain types, grid via `Map::AddObject`, `WorldService::AddCreatureToMap` / `AddGameObjectToMap` with Lua hooks (full NPC spawn packets still pending).
 - [ ] **Spells and Auras:** Basic spell casting flow and GCD (Global Cooldown) implementation.
-- [ ] **Map & Collision:** Setup map data extraction (mmap, vmap) to handle pathfinding and Line of Sight.
-- [ ] **Quests & Loot:** Interaction with NPCs and items.
+- [x] **Map & Collision (port):** `IMapCollisionQueries` + `MapCollisionQueriesStub`; `Collision.DataRoot` in `worldserver.yaml` (real mmap/vmap integration pending).
+- [x] **Quests & Loot (gossip hook):** `CMSG_GOSSIP_HELLO` / `CMSG_GOSSIP_SELECT_OPTION` → Lua (`gossip_hello`, `gossip_select` + `_gossipMenuId` / `_gossipListId`); SMSG menus and loot still pending.
 
 ---
 *Note: Always use Test-Driven Development (TDD) as defined in `.skills/03-tdd.md` before implementing logic for new packets.*

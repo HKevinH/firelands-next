@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
+#include <domain/world/Creature.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
 #include <application/ports/IMapNotifier.h>
@@ -59,6 +60,31 @@ TEST_F(MapTests, BroadcastPacket_IncludeSelf_SendsToAll) {
     EXPECT_CALL(*notifier1, SendPacket(_)).Times(1);
     
     map->BroadcastPacket(1, packet, true);
+}
+
+TEST_F(MapTests, AddCreature_DoesNotBreakBroadcastToPlayers) {
+  auto map = std::make_shared<Map>(1);
+  auto notifier1 = std::make_shared<MockNotifier>();
+  auto player1 = std::make_shared<Player>(1, notifier1);
+  auto notifier2 = std::make_shared<MockNotifier>();
+  auto player2 = std::make_shared<Player>(2, notifier2);
+  MovementInfo pos{};
+  pos.x = 0.f;
+  pos.y = 0.f;
+  player1->SetPosition(pos);
+  player2->SetPosition(pos);
+
+  auto creature = std::make_shared<Creature>(999, 42, 15688);
+  creature->SetPosition(pos);
+
+  map->AddObject(player1);
+  map->AddObject(player2);
+  map->AddObject(creature);
+
+  WorldPacket packet(0x1234, 0);
+  EXPECT_CALL(*notifier2, SendPacket(_)).Times(1);
+  EXPECT_CALL(*notifier1, SendPacket(_)).Times(0);
+  map->BroadcastPacket(1, packet, false);
 }
 
 TEST_F(MapTests, BroadcastPacketToNearby_DoesNotSendToFarPlayers) {

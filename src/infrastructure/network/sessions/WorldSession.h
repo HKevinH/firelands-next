@@ -83,6 +83,8 @@ private:
   void HandleRealmSplit(WorldPacket &packet);
   void HandleReadyForAccountDataTimes(WorldPacket &packet);
   void HandleUpdateAccountData(WorldPacket &packet);
+  void HandleGossipHello(WorldPacket &packet);
+  void HandleGossipSelectOption(WorldPacket &packet);
 
   // Server Packet Senders (SMSG)
   void SendAuthResponse();
