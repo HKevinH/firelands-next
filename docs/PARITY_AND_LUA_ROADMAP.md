@@ -2,7 +2,7 @@
 
 Documento vivo para **seguimiento**: enlaza el roadmap de alto nivel con tareas concretas y el estado (hecho / pendiente). Actualizarlo al cerrar PRs o hitos.
 
-**Relacionado:** [implementation_plan.md](../implementation_plan.md) (fases 1–6 del emulador), [parity_matrix.md](parity_matrix.md) (matriz subsistema × ref × estado). Este archivo amplía la visión hacia **paridad con el core de referencia** y la decisión de **Lua** en lugar de lógica tipo Smart Scripts en base de datos.
+**Relacionado:** [implementation_plan.md](../implementation_plan.md) (fases 1–6 del emulador), [parity_matrix.md](parity_matrix.md) (matriz subsistema × ref × estado), [CLIENT_STABILITY.md](CLIENT_STABILITY.md) (prioridad cliente estable). Este archivo amplía la visión hacia **paridad con el core de referencia** y la decisión de **Lua** en lugar de lógica tipo Smart Scripts en base de datos.
 
 ---
 

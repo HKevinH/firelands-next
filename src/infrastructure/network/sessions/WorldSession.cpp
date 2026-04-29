@@ -467,8 +467,8 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
     HandleMovement(packet);
     break;
   default:
-    LOG_WARN("[PACKET] Unknown/unhandled opcode: 0x{:04X} (size: {})", opcode,
-             packet.Size());
+    LOG_DEBUG("[PACKET] Unknown/unhandled opcode: 0x{:04X} (size: {})", opcode,
+              packet.Size());
     break;
   }
 }
@@ -900,9 +900,17 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
 
   fields[UNIT_FIELD_HEALTH] = character.GetHealth();
   fields[UNIT_FIELD_MAXHEALTH] = character.GetMaxHealth();
+  // Power1 (mana). Warriors/rogues/DKs use 0 mana; safe to send 0 for all.
+  fields[UNIT_FIELD_POWER1] = 0;
+  fields[UNIT_FIELD_MAXPOWER1] = 0;
   fields[UNIT_FIELD_LEVEL] = character.GetLevel();
   fields[UNIT_FIELD_FACTIONTEMPLATE] = character.GetFactionTemplate();
   fields[UNIT_FIELD_DISPLAYID] = character.GetDisplayId();
+  // NativeDisplayId must equal DisplayId on creation; missing field causes a
+  // client crash when transform auras are processed at the end of loading.
+  fields[UNIT_FIELD_NATIVEDISPLAYID] = character.GetDisplayId();
+  // BYTES_2: PvP flags byte — must be present (0 = normal, no PvP flags).
+  fields[UNIT_FIELD_BYTES_2] = 0;
 
   update.AddCreateObject(guid, TYPEID_PLAYER, move, fields);
 
@@ -987,7 +995,16 @@ void WorldSession::HandlePing(WorldPacket &packet) {
 void WorldSession::HandleTimeSyncResp(WorldPacket &packet) {
   uint32 counter = packet.Read<uint32>();
   uint32 clientTime = packet.Read<uint32>();
-  LOG_INFO("CMSG_TIME_SYNC_RESP: Counter: {}, ClientTime: {}", counter, clientTime);
+  LOG_DEBUG("CMSG_TIME_SYNC_RESP: Counter: {}, ClientTime: {}", counter,
+            clientTime);
+
+  // Keep issuing time sync samples while in world (client expects ongoing
+  // SMSG_TIME_SYNC_REQ after login; see ref WorldSession::ReadMovementInfo flow).
+  if (_playerGuid != 0) {
+    WorldPacket next(SMSG_TIME_SYNC_REQ);
+    next.Append<uint32>(_timeSyncNextCounter++);
+    SendPacket(next);
+  }
 }
 
 void WorldSession::HandleMoveTimeSkipped(WorldPacket &packet) {
@@ -1299,11 +1316,24 @@ void WorldSession::SendSetProficiency(uint8 itemClass, uint32 itemMask) {
 }
 
 void WorldSession::SendTalentsInfo() {
+  // Reference: Player::SendTalentsInfoData(false) → BuildPlayerTalentsInfoData.
+  // Format: uint8(isPet) | uint32(freeTalentPoints) | uint8(specsCount) |
+  //         uint8(activeSpec) | per-spec: uint32(primaryTree) | uint8(talentCount) |
+  //         uint8(MAX_GLYPH_SLOT_INDEX=6) | uint16[6] glyphs.
+  // specsCount MUST be ≥ 1: with 0 the 4.3.4 client accesses specs[activeSpec]
+  // out-of-bounds and crashes at the end of the loading screen.
+  static constexpr uint8 kGlyphSlots = 6;
   WorldPacket data(SMSG_TALENTS_INFO);
-  data.Append<uint8>(0);
-  data.Append<uint32>(0);
-  data.Append<uint8>(0);
-  data.Append<uint8>(0);
+  data.Append<uint8>(0);  // isPet = false
+  data.Append<uint32>(0); // freeTalentPoints
+  data.Append<uint8>(1);  // specsCount = 1 (unspecialized)
+  data.Append<uint8>(0);  // activeSpec = 0
+  // Spec 0 block
+  data.Append<uint32>(0); // primaryTalentTree = 0 (none chosen)
+  data.Append<uint8>(0);  // talentIdCount = 0
+  data.Append<uint8>(kGlyphSlots);
+  for (uint8 i = 0; i < kGlyphSlots; ++i)
+    data.Append<uint16>(0); // all glyphs empty
   SendPacket(data);
 }
 

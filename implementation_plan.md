@@ -2,6 +2,8 @@
 
 This document serves as the single source of truth for the step-by-step development roadmap of the Firelands WoW Cataclysm (4.3.4) Emulator. The AI and the developers should frequently check and update this document to keep track of the progress.
 
+**Client stability (priority track):** [docs/CLIENT_STABILITY.md](docs/CLIENT_STABILITY.md)
+
 ## Phase 1: Foundations & Auth (COMPLETED)
 - [x] **Project Skeleton:** Configure Build System (CMake) and strict C++17 standards.
 - [x] **Centralized Logging:** Implement a thread-safe logging architecture (`spdlog`).
