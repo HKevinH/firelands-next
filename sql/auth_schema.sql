@@ -32,3 +32,11 @@ CREATE TABLE IF NOT EXISTS `account_session` (
   `session_key` binary(40) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `account_data` (
+  `accountId` int(10) unsigned NOT NULL,
+  `type` tinyint(3) unsigned NOT NULL,
+  `time` int(10) unsigned NOT NULL DEFAULT '0',
+  `data` blob NOT NULL,
+  PRIMARY KEY (`accountId`, `type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `hairStyle` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `hairColor` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `facialHair` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `outfitId` tinyint(3) unsigned NOT NULL DEFAULT '0',
+  `equipmentCache` mediumtext NULL,
   `level` tinyint(3) unsigned NOT NULL DEFAULT '1',
   `zoneId` smallint(5) unsigned NOT NULL DEFAULT '0',
   `mapId` smallint(5) unsigned NOT NULL DEFAULT '0',

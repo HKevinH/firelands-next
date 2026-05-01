@@ -22,10 +22,6 @@ World:
 Scripting:
   ScriptsDirectory: "scripts/lua"
 
-# Optional root for mmap/vmap data (see firelands-cata-ref extractors). Empty = stub LoS.
-Collision:
-  DataRoot: ""
-
 Database:
   User: "firelands"
   Password: "firelands"
@@ -33,6 +29,8 @@ Database:
     URI: "jdbc:mariadb://127.0.0.1:3306/firelands_auth"
   Characters:
     URI: "jdbc:mariadb://127.0.0.1:3306/firelands_characters"
+  World:
+    URI: "jdbc:mariadb://127.0.0.1:3306/firelands_world"
 
 Log:
   Level: "Info"
@@ -41,3 +39,31 @@ Log:
 Motd:
   - "Welcome to Firelands WoW!"
   - "Enjoy your stay in the lands of Fire and Ice."
+
+Defaults:
+  Chat:
+    ConfigCache:
+      - "SET chatStyle \"classic\""
+      - "SET chatClassColorOverride \"0\""
+      - "SET chatMouseScroll \"1\""
+      - "SET chatBubbles \"1\""
+      - "SET chatBubblesParty \"1\""
+      - "SET profanityFilter \"0\""
+      - "SET showLootSpam \"1\""
+  Keybindings:
+    Movement:
+      - "bind W MOVEFORWARD"
+      - "bind S MOVEBACKWARD"
+      - "bind A TURNLEFT"
+      - "bind D TURNRIGHT"
+      - "bind Q STRAFELEFT"
+      - "bind E STRAFERIGHT"
+      - "bind SPACE JUMP"
+      - "bind BUTTON2 TURNORACTION"
+      - "bind BUTTON1 MOVEANDSTEER"
+
+# Client DBC folder (4.3.4): copy/extract from game data (MPQ/patch).
+# Used for Faction.dbc (reputation indices), CharStartOutfit.dbc (starter gear),
+# and any future DBC-driven features. Paths are relative to the process cwd.
+Data:
+  DbcPath: "data/dbc"
