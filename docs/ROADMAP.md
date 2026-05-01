@@ -130,6 +130,8 @@ Living section: actualizar **Status** y **Next criterion** al cerrar hitos.
 
 **Priority order (short term):** world opcodes + visibility → creatures on map → combat stub → quests/gossip SMSG → collision data → instances.
 
+**VMap / extractor pipeline (4.3.4):** see [`docs/VMAP_EXTRACTION_PLAN.md`](VMAP_EXTRACTION_PLAN.md) (mapextractor → vmap4extractor → vmap4assembler; mmaps later).
+
 ---
 
 ## Próximos pasos (orden sugerido)

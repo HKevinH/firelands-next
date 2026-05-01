@@ -19,6 +19,12 @@ add_executable(FirelandsUnitTests
     unit/infrastructure/LuaGameScriptHostTests.cpp
     unit/infrastructure/MapCollisionQueriesStubTests.cpp
     unit/tools/WowDataMpqListTests.cpp
+    unit/vmap/BihTests.cpp
+    unit/vmap/ModelSpawnTests.cpp
+    unit/vmap/Vec3Mat3Tests.cpp
+    unit/vmap/MapFileWriterTests.cpp
+    unit/vmap/QuatMathTests.cpp
+    ${CMAKE_SOURCE_DIR}/tools/vmap/vmap4_extractor/QuatMath.cpp
 )
 
 target_link_libraries(FirelandsUnitTests
@@ -26,9 +32,13 @@ target_link_libraries(FirelandsUnitTests
     GTest::gmock
     FirelandsInfrastructure
     FirelandsExtractCommon
+    FirelandsVmapCommon
+    FirelandsMapExtractorLib
 )
 target_compile_definitions(FirelandsUnitTests PRIVATE
     FIRELANDS_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}")
+target_include_directories(FirelandsUnitTests PRIVATE
+    ${CMAKE_SOURCE_DIR}/tools/vmap/vmap4_extractor)
 target_precompile_headers(FirelandsUnitTests PRIVATE ${TEST_PCH_HEADERS})
 
 include(GoogleTest)

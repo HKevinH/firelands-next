@@ -1,0 +1,3 @@
+add_subdirectory(common)
+add_subdirectory(map_extractor)
+add_subdirectory(vmap4_extractor)
