@@ -44,13 +44,17 @@ bool PlayerCreateInfoService::TryApplyTemplateCombatState(Character &character) 
   std::optional<PlayerClassLevelStats> clsRow =
       m_repository->GetClassLevelStats(klass, level);
   if (!clsRow) {
+    auto const fallback = Character::GetDefaultPrimaryStats(klass);
+    clsRow = PlayerClassLevelStats{static_cast<uint16_t>(fallback[0]),
+                                   static_cast<uint16_t>(fallback[1]),
+                                   static_cast<uint16_t>(fallback[2]),
+                                   static_cast<uint16_t>(fallback[3]),
+                                   static_cast<uint16_t>(fallback[4])};
     LOG_WARN(
         "TryApplyTemplateCombatState: no player_classlevelstats row for "
-        "class={} level={} (guid={}); apply sql/17_player_class_and_race_stats.sql "
-        "to firelands_world or import reference data.",
+        "class={} level={} (guid={}); using built-in fallback.",
         static_cast<unsigned>(klass), static_cast<unsigned>(level),
         character.GetGuid());
-    return false;
   }
 
   PlayerRaceStats raceBonus{};

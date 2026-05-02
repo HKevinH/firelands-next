@@ -35,7 +35,8 @@ public:
         m_visibleItemStacks(visibleItemStacks), m_packItemEntries(packItemEntries),
         m_packItemGuids(packItemGuids), m_packItemStacks(packItemStacks),
         m_moneyCopper(moneyCopper), m_health(100), m_maxHealth(100),
-        m_factionTemplate(1), m_displayId(GetDefaultDisplayId(race, gender)) {}
+        m_factionTemplate(1), m_displayId(GetDefaultDisplayId(race, gender)),
+        m_primaryStats(GetDefaultPrimaryStats(klass)) {}
 
   static uint32 GetDefaultDisplayId(uint8 race, uint8 gender) {
     switch (race) {
@@ -65,6 +66,33 @@ public:
       return gender == 0 ? 32836 : 32837; // Worgen
     default:
       return 49;
+    }
+  }
+
+  static std::array<uint32_t, 5> GetDefaultPrimaryStats(uint8 klass) {
+    switch (klass) {
+    case 1:
+      return {23u, 20u, 22u, 20u, 21u}; // Warrior
+    case 2:
+      return {23u, 20u, 22u, 20u, 22u}; // Paladin
+    case 3:
+      return {22u, 21u, 22u, 20u, 21u}; // Hunter
+    case 4:
+      return {23u, 21u, 21u, 20u, 21u}; // Rogue
+    case 5:
+      return {17u, 22u, 22u, 22u, 23u}; // Priest
+    case 6:
+      return {25u, 19u, 22u, 20u, 22u}; // Death Knight
+    case 7:
+      return {22u, 21u, 22u, 20u, 22u}; // Shaman
+    case 8:
+      return {17u, 22u, 22u, 23u, 23u}; // Mage
+    case 9:
+      return {21u, 21u, 22u, 23u, 23u}; // Warlock
+    case 11:
+      return {22u, 20u, 22u, 22u, 23u}; // Druid
+    default:
+      return {20u, 20u, 20u, 20u, 20u};
     }
   }
 
