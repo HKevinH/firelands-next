@@ -4,6 +4,7 @@
 #include <infrastructure/persistence/MySqlRealmRepository.h>
 #include <shared/Banner.h>
 #include <shared/Config.h>
+#include <shared/game/AccessLevel.h>
 #include <shared/Logger.h>
 #include <string>
 #include <vector>
@@ -12,7 +13,8 @@ using namespace Firelands;
 
 void PrintUsage(const char *progName) {
   LOG_ERROR("Usage:");
-  LOG_ERROR("  {} account <username> <password> [email] [expansion (0-3)]",
+  LOG_ERROR("  {} account <username> <password> [email] [expansion (0-3)] "
+            "[access_level (0-3)]",
             progName);
   LOG_ERROR("  {} realm <id> <name> <address> <port> [icon] [timezone] "
             "[secLevel] [population]",
@@ -33,6 +35,17 @@ int CreateAccount(int argc, char **argv,
     return 1;
   }
 
+  AccessLevel accessLevel = AccessLevel::Player;
+  if (argc >= 7) {
+    uint8 raw = static_cast<uint8>(std::stoul(argv[6]));
+    if (raw > static_cast<uint8>(AccessLevel::Administrator)) {
+      LOG_ERROR("Invalid access_level: {}. Allowed range is 0-3.", (int)raw);
+      Logger::Shutdown();
+      return 1;
+    }
+    accessLevel = static_cast<AccessLevel>(raw);
+  }
+
   auto accountRepo = std::make_shared<MySqlAccountRepository>(conn);
 
   if (accountRepo->FindByUsername(user)) {
@@ -47,6 +60,7 @@ int CreateAccount(int argc, char **argv,
   acc.salt = srpData.salt;
   acc.verifier = srpData.verifier;
   acc.expansion = expansion;
+  acc.accessLevel = accessLevel;
 
   LOG_INFO("Inserting account into database...");
   accountRepo->Create(acc);

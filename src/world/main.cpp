@@ -12,6 +12,7 @@
 #include <infrastructure/persistence/MySqlAccountRepository.h>
 #include <infrastructure/persistence/MySqlCharacterRepository.h>
 #include <infrastructure/persistence/MySqlPlayerCreateInfoRepository.h>
+#include <infrastructure/persistence/MySqlRealmRepository.h>
 #include <infrastructure/scripting/LuaGameScriptHost.h>
 #include <infrastructure/world/MapCollisionQueriesStub.h>
 #include <atomic>
@@ -129,6 +130,7 @@ int main(int argc, char **argv) {
 
     // 5. Initialize Repositories and Services
     auto accountRepo = std::make_shared<MySqlAccountRepository>(authConn);
+    auto realmRepo = std::make_shared<MySqlRealmRepository>(authConn);
     auto authService = std::make_shared<AuthService>(accountRepo);
 
     auto accountDataRepo =
@@ -166,11 +168,11 @@ int main(int argc, char **argv) {
     }
 
     auto sessionFactory = [authService, charService, commandService,
-                           accountDataRepo, languagesDbc, spellDbc](
+                           accountDataRepo, languagesDbc, spellDbc, realmRepo](
                               boost::asio::ip::tcp::socket socket) {
       std::make_shared<WorldSession>(std::move(socket), authService, charService,
                                      commandService, accountDataRepo,
-                                     languagesDbc, spellDbc)
+                                     languagesDbc, spellDbc, realmRepo)
           ->Start();
     };
 

@@ -7,6 +7,7 @@
 #include <application/services/SRPService.h>
 #include <boost/asio.hpp>
 #include <memory>
+#include <shared/game/AccessLevel.h>
 #include <shared/network/AuthPacket.h>
 #include <shared/network/AuthPackets.h>
 
@@ -50,6 +51,10 @@ private:
   std::unique_ptr<BigInt> _v;
   std::unique_ptr<BigInt> _b;
   std::unique_ptr<BigInt> _B;
+
+  /// Effective after successful `AUTH_LOGON_PROOF`; until then treated as
+  /// `Player` for realm filtering.
+  AccessLevel _accountAccessLevel = AccessLevel::Player;
 };
 
 } // namespace Firelands

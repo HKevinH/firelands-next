@@ -6,14 +6,16 @@
 namespace Firelands {
 
 CommandService::CommandService() {
-  RegisterCommand("gps", [this](auto s, auto a) { return HandleGps(s, a); });
-  RegisterCommand("tele", [this](auto s, auto a) { return HandleTele(s, a); });
-  RegisterCommand("help", [this](auto s, auto a) { return HandleHelp(s, a); });
+  RegisterCommand("gps", {[this](auto s, auto a) { return HandleGps(s, a); },
+                          ToMask(Permission::CommandGps), false});
+  RegisterCommand("tele", {[this](auto s, auto a) { return HandleTele(s, a); },
+                           ToMask(Permission::CommandTeleport), false});
+  RegisterCommand("help", {[this](auto s, auto a) { return HandleHelp(s, a); },
+                           0, false});
 }
 
-void CommandService::RegisterCommand(const std::string &name,
-                                     CommandHandler handler) {
-  _commands[name] = std::move(handler);
+void CommandService::RegisterCommand(const std::string &name, CommandEntry entry) {
+  _commands[name] = std::move(entry);
 }
 
 bool CommandService::IsCommand(const std::string &message) const {
@@ -21,7 +23,8 @@ bool CommandService::IsCommand(const std::string &message) const {
 }
 
 bool CommandService::ExecuteCommand(std::shared_ptr<WorldSession> session,
-                                    const std::string &message) {
+                                    const std::string &message,
+                                    PrivilegeOrigin origin) {
   if (!IsCommand(message))
     return false;
 
@@ -38,7 +41,18 @@ bool CommandService::ExecuteCommand(std::shared_ptr<WorldSession> session,
 
   auto it = _commands.find(cmdName);
   if (it != _commands.end()) {
-    return it->second(session, args);
+    CommandEntry const &entry = it->second;
+    if (entry.consoleOnly && origin != PrivilegeOrigin::ServerConsole) {
+      session->SendNotification(
+          "This command is only available from the server console.");
+      return true;
+    }
+    if (!HasPermission(session->GetAccountAccessLevel(), origin,
+                        entry.requiredPermissions)) {
+      session->SendNotification("Insufficient privileges.");
+      return true;
+    }
+    return entry.handler(session, args);
   }
 
   session->SendNotification("Unknown command: " + cmdName);
@@ -80,7 +94,8 @@ bool CommandService::HandleTele(std::shared_ptr<WorldSession> session,
 
 bool CommandService::HandleHelp(std::shared_ptr<WorldSession> session,
                                 const std::vector<std::string> &) {
-  session->SendNotification("Available commands: .gps, .tele, .help");
+  session->SendNotification(
+      "Commands: .help | .gps (moderator+) | .tele (game master+)");
   return true;
 }
 

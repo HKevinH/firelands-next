@@ -4,255 +4,29 @@
 #include <domain/world/Player.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionMovementChecks.h>
+#include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <domain/repositories/IRealmRepository.h>
 #include <infrastructure/persistence/MySqlAccountDataRepository.h>
 #include <shared/Config.h>
 #include <shared/Logger.h>
 #include <shared/network/UpdateData.h>
-#include <shared/network/UpdateFields.h>
 #include <shared/network/packets/MotdPacket.h>
 #include <shared/network/packets/VerifyWorldPacket.h>
 #include <shared/network/packets/SetProficiencyPacket.h>
 #include <shared/network/BitReader.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/game/ChatLanguages.h>
-#include <shared/game/EquipmentCache.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/game/WowGuid.h>
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <cstring>
 #include <ctime>
-#include <map>
 #include <vector>
 
 namespace Firelands {
 
-namespace {
-
-/// Starter spells per class (4.3.4), from firelands-cata-ref `playercreateinfo_spell_custom.sql`
-/// (classmask 1<<class-1). Keeps the client spell book non-empty so InitialLogin does not
-/// leave null pointers (WoW #132 at address 0x4).
-std::vector<uint32> BuildDefaultKnownSpells(uint8 classId) {
-  switch (classId) {
-  case 1: // Warrior
-    return {2457, 71, 78, 100, 6673, 772, 3127, 34428};
-  case 2: // Paladin
-    return {465, 635, 20154, 20271, 19740, 498, 633, 82242};
-  case 3: // Hunter
-    return {75, 13165, 1978, 3044, 56641, 781, 1130, 2973};
-  case 4: // Rogue
-    return {1784, 2098, 53, 1752, 921, 1766, 1776, 82245};
-  case 5: // Priest
-    // Do not use post-4.3.4 spell ids (e.g. 86475): some clients stop applying
-    // `SMSG_SEND_KNOWN_SPELLS` after an unknown id, which blocks `/say` (no
-    // `CMSG_MESSAGECHAT_SAY`) until language passives never register.
-    return {585, 589, 2061, 17, 139, 2050, 8092};
-  case 6: // Death Knight
-    return {48263, 45524, 49998, 47528, 48721, 45529, 48792};
-  case 7: // Shaman
-    return {331, 8042, 8017, 8050, 324, 51730, 5185, 52127};
-  case 8: // Mage
-    return {116, 133, 2136, 1459, 130, 1953, 118};
-  case 9: // Warlock
-    return {172, 348, 687, 1454, 5782, 980, 603};
-  case 11: // Druid
-    return {8921, 5185, 774, 768, 1126, 339, 467};
-  default:
-    return {6673, 78, 2457, 3127};
-  }
-}
-
-// TCPP SharedDefines.h + QueryPackets.cpp (WorldPackets::Query::QueryPlayerNameResponse)
-enum QueryNameResponseCode : uint8 {
-  RESPONSE_SUCCESS = 0, // full PlayerGuidLookupData after result byte
-  RESPONSE_FAILURE = 1, // only packed guid + result (client keeps “unknown” name)
-};
-
-// ByteBuffer& operator<<(ByteBuffer&, PlayerGuidLookupData const&) — same field order.
-static void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
-                                       std::string const &realmName) {
-  dst.WriteString(ch.GetName());
-  dst.WriteString(realmName);
-  dst.Append<uint8>(ch.GetRace());
-  dst.Append<uint8>(ch.GetGender());
-  dst.Append<uint8>(ch.GetClass());
-  dst.Append<uint8>(0); // DeclinedNames.has_value() == false
-}
-
-static uint64 ReadClientTargetGuid(WorldPacket &packet) {
-  const size_t rem = packet.Size() - packet.GetReadPos();
-  if (rem >= sizeof(uint64)) {
-    return packet.Read<uint64>();
-  }
-  if (rem > 0) {
-    return packet.ReadPackedGuid();
-  }
-  return 0;
-}
-
-std::map<uint16, uint32> BuildItemCreateFields(uint64 itemObjectGuid,
-                                               uint64 ownerGuid,
-                                               uint32 itemEntry,
-                                               uint32 stackCount) {
-  std::map<uint16, uint32> fields;
-  for (uint16_t i = 0; i < ITEM_END; ++i)
-    fields[i] = 0;
-
-  uint32 igLo = 0;
-  uint32 igHi = 0;
-  uint32 owLo = 0;
-  uint32 owHi = 0;
-  WriteGuidToTwoUint32(itemObjectGuid, igLo, igHi);
-  WriteGuidToTwoUint32(ownerGuid, owLo, owHi);
-
-  fields[OBJECT_FIELD_GUID] = igLo;
-  fields[OBJECT_FIELD_GUID + 1] = igHi;
-  fields[OBJECT_FIELD_DATA] = 0;
-  fields[OBJECT_FIELD_DATA + 1] = 0;
-  fields[OBJECT_FIELD_TYPE] = kTypeMaskItem;
-  fields[OBJECT_FIELD_ENTRY] = itemEntry;
-  fields[OBJECT_FIELD_SCALE_X] = 0x3F800000;
-  fields[OBJECT_FIELD_PADDING] = 0;
-
-  fields[ITEM_FIELD_OWNER] = owLo;
-  fields[ITEM_FIELD_OWNER + 1] = owHi;
-  fields[ITEM_FIELD_CONTAINED] = owLo;
-  fields[ITEM_FIELD_CONTAINED + 1] = owHi;
-  fields[ITEM_FIELD_STACK_COUNT] = stackCount;
-  return fields;
-}
-
-/// Partial player VALUES refresh (bag 0 equip + main backpack grid) after moves.
-std::map<uint16, uint32> BuildPlayerBag0InventoryValues(Character const &character) {
-  std::map<uint16, uint32> fields;
-  for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {
-    uint32 const entry = character.GetVisibleItemEntry(slot);
-    uint32 const itemGuidLow = character.GetVisibleItemGuidLow(slot);
-    uint16 const base = static_cast<uint16>(
-        PLAYER_VISIBLE_ITEM_1_ENTRYID + static_cast<uint16>(slot * 2));
-    fields[base] = entry;
-    fields[static_cast<uint16>(base + 1)] = 0;
-
-    uint64 const itemOg = MakeItemObjectGuid(itemGuidLow);
-    uint32 ilo = 0;
-    uint32 ihi = 0;
-    WriteGuidToTwoUint32(itemOg, ilo, ihi);
-    uint16 const invBase = static_cast<uint16>(
-        PLAYER_FIELD_INV_SLOT_HEAD + static_cast<uint16>(slot * 2));
-    fields[invBase] = ilo;
-    fields[static_cast<uint16>(invBase + 1)] = ihi;
-  }
-  for (size_t packIndex = 0; packIndex < kPackSlotCount; ++packIndex) {
-    uint32 const itemGuidLow = character.GetPackItemGuidLow(packIndex);
-    uint64 const itemOg = MakeItemObjectGuid(itemGuidLow);
-    uint32 ilo = 0;
-    uint32 ihi = 0;
-    WriteGuidToTwoUint32(itemOg, ilo, ihi);
-    uint16 const packBase = static_cast<uint16>(
-        PLAYER_FIELD_PACK_SLOT_1 + static_cast<uint16>(packIndex * 2));
-    fields[packBase] = ilo;
-    fields[static_cast<uint16>(packBase + 1)] = ihi;
-  }
-  return fields;
-}
-
-void SetPackedShort(std::map<uint16, uint32> &fields, uint16 field,
-                    uint8 slot, uint16 value) {
-  uint32 &packed = fields[static_cast<uint16>(field + (slot / 2))];
-  if ((slot % 2) == 0)
-    packed = (packed & 0xFFFF0000u) | value;
-  else
-    packed = (packed & 0x0000FFFFu) | (static_cast<uint32>(value) << 16);
-}
-
-void AddLanguageSkillFields(std::map<uint16, uint32> &fields, uint8 race) {
-  std::vector<uint32> skills;
-  AppendRacialLanguageSkills(race, skills);
-  constexpr uint16 kRank = 300;
-  for (size_t i = 0; i < skills.size() && i < 64; ++i) {
-    uint8 const slot = static_cast<uint8>(i);
-    uint16 const skill = static_cast<uint16>(skills[i]);
-    SetPackedShort(fields, PLAYER_SKILL_LINEID_0, slot, skill);
-    SetPackedShort(fields, PLAYER_SKILL_STEP_0, slot, 0);
-    SetPackedShort(fields, PLAYER_SKILL_RANK_0, slot, kRank);
-    SetPackedShort(fields, PLAYER_SKILL_MAX_RANK_0, slot, kRank);
-    SetPackedShort(fields, PLAYER_SKILL_MODIFIER_0, slot, 0);
-    SetPackedShort(fields, PLAYER_SKILL_TALENT_0, slot, 0);
-  }
-}
-
-std::map<uint16, uint32> BuildPlayerUpdateFields(uint64 guid,
-                                                 Character const &character) {
-  std::map<uint16, uint32> fields;
-  fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
-  fields[OBJECT_FIELD_GUID + 1] = (uint32)(guid >> 32);
-  fields[OBJECT_FIELD_TYPE] =
-      (1 << TYPEID_OBJECT) | (1 << TYPEID_UNIT) | (1 << TYPEID_PLAYER);
-  fields[OBJECT_FIELD_SCALE_X] = 0x3F800000;
-
-  uint8 bytes0[4] = {character.GetRace(), character.GetClass(),
-                     character.GetGender(), 0};
-  std::memcpy(&fields[UNIT_FIELD_BYTES_0], bytes0, 4);
-
-  fields[UNIT_FIELD_HEALTH] = character.GetHealth();
-  fields[UNIT_FIELD_MAXHEALTH] = character.GetMaxHealth();
-  fields[UNIT_FIELD_POWER1] = 0;
-  fields[UNIT_FIELD_MAXPOWER1] = 0;
-  fields[UNIT_FIELD_LEVEL] = character.GetLevel();
-  fields[UNIT_FIELD_FACTIONTEMPLATE] = character.GetFactionTemplate();
-  fields[UNIT_FIELD_DISPLAYID] = character.GetDisplayId();
-  fields[UNIT_FIELD_NATIVEDISPLAYID] = character.GetDisplayId();
-  fields[UNIT_FIELD_BYTES_2] = 0;
-
-  AddLanguageSkillFields(fields, character.GetRace());
-
-  for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {
-    uint32 const entry = character.GetVisibleItemEntry(slot);
-    uint32 const itemGuidLow = character.GetVisibleItemGuidLow(slot);
-    uint16 const base = static_cast<uint16>(
-        PLAYER_VISIBLE_ITEM_1_ENTRYID + static_cast<uint16>(slot * 2));
-    fields[base] = entry;
-    fields[static_cast<uint16>(base + 1)] = 0;
-
-    uint64 const itemOg = MakeItemObjectGuid(itemGuidLow);
-    uint32 ilo = 0;
-    uint32 ihi = 0;
-    WriteGuidToTwoUint32(itemOg, ilo, ihi);
-    uint16 const invBase = static_cast<uint16>(
-        PLAYER_FIELD_INV_SLOT_HEAD + static_cast<uint16>(slot * 2));
-    fields[invBase] = ilo;
-    fields[static_cast<uint16>(invBase + 1)] = ihi;
-  }
-  for (size_t packIndex = 0; packIndex < kPackSlotCount; ++packIndex) {
-    uint32 const itemGuidLow = character.GetPackItemGuidLow(packIndex);
-    uint64 const itemOg = MakeItemObjectGuid(itemGuidLow);
-    uint32 ilo = 0;
-    uint32 ihi = 0;
-    WriteGuidToTwoUint32(itemOg, ilo, ihi);
-    uint16 const packBase = static_cast<uint16>(
-        PLAYER_FIELD_PACK_SLOT_1 + static_cast<uint16>(packIndex * 2));
-    fields[packBase] = ilo;
-    fields[static_cast<uint16>(packBase + 1)] = ihi;
-  }
-  return fields;
-}
-
-void SendPlayerCreateToNotifier(std::shared_ptr<IMapNotifier> target,
-                                uint32 mapId, uint64 objectGuid,
-                                Character const &character,
-                                MovementInfo const &move) {
-  if (!target)
-    return;
-  UpdateData update(mapId);
-  update.AddCreateObject(objectGuid, TYPEID_PLAYER, move,
-                         BuildPlayerUpdateFields(objectGuid, character));
-  WorldPacket pkt(SMSG_UPDATE_OBJECT);
-  update.Build(pkt);
-  target->SendPacket(pkt);
-}
-
-} // namespace
+namespace ws_obj = WorldSessionObjectUpdate;
 
 WorldSession::WorldSession(
     tcp::socket socket, std::shared_ptr<AuthService> authService,
@@ -260,13 +34,15 @@ WorldSession::WorldSession(
     std::shared_ptr<ICommandService> commandService,
     std::shared_ptr<MySqlAccountDataRepository> accountDataRepo,
     std::shared_ptr<LanguagesDbc const> languagesDbc,
-    std::shared_ptr<SpellDbc const> spellDbc)
+    std::shared_ptr<SpellDbc const> spellDbc,
+    std::shared_ptr<IRealmRepository> realmRepo)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
       _accountDataRepo(std::move(accountDataRepo)),
       _languagesDbc(std::move(languagesDbc)),
-      _spellDbc(std::move(spellDbc)), _serverSeed(0),
+      _spellDbc(std::move(spellDbc)),
+      _realmRepo(std::move(realmRepo)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()) {}
 
 WorldSession::~WorldSession() = default;
@@ -569,158 +345,6 @@ void WorldSession::HandlePacket(ByteBuffer &buffer) {
 
 // --- Client Packet Handlers (CMSG) ---
 
-void WorldSession::HandleCharEnum(WorldPacket & /*packet*/) {
-  auto characters = _charService->GetCharactersForAccount(_accountId);
-  uint32 count = static_cast<uint32>(characters.size());
-
-  LOG_DEBUG("CMSG_CHAR_ENUM: Found {} characters for account {}", count,
-            _accountId);
-
-  WorldPacket response(SMSG_CHAR_ENUM);
-  BitWriter bw(response);
-
-  // Cata 4.3.4 (15595) Bit Header:
-  bw.WriteBits(0, 23); // FactionChangeRestrictions size
-  bw.WriteBit(true);   // Success
-  bw.WriteBits(count, 17);
-
-  if (count == 0) {
-    bw.Flush();
-    SendPacket(response);
-    return;
-  }
-
-  struct GuidData {
-    uint8 g[8];
-    uint8 gg[8];
-  };
-  std::vector<GuidData> gd_list(count);
-
-  for (uint32 i = 0; i < count; ++i) {
-    uint64 guid = characters[i]->GetGuid();
-    uint64 guildGuid = 0; // Guilds not implemented
-
-    for (int b = 0; b < 8; ++b) {
-      gd_list[i].g[b] = (guid >> (b * 8)) & 0xFF;
-      gd_list[i].gg[b] = (guildGuid >> (b * 8)) & 0xFF;
-    }
-
-    auto &gd = gd_list[i];
-    // Exact bit order for 15595 Character Enum
-    bw.WriteBit(gd.g[3]);
-    bw.WriteBit(gd.gg[1]);
-    bw.WriteBit(gd.gg[7]);
-    bw.WriteBit(gd.gg[2]);
-    bw.WriteBits(characters[i]->GetName().length(), 7);
-    bw.WriteBit(gd.g[4]);
-    bw.WriteBit(gd.g[7]);
-    bw.WriteBit(gd.gg[3]);
-    bw.WriteBit(gd.g[5]);
-    bw.WriteBit(gd.gg[6]);
-    bw.WriteBit(gd.g[1]);
-    bw.WriteBit(gd.gg[5]);
-    bw.WriteBit(gd.gg[4]);
-    bw.WriteBit(characters[i]->IsFirstLogin());
-    bw.WriteBit(gd.g[0]);
-    bw.WriteBit(gd.g[2]);
-    bw.WriteBit(gd.g[6]);
-    bw.WriteBit(gd.gg[0]);
-  }
-  bw.Flush();
-
-  for (uint32 i = 0; i < count; ++i) {
-    auto const &ch = characters[i];
-    auto &gd = gd_list[i];
-
-    // Exact byte order for 15595 Character Enum
-    response.Append<uint8>(ch->GetClass());
-
-    const auto visualItems = EquipmentCache::Parse(ch->GetEquipmentCache());
-    // Equipment (VisualItems) - 23 slots in Cata
-    for (int slot = 0; slot < 23; ++slot) {
-      auto const &visualSlot = visualItems[slot];
-      response.Append<uint8>(visualSlot.invType);
-      response.Append<uint32>(visualSlot.displayId);
-      response.Append<uint32>(visualSlot.displayEnchantId);
-    }
-
-    response.Append<uint32>(0); // PetCreatureFamilyID
-    response.WriteByteSeq(gd.gg[2]);
-    response.Append<uint8>(i); // ListPosition
-    response.Append<uint8>(ch->GetHairStyle());
-    response.WriteByteSeq(gd.gg[3]);
-    response.Append<uint32>(0); // PetCreatureDisplayID
-    response.Append<uint32>(ch->GetCharacterFlags());
-    response.Append<uint8>(ch->GetHairColor());
-    response.WriteByteSeq(gd.g[4]);
-    response.Append<int32>(ch->GetMapId());
-    response.WriteByteSeq(gd.gg[5]);
-    response.Append<float>(ch->GetZ());
-    response.WriteByteSeq(gd.gg[6]);
-    response.Append<uint32>(0); // PetExperienceLevel
-    response.WriteByteSeq(gd.g[3]);
-    response.Append<float>(ch->GetY());
-    response.Append<uint32>(ch->GetCustomizationFlags());
-    response.Append<uint8>(ch->GetFacialHair());
-    response.WriteByteSeq(gd.g[7]);
-    response.Append<uint8>(ch->GetGender());
-    response.WriteStringNoNull(ch->GetName()); // Length is already in bitstream
-    response.Append<uint8>(ch->GetFace());
-    response.WriteByteSeq(gd.g[0]);
-    response.WriteByteSeq(gd.g[2]);
-    response.WriteByteSeq(gd.gg[1]);
-    response.WriteByteSeq(gd.gg[7]);
-    response.Append<float>(ch->GetX());
-    response.Append<uint8>(ch->GetSkin());
-    response.Append<uint8>(ch->GetRace());
-    response.Append<uint8>(ch->GetLevel());
-    response.WriteByteSeq(gd.g[6]);
-    response.WriteByteSeq(gd.gg[4]);
-    response.WriteByteSeq(gd.gg[0]);
-    response.WriteByteSeq(gd.g[5]);
-    response.WriteByteSeq(gd.g[1]);
-    response.Append<int32>(ch->GetZoneId());
-  }
-
-  SendPacket(response);
-}
-
-void WorldSession::HandleCharCreate(WorldPacket &packet) {
-  std::string name = packet.ReadString();
-  uint8 race = packet.Read<uint8>();
-  uint8 klass = packet.Read<uint8>();
-  uint8 gender = packet.Read<uint8>();
-  uint8 skin = packet.Read<uint8>();
-  uint8 face = packet.Read<uint8>();
-  uint8 hairStyle = packet.Read<uint8>();
-  uint8 hairColor = packet.Read<uint8>();
-  uint8 facialHair = packet.Read<uint8>();
-  uint8 outfitId = packet.Read<uint8>();
-
-  LOG_DEBUG("CMSG_CHAR_CREATE: Name='{}', Race={}, Class={}", name, race, klass);
-
-  bool success =
-      _charService->CreateCharacter(_accountId, name, race, klass, gender, skin,
-                                    face, hairStyle, hairColor, facialHair,
-                                    outfitId);
-
-  WorldPacket response(SMSG_CHAR_CREATE);
-  response.Append<uint8>(success ? 0x2F : 0x30);
-  SendPacket(response);
-}
-
-void WorldSession::HandleCharDelete(WorldPacket &packet) {
-  uint64 guid = packet.Read<uint64>();
-  LOG_DEBUG("CMSG_CHAR_DELETE for GUID: {}", guid);
-
-  bool success =
-      _charService->DeleteCharacter(static_cast<uint32>(guid), _accountId);
-
-  WorldPacket response(SMSG_CHAR_DELETE);
-  response.Append<uint8>(success ? 0x47 : 0x48);
-  SendPacket(response);
-}
-
 void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   uint64 guid = 0;
   LoginReadPackedPlayerGuid(packet, guid);
@@ -835,7 +459,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
       for (uint32_t sid : fromDb)
         pushUnique(static_cast<uint32>(sid));
     } else {
-      for (uint32 sid : BuildDefaultKnownSpells(character.GetClass()))
+      for (uint32 sid : ws_obj::BuildDefaultKnownSpells(character.GetClass()))
         pushUnique(sid);
     }
     // Strip ids from wrong client eras that break spellbook application on 4.3.4.
@@ -961,7 +585,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
   // Now that the player is on the map, send create/update data and "after add" packets
   UpdateData update(_mapId);
   update.AddCreateObject(guid, TYPEID_PLAYER, move,
-                         BuildPlayerUpdateFields(guid, character));
+                         ws_obj::BuildPlayerUpdateFields(guid, character));
 
   MovementInfo itemMove{};
   for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {
@@ -972,7 +596,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
     uint64 const itemOg = MakeItemObjectGuid(itemGuidLow);
     update.AddCreateObject(
         itemOg, TYPEID_ITEM, itemMove,
-        BuildItemCreateFields(itemOg, guid, entry,
+        ws_obj::BuildItemCreateFields(itemOg, guid, entry,
                               character.GetVisibleItemStackCount(slot)));
   }
   for (size_t pi = 0; pi < kPackSlotCount; ++pi) {
@@ -983,7 +607,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
     uint64 const itemOg = MakeItemObjectGuid(itemGuidLow);
     update.AddCreateObject(
         itemOg, TYPEID_ITEM, itemMove,
-        BuildItemCreateFields(itemOg, guid, entry,
+        ws_obj::BuildItemCreateFields(itemOg, guid, entry,
                               character.GetPackItemStackCount(pi)));
   }
 
@@ -998,9 +622,9 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
       if (!other || other->GetGuid() == guid)
         return;
       if (auto n = other->GetNotifier())
-        SendPlayerCreateToNotifier(n, _mapId, guid, character, move);
+        ws_obj::SendPlayerCreateToNotifier(n, _mapId, guid, character, move);
       if (auto otherCh = _charService->GetCharacterByGuid(other->GetGuid())) {
-        SendPlayerCreateToNotifier(
+        ws_obj::SendPlayerCreateToNotifier(
             std::static_pointer_cast<IMapNotifier>(shared_from_this()), _mapId,
             other->GetGuid(), *otherCh, other->GetPosition());
       }
@@ -1288,15 +912,15 @@ void WorldSession::HandleNameQuery(WorldPacket &packet) {
 
   auto chOpt = _charService->GetCharacterByGuid(guid);
   if (!chOpt) {
-    response.Append<uint8>(RESPONSE_FAILURE);
+    response.Append<uint8>(kQueryNameResponseFailure);
     SendPacket(response);
     return;
   }
 
-  response.Append<uint8>(RESPONSE_SUCCESS);
+  response.Append<uint8>(kQueryNameResponseSuccess);
   // 4.3.4 chat UI shows "Name-Realm" when this realm string is non-empty; use
   // empty so only the character name appears (RealmName in yaml is for auth/link).
-  AppendPlayerGuidLookupData(response, *chOpt, "");
+  ws_obj::AppendPlayerGuidLookupData(response, *chOpt, "");
   SendPacket(response);
 }
 
@@ -1356,7 +980,7 @@ void WorldSession::HandleSwapInvItem(WorldPacket &packet) {
     return;
 
   UpdateData update(_mapId);
-  update.AddValuesUpdate(_playerGuid, BuildPlayerBag0InventoryValues(*refreshed));
+  update.AddValuesUpdate(_playerGuid, ws_obj::BuildPlayerBag0InventoryValues(*refreshed));
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
   update.Build(pkt);
   SendPacket(pkt);
@@ -1394,7 +1018,7 @@ void WorldSession::HandleSwapItem(WorldPacket &packet) {
     return;
 
   UpdateData update(_mapId);
-  update.AddValuesUpdate(_playerGuid, BuildPlayerBag0InventoryValues(*refreshed));
+  update.AddValuesUpdate(_playerGuid, ws_obj::BuildPlayerBag0InventoryValues(*refreshed));
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
   update.Build(pkt);
   SendPacket(pkt);
@@ -1415,14 +1039,14 @@ void WorldSession::HandleMoveTimeSkipped(WorldPacket &packet) {
 }
 
 void WorldSession::HandleGossipHello(WorldPacket &packet) {
-  const uint64 npcGuid = ReadClientTargetGuid(packet);
+  const uint64 npcGuid = ws_obj::ReadClientTargetGuid(packet);
   if (auto host = WorldService::Instance().GetScriptHost()) {
     host->FireGossipHello(npcGuid);
   }
 }
 
 void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
-  const uint64 npcGuid = ReadClientTargetGuid(packet);
+  const uint64 npcGuid = ws_obj::ReadClientTargetGuid(packet);
   if (npcGuid == 0 || packet.GetReadPos() + sizeof(uint32) * 2 > packet.Size()) {
     return;
   }

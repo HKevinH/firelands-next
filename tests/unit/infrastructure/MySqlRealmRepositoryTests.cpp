@@ -52,5 +52,12 @@ namespace {
         EXPECT_FLOAT_EQ(realms[0].GetPopulation(), 0.0f);
     }
 
+    TEST_F(MySqlRealmRepositoryTest, GetAllowedSecurityLevelForRealm) {
+        auto gate = _repository->GetAllowedSecurityLevelForRealm(1);
+        ASSERT_TRUE(gate.has_value());
+        EXPECT_EQ(*gate, 0u);
+        EXPECT_FALSE(_repository->GetAllowedSecurityLevelForRealm(999).has_value());
+    }
+
 } // namespace
 } // namespace Firelands

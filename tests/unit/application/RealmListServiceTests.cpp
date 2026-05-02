@@ -3,7 +3,9 @@
 #include <application/services/RealmListService.h>
 #include <domain/repositories/IRealmRepository.h>
 #include <domain/models/Realm.h>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 using namespace Firelands;
@@ -27,6 +29,9 @@ public:
     bool FindById(uint32_t) override { return false; }
     void DeleteById(uint32_t) override {}
     void Create(const Realm&) override {}
+    std::optional<uint8_t> GetAllowedSecurityLevelForRealm(uint32_t) override {
+        return std::nullopt;
+    }
 };
 
 TEST(RealmListService, FetchRealms) {

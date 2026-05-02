@@ -17,6 +17,7 @@
 #include <shared/network/WorldCrypt.h>
 #include <shared/network/AccountDataTypes.h>
 #include <shared/dbc/LanguagesDbc.h>
+#include <shared/game/AccessLevel.h>
 #include <shared/dbc/SpellDbc.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
@@ -39,6 +40,7 @@ struct AuthSecureAddonEntry {
 };
 
 class MySqlAccountDataRepository;
+class IRealmRepository;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -50,7 +52,8 @@ public:
       std::shared_ptr<ICommandService> commandService,
       std::shared_ptr<MySqlAccountDataRepository> accountDataRepo,
       std::shared_ptr<LanguagesDbc const> languagesDbc = nullptr,
-      std::shared_ptr<SpellDbc const> spellDbc = nullptr);
+      std::shared_ptr<SpellDbc const> spellDbc = nullptr,
+      std::shared_ptr<IRealmRepository> realmRepo = nullptr);
 
   ~WorldSession();
 
@@ -70,6 +73,7 @@ public:
 
   uint64 GetGuid() const override { return _playerGuid; }
   const MovementInfo &GetPosition() const { return _position; }
+  AccessLevel GetAccountAccessLevel() const { return _accountAccessLevel; }
 
 private:
   // Core Network Logic
@@ -183,6 +187,7 @@ private:
   std::shared_ptr<MySqlAccountDataRepository> _accountDataRepo;
   std::shared_ptr<LanguagesDbc const> _languagesDbc;
   std::shared_ptr<SpellDbc const> _spellDbc;
+  std::shared_ptr<IRealmRepository> _realmRepo;
   std::array<AccountDataSlot, NUM_ACCOUNT_DATA_TYPES> _accountData{};
   uint32_t _activeCharacterGuid = 0;
   /// Per-character account blobs edited at character select (no guid yet); flushed on login.
@@ -190,6 +195,7 @@ private:
   bool _initialized = false;
   uint32 _serverSeed;
   uint32 _accountId = 0;
+  AccessLevel _accountAccessLevel = AccessLevel::Player;
   uint64 _playerGuid = 0;
   uint8 _playerRace = 0;
   uint32 _mapId = 0;

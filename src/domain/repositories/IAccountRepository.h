@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <shared/Common.h>
+#include <shared/game/AccessLevel.h>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,7 @@ struct Account {
   std::vector<uint8_t> salt;
   std::vector<uint8_t> verifier;
   uint8 expansion;
+  AccessLevel accessLevel = AccessLevel::Player;
 };
 
 class IAccountRepository {

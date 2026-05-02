@@ -1,5 +1,6 @@
 #pragma once
 #include <application/ports/ICommandService.h>
+#include <shared/game/Permissions.h>
 #include <functional>
 #include <map>
 #include <string>
@@ -11,14 +12,21 @@ class CommandService : public ICommandService {
 public:
   CommandService();
   bool ExecuteCommand(std::shared_ptr<WorldSession> session,
-                      const std::string &message) override;
+                      const std::string &message,
+                      PrivilegeOrigin origin = PrivilegeOrigin::GameClient) override;
   bool IsCommand(const std::string &message) const override;
 
 private:
   using CommandHandler = std::function<bool(std::shared_ptr<WorldSession>,
                                             const std::vector<std::string> &)>;
 
-  void RegisterCommand(const std::string &name, CommandHandler handler);
+  struct CommandEntry {
+    CommandHandler handler;
+    PermissionMask requiredPermissions = 0;
+    bool consoleOnly = false;
+  };
+
+  void RegisterCommand(const std::string &name, CommandEntry entry);
 
   // Handlers
   bool HandleGps(std::shared_ptr<WorldSession> session,
@@ -28,7 +36,7 @@ private:
   bool HandleHelp(std::shared_ptr<WorldSession> session,
                   const std::vector<std::string> &args);
 
-  std::map<std::string, CommandHandler> _commands;
+  std::map<std::string, CommandEntry> _commands;
 };
 
 } // namespace Firelands

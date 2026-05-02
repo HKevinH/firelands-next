@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS `account` (
   `joindate` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `last_ip` varchar(15) NOT NULL DEFAULT '127.0.0.1',
   `expansion` tinyint(3) unsigned NOT NULL DEFAULT '3', -- 3 for Cataclysm
+  `access_level` tinyint unsigned NOT NULL DEFAULT '0', -- 0=player … 3=admin (see AccessLevel.h)
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS `realmlist` (
   `port` smallint(5) unsigned NOT NULL DEFAULT '8085',
   `icon` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `timezone` tinyint(3) unsigned NOT NULL DEFAULT '1',
+  -- Minimum `account.access_level` (0–3) required to see/join this realm.
   `allowedSecurityLevel` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `population` float NOT NULL DEFAULT '0',
   PRIMARY KEY (`id`),

@@ -2,6 +2,7 @@
 #include <cstring>
 #include <infrastructure/network/sessions/AuthSession.h>
 #include <shared/Config.h>
+#include <shared/game/AccessLevel.h>
 #include <shared/Logger.h>
 
 #include <mutex>
@@ -100,6 +101,7 @@ void AuthSession::HandleLogonChallenge(AuthPacket &packet) {
   challenge.Read(packet);
 
   _username = challenge.username;
+  _accountAccessLevel = AccessLevel::Player;
   LOG_INFO("Login challenge for user: {} ({})", _username, GetIpAddress());
 
   auto account = _authService->FindAccount(_username);
@@ -164,6 +166,7 @@ void AuthSession::HandleLogonProof(AuthPacket &packet) {
   if (std::memcmp(M1.data(), proof.M1, 20) != 0) {
     response.result = AUTH_FAIL_WRONG_PASSWORD;
     LOG_WARN("Login failed for {} - Wrong Password", _username);
+    _accountAccessLevel = AccessLevel::Player;
   } else {
     response.result = AUTH_SUCCESS;
     auto M2 = SRPService::CalculateM2(A, M1, K);
@@ -177,6 +180,9 @@ void AuthSession::HandleLogonProof(AuthPacket &packet) {
     auto account = _authService->FindAccount(_username);
     if (account) {
       _authService->CreateSession(account->id, K);
+      _accountAccessLevel = account->accessLevel;
+    } else {
+      _accountAccessLevel = AccessLevel::Player;
     }
   }
 
@@ -196,10 +202,20 @@ void AuthSession::HandleRealmList(AuthPacket & /*packet*/) {
     realms = _realmService->GetRealmList();
   }
 
+  std::vector<Realm const *> visibleRealms;
+  visibleRealms.reserve(realms.size());
+  for (Realm const &r : realms) {
+    AccessLevel const need = AccessLevelFromStored(r.GetAllowedSecurityLevel());
+    if (HasAtLeast(_accountAccessLevel, need))
+      visibleRealms.push_back(&r);
+  }
+
   bool const liveMerge =
       _realmService && _realmService->UsesLiveRealmState();
-  LOG_INFO("Realm list for {}: {} realm(s), realmLinkMerge={}", _username,
-           realms.size(), liveMerge ? "on" : "off");
+  LOG_INFO("Realm list for {}: {} realm(s) ({} after access filter), "
+           "realmLinkMerge={}",
+           _username, realms.size(), visibleRealms.size(),
+           liveMerge ? "on" : "off");
   if (!liveMerge) {
     std::call_once(realmLinkConfigHint, [] {
       LOG_WARN(
@@ -213,15 +229,14 @@ void AuthSession::HandleRealmList(AuthPacket & /*packet*/) {
   ByteBuffer payloadBuffer;
 
   payloadBuffer.Append<uint32>(0); // unknown
-  payloadBuffer.Append<uint16>(static_cast<uint16>(realms.size()));
+  payloadBuffer.Append<uint16>(static_cast<uint16>(visibleRealms.size()));
 
-  for (const auto &realm : realms) {
+  for (Realm const *rp : visibleRealms) {
+    Realm const &realm = *rp;
     // Trinity order: Type, Lock (0/1), RealmFlags, name, address, pop, ...
     payloadBuffer.Append<uint8>(realm.GetIcon());
-    uint8_t const lock =
-        realm.GetAllowedSecurityLevel() > 0 ? static_cast<uint8_t>(1)
-                                            : static_cast<uint8_t>(0);
-    payloadBuffer.Append<uint8>(lock);
+    // Realms below the account tier are omitted; visible realms are joinable.
+    payloadBuffer.Append<uint8>(0);
     payloadBuffer.Append<uint8>(realm.GetRealmListFlags());
     // Name (ByteBuffer::Append(std::string) adds null terminator). The 4.3.4
     // client uses this label for "Player-Realm" in chat; optional auth config

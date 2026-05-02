@@ -14,6 +14,7 @@ public:
   void DeleteById(uint32_t id) override;
   void Create(const Realm &realm) override;
   std::vector<Realm> GetRealms() override;
+  std::optional<uint8_t> GetAllowedSecurityLevelForRealm(uint32_t id) override;
 
 private:
   std::shared_ptr<sql::Connection> _connection;

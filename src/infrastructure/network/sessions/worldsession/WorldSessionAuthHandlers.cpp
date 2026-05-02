@@ -1,5 +1,7 @@
+#include <domain/repositories/IRealmRepository.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <shared/Crypto.h>
+#include <shared/game/AccessLevel.h>
 #include <shared/Logger.h>
 #include <shared/network/BitReader.h>
 #include <shared/network/BitWriter.h>
@@ -178,7 +180,22 @@ void WorldSession::HandleAuthSession(WorldPacket &packet) {
     return;
   }
 
+  if (_realmRepo) {
+    auto gate = _realmRepo->GetAllowedSecurityLevelForRealm(realmId);
+    if (gate.has_value()) {
+      AccessLevel const need = AccessLevelFromStored(*gate);
+      if (!HasAtLeast(accountOpt->accessLevel, need)) {
+        LOG_WARN("CMSG_AUTH_SESSION: account '{}' denied for realm {} (needs "
+                 "access_level >= {}).",
+                 account, realmId, static_cast<int>(*gate));
+        Close();
+        return;
+      }
+    }
+  }
+
   _accountId = accountOpt->id;
+  _accountAccessLevel = accountOpt->accessLevel;
   LOG_DEBUG("CMSG_AUTH_SESSION: Digest validated successfully for account '{}'.",
             account);
 

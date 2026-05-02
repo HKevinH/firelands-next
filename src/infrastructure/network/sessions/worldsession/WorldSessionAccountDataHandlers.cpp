@@ -1,4 +1,5 @@
 #include <infrastructure/network/sessions/WorldSession.h>
+#include <infrastructure/persistence/MySqlAccountDataRepository.h>
 #include <shared/Logger.h>
 #include <shared/network/AccountDataTypes.h>
 

@@ -1,6 +1,7 @@
 #include "MySqlAccountRepository.h"
 #include <conncpp.hpp>
 #include <shared/Crypto.h>
+#include <shared/game/AccessLevel.h>
 #include <shared/Logger.h>
 #include <sstream>
 
@@ -14,7 +15,8 @@ std::optional<Account>
 MySqlAccountRepository::FindByUsername(const std::string &username) {
   try {
     std::shared_ptr<sql::PreparedStatement> stmnt(_connection->prepareStatement(
-        "SELECT id, username, email, salt, verifier, expansion FROM account "
+        "SELECT id, username, email, salt, verifier, expansion, access_level "
+        "FROM account "
         "WHERE username = ?"));
     stmnt->setString(1, username);
 
@@ -37,6 +39,8 @@ MySqlAccountRepository::FindByUsername(const std::string &username) {
                           std::istreambuf_iterator<char>());
 
       acc.expansion = static_cast<uint8>(res->getInt("expansion"));
+      acc.accessLevel =
+          AccessLevelFromStored(static_cast<uint8>(res->getInt("access_level")));
       return acc;
     }
   } catch (sql::SQLException &e) {
@@ -50,8 +54,9 @@ MySqlAccountRepository::FindByUsername(const std::string &username) {
 void MySqlAccountRepository::Create(const Account &account) {
   try {
     std::shared_ptr<sql::PreparedStatement> stmnt(_connection->prepareStatement(
-        "INSERT INTO account (username, email, salt, verifier, expansion) "
-        "VALUES (?, ?, ?, ?, ?)"));
+        "INSERT INTO account (username, email, salt, verifier, expansion, "
+        "access_level) "
+        "VALUES (?, ?, ?, ?, ?, ?)"));
     stmnt->setString(1, account.username);
     stmnt->setString(2, account.email);
 
@@ -66,6 +71,7 @@ void MySqlAccountRepository::Create(const Account &account) {
     stmnt->setBlob(4, &verifierStream);
 
     stmnt->setInt(5, account.expansion);
+    stmnt->setInt(6, AccessLevelToStored(account.accessLevel));
     stmnt->executeUpdate();
   } catch (sql::SQLException &e) {
     LOG_ERROR("Database error in Create: {}", e.what());
@@ -75,10 +81,12 @@ void MySqlAccountRepository::Create(const Account &account) {
 void MySqlAccountRepository::Update(const Account &account) {
   try {
     std::shared_ptr<sql::PreparedStatement> stmnt(_connection->prepareStatement(
-        "UPDATE account SET email = ?, expansion = ? WHERE id = ?"));
+        "UPDATE account SET email = ?, expansion = ?, access_level = ? "
+        "WHERE id = ?"));
     stmnt->setString(1, account.email);
     stmnt->setInt(2, account.expansion);
-    stmnt->setInt(3, account.id);
+    stmnt->setInt(3, AccessLevelToStored(account.accessLevel));
+    stmnt->setInt(4, account.id);
     stmnt->executeUpdate();
   } catch (sql::SQLException &e) {
     LOG_ERROR("Database error in Update: {}", e.what());

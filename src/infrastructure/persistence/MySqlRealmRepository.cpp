@@ -1,4 +1,5 @@
 #include "MySqlRealmRepository.h"
+#include <optional>
 #include <stdexcept>
 
 namespace Firelands {
@@ -9,6 +10,20 @@ MySqlRealmRepository::MySqlRealmRepository(
   if (!_connection) {
     throw std::invalid_argument("Database connection cannot be null");
   }
+}
+
+std::optional<uint8_t>
+MySqlRealmRepository::GetAllowedSecurityLevelForRealm(uint32_t id) {
+  try {
+    std::unique_ptr<sql::PreparedStatement> pstmt(_connection->prepareStatement(
+        "SELECT allowedSecurityLevel FROM realmlist WHERE id = ? LIMIT 1"));
+    pstmt->setUInt(1, id);
+    std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+    if (res->next())
+      return static_cast<uint8_t>(res->getUInt("allowedSecurityLevel"));
+  } catch (sql::SQLException &) {
+  }
+  return std::nullopt;
 }
 
 bool MySqlRealmRepository::FindById(uint32_t id) {
