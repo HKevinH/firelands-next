@@ -1,13 +1,16 @@
 #pragma once
 
-#include <domain/models/Character.h>
 #include <domain/models/PlayerCreateInfo.h>
 #include <shared/game/AccessLevel.h>
+#include <shared/game/Bag0InventoryData.h>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
 
 namespace Firelands {
+
+class Character;
 
 class ICharacterRepository {
 public:
@@ -44,6 +47,8 @@ public:
   virtual AccessLevel GetAccountAccessLevel(uint32_t accountId) = 0;
   /// Move an item from backpack grid (`INVENTORY_SLOT_ITEM_*`) to its default equipment slot.
   virtual bool AutoEquipFromBag0Slot(uint32_t characterGuid, uint8_t srcSlot) = 0;
+  virtual bool SaveInventory(uint32_t characterGuid,
+                          Bag0InventoryData const &invData) = 0;
 };
 
 } // namespace Firelands

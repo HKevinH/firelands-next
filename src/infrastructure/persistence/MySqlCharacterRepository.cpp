@@ -1,5 +1,7 @@
 #include "MySqlCharacterRepository.h"
+#include <domain/models/Character.h>
 #include <domain/models/PlayerCreateInfo.h>
+#include <shared/game/Bag0InventoryData.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/game/ItemEquipSlots.h>
 #include <shared/Logger.h>
@@ -18,15 +20,6 @@ namespace {
 struct ItemProtoRow {
   uint8 inventoryType = 0;
   uint32 buyCount = 1;
-};
-
-struct Bag0InventoryData {
-  std::array<uint32_t, kEquipmentSlotCount> equipEntries{};
-  std::array<uint32_t, kEquipmentSlotCount> equipGuids{};
-  std::array<uint32_t, kEquipmentSlotCount> equipStacks{};
-  std::array<uint32_t, kPackSlotCount> packEntries{};
-  std::array<uint32_t, kPackSlotCount> packGuids{};
-  std::array<uint32_t, kPackSlotCount> packStacks{};
 };
 
 float FiniteOrZero(float v) { return std::isfinite(v) ? v : 0.f; }
@@ -141,6 +134,97 @@ bool EnsureStarterInventoryTables(std::shared_ptr<sql::Connection> conn) {
     return true;
   } catch (sql::SQLException &e) {
     LOG_ERROR("EnsureStarterInventoryTables failed: {}", e.what());
+    return false;
+  }
+}
+
+bool SaveInventoryToDb(std::shared_ptr<sql::Connection> conn, uint32_t charGuid,
+                  Bag0InventoryData const &invData) {
+  if (!EnsureStarterInventoryTables(conn))
+    return false;
+
+  try {
+    conn->setAutoCommit(false);
+
+    {
+      std::shared_ptr<sql::PreparedStatement> delInv(conn->prepareStatement(
+          "DELETE FROM character_inventory WHERE guid = ? AND bag = 0"));
+      delInv->setUInt(1, charGuid);
+      delInv->executeUpdate();
+    }
+    {
+      std::shared_ptr<sql::PreparedStatement> delItem(conn->prepareStatement(
+          "DELETE FROM item_instance WHERE owner_guid = ? AND guid NOT IN "
+          "(SELECT item FROM character_inventory WHERE guid = ?)"));
+      delItem->setUInt(1, charGuid);
+      delItem->setUInt(2, charGuid);
+      delItem->executeUpdate();
+    }
+
+    for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {
+      uint32_t entry = invData.equipEntries[slot];
+      uint32_t guid = invData.equipGuids[slot];
+      uint32_t count = invData.equipStacks[slot];
+      if (entry == 0 || guid == 0)
+        continue;
+
+      std::shared_ptr<sql::PreparedStatement> insItem(conn->prepareStatement(
+          "INSERT INTO item_instance (guid, itemEntry, owner_guid, count) "
+          "VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE itemEntry = VALUES(itemEntry), "
+          "count = VALUES(count)"));
+      insItem->setUInt(1, guid);
+      insItem->setUInt(2, entry);
+      insItem->setUInt(3, charGuid);
+      insItem->setUInt(4, count > 0 ? count : 1);
+      insItem->executeUpdate();
+
+      std::shared_ptr<sql::PreparedStatement> insInv(conn->prepareStatement(
+          "INSERT INTO character_inventory (guid, bag, slot, item) "
+          "VALUES (?, 0, ?, ?) ON DUPLICATE KEY UPDATE slot = VALUES(slot)"));
+      insInv->setUInt(1, charGuid);
+      insInv->setUInt(2, static_cast<unsigned>(slot));
+      insInv->setUInt(3, guid);
+      insInv->executeUpdate();
+    }
+
+    for (size_t pi = 0; pi < kPackSlotCount; ++pi) {
+      uint32_t entry = invData.packEntries[pi];
+      uint32_t guid = invData.packGuids[pi];
+      uint32_t count = invData.packStacks[pi];
+      if (entry == 0 || guid == 0)
+        continue;
+
+      uint8_t slot = static_cast<uint8_t>(INVENTORY_SLOT_ITEM_START + pi);
+
+      std::shared_ptr<sql::PreparedStatement> insItem(conn->prepareStatement(
+          "INSERT INTO item_instance (guid, itemEntry, owner_guid, count) "
+          "VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE itemEntry = VALUES(itemEntry), "
+          "count = VALUES(count)"));
+      insItem->setUInt(1, guid);
+      insItem->setUInt(2, entry);
+      insItem->setUInt(3, charGuid);
+      insItem->setUInt(4, count > 0 ? count : 1);
+      insItem->executeUpdate();
+
+      std::shared_ptr<sql::PreparedStatement> insInv(conn->prepareStatement(
+          "INSERT INTO character_inventory (guid, bag, slot, item) "
+          "VALUES (?, 0, ?, ?) ON DUPLICATE KEY UPDATE slot = VALUES(slot)"));
+      insInv->setUInt(1, charGuid);
+      insInv->setUInt(2, static_cast<unsigned>(slot));
+      insInv->setUInt(3, guid);
+      insInv->executeUpdate();
+    }
+
+    conn->commit();
+    conn->setAutoCommit(true);
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("SaveInventory failed for guid {}: {}", charGuid, e.what());
+    try {
+      conn->rollback();
+      conn->setAutoCommit(true);
+    } catch (...) {
+    }
     return false;
   }
 }
@@ -828,6 +912,11 @@ MySqlCharacterRepository::GetAccountAccessLevel(uint32_t accountId) {
              e.what());
     return AccessLevel::Player;
   }
+}
+
+bool MySqlCharacterRepository::SaveInventory(uint32_t characterGuid,
+                                             Bag0InventoryData const &invData) {
+  return SaveInventoryToDb(_connection, characterGuid, invData);
 }
 
 } // namespace Firelands

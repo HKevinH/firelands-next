@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <application/services/CharacterService.h>
+#include <domain/models/Character.h>
 #include <domain/models/PlayerCreateInfo.h>
 #include <domain/repositories/ICharacterRepository.h>
 
@@ -31,6 +32,7 @@ public:
                 (override));
     MOCK_METHOD(AccessLevel, GetAccountAccessLevel, (uint32_t), (override));
     MOCK_METHOD(bool, AutoEquipFromBag0Slot, (uint32_t, uint8_t), (override));
+    MOCK_METHOD(bool, SaveInventory, (uint32_t, Bag0InventoryData const&), (override));
 };
 
 TEST(CharacterServiceTests, GetCharacters_ReturnsCharactersFromRepository) {

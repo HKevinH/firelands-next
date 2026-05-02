@@ -1,5 +1,6 @@
 #pragma once
 
+#include <domain/models/Character.h>
 #include <domain/models/PlayerCreateInfo.h>
 #include <domain/repositories/ICharacterRepository.h>
 #include <application/services/PlayerCreateInfoService.h>
@@ -174,10 +175,14 @@ public:
                                                moneyCopper);
   }
 
-  bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
+bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
                             uint32_t moneyCopper) {
     return m_repository->UpdateCharacterMoney(accountId, characterGuid,
-                                                moneyCopper);
+                                            moneyCopper);
+  }
+
+  bool SaveInventory(uint32_t characterGuid, Bag0InventoryData const &invData) {
+    return m_repository->SaveInventory(characterGuid, invData);
   }
 
   bool AddCharacterMoneyDelta(uint32_t accountId, uint32_t characterGuid,

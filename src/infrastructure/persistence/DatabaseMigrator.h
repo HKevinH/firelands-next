@@ -30,22 +30,41 @@ public:
     }
 
     std::vector<std::string> sqlFiles;
-    for (const auto &entry : std::filesystem::directory_iterator(dirPath)) {
-      if (entry.is_regular_file() && entry.path().extension() == ".sql") {
-        sqlFiles.push_back(entry.path().string());
+
+    std::filesystem::path initPath = std::filesystem::path(dirPath) / "init";
+    std::filesystem::path migrationsPath = std::filesystem::path(dirPath) / "migrations";
+
+    if (std::filesystem::exists(initPath)) {
+      for (const auto &entry : std::filesystem::directory_iterator(initPath)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".sql") {
+          sqlFiles.push_back(entry.path().string());
+        }
       }
     }
 
-    // Ordenar alfabéticamente para asegurar el orden de ejecución (ej: 0_...,
-    // 1_...)
+    if (std::filesystem::exists(migrationsPath)) {
+      for (const auto &entry : std::filesystem::directory_iterator(migrationsPath)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".sql") {
+          sqlFiles.push_back(entry.path().string());
+        }
+      }
+    }
+
     std::sort(sqlFiles.begin(), sqlFiles.end());
 
-    LOG_INFO("Starting database migrations from directory: {}", dirPath);
+    LOG_INFO("Starting database migrations from directory: {} (init + migrations)", dirPath);
 
     try {
       sql::Driver *driver = sql::mariadb::get_driver_instance();
       sql::Properties properties({{"user", user}, {"password", password}});
-      std::shared_ptr<sql::Connection> conn(driver->connect(uri, properties));
+
+      std::string baseUri = uri;
+      auto dbPos = uri.rfind("/firelands_");
+      if (dbPos != std::string::npos) {
+        baseUri = uri.substr(0, dbPos);
+      }
+
+      std::shared_ptr<sql::Connection> conn(driver->connect(baseUri, properties));
       EnsureSchemaMigrationsTable(conn);
 
       for (const auto &file : sqlFiles) {
@@ -103,19 +122,69 @@ public:
 
       LOG_INFO("Validating database schema: {}", sqlFilePath);
 
-      std::string content((std::istreambuf_iterator<char>(file)),
+std::string content((std::istreambuf_iterator<char>(file)),
                           std::istreambuf_iterator<char>());
 
-      // Split the file into individual statements
-      std::vector<std::string> statements = SplitStatements(content);
-
       size_t failures = 0;
-      for (const auto &statement : statements) {
-        if (!ExecuteStatement(conn, statement))
-          ++failures;
+
+      try {
+        std::string::size_type dbPos = content.find("CREATE DATABASE IF NOT EXISTS `firelands_");
+        if (dbPos != std::string::npos) {
+          std::string::size_type backtickStart = content.find('`', dbPos);
+          std::string::size_type backtickEnd = content.find('`', backtickStart + 1);
+          if (backtickStart != std::string::npos && backtickEnd != std::string::npos) {
+            std::string targetDb = content.substr(backtickStart + 1, backtickEnd - backtickStart - 1);
+            std::unique_ptr<sql::Statement> createStmt(conn->createStatement());
+            createStmt->execute("CREATE DATABASE IF NOT EXISTS `" + targetDb + "`");
+            conn->setSchema(targetDb);
+            LOG_INFO("Created/selected database: {}", targetDb);
+          }
+        }
+
+        std::string cleanedContent;
+        std::istringstream iss(content);
+        std::string line;
+        while (std::getline(iss, line)) {
+          if (line.find("--") != 0 && !line.empty()) {
+            cleanedContent += line + "\n";
+          } else if (line.find("--") == 0) {
+            cleanedContent += line + "\n";
+          }
+        }
+
+        std::vector<std::string> statements = SplitStatements(cleanedContent);
+        for (const auto &stmt : statements) {
+          std::string trimmed = stmt;
+          trimmed.erase(0, trimmed.find_first_not_of(" \n\r\t"));
+
+          if (trimmed.empty())
+            continue;
+
+          if (trimmed.find("CREATE DATABASE") != std::string::npos)
+            continue;
+
+          if (trimmed.rfind("USE ", 0) == 0)
+            continue;
+
+          try {
+            std::unique_ptr<sql::Statement> stmnt(conn->createStatement());
+            stmnt->execute(stmt);
+          } catch (sql::SQLException &e) {
+            int code = e.getErrorCode();
+            if (code == 1060 || code == 1061 || code == 1050) {
+              LOG_INFO("Skipped (already exists): {}", trimmed.substr(0, 60));
+            } else {
+              LOG_WARN("Failed: {} - {}", trimmed.substr(0, 60), e.what());
+              ++failures;
+            }
+          }
+        }
+      } catch (sql::SQLException &e) {
+        LOG_ERROR("Migration error: {}", e.what());
+        failures = 1;
       }
 
-      LOG_INFO("Schema validation completed for: {}", sqlFilePath);
+      LOG_INFO("Schema validation completed for: {} ({} failed statements)", sqlFilePath, failures);
       return failures;
 
     } catch (sql::SQLException &e) {
@@ -264,15 +333,13 @@ private:
       stmnt->execute(trimmed);
       return true;
     } catch (sql::SQLException &e) {
-      // Duplicate column / duplicate key name: treat as success so migrations are
-      // idempotent when re-run after a partial apply or when Ensure* already added
-      // the column (MariaDB/MySQL ER_DUP_FIELDNAME = 1060, ER_DUP_KEYNAME = 1061).
       int const code = e.getErrorCode();
-      if (code == 1060 || code == 1061) {
+      // Duplicate column / duplicate key name / table already exists (1050)
+      if (code == 1060 || code == 1061 || code == 1050) {
         LOG_INFO("Migration statement skipped (already present): {}", e.what());
         return true;
       }
-      LOG_DEBUG("SQL Execution note ({}): {}", trimmed.substr(0, 80), e.what());
+      LOG_WARN("Migration SQL failed ({}): {}", trimmed.substr(0, 80), e.what());
       return false;
     }
   }

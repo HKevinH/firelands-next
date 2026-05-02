@@ -35,6 +35,8 @@ namespace Firelands {
                              uint32_t count) override;
         AccessLevel GetAccountAccessLevel(uint32_t accountId) override;
         bool AutoEquipFromBag0Slot(uint32_t characterGuid, uint8_t srcSlot) override;
+        bool SaveInventory(uint32_t characterGuid,
+                           Bag0InventoryData const &invData) override;
     private:
         std::shared_ptr<sql::Connection> _connection;
     };

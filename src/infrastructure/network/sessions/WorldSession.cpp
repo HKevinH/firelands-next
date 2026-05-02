@@ -742,7 +742,7 @@ void WorldSession::FinalizeWorldExit() {
       persistPos = MovementInfo{};
     }
   }
-  if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
+if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
                                            zoneIdDb, persistPos.x, persistPos.y,
                                            persistPos.z, persistPos.orientation,
                                            _moneyCopper)) {
@@ -750,8 +750,19 @@ void WorldSession::FinalizeWorldExit() {
               charGuidLow, _accountId);
   } else {
     LOG_INFO("Saved logout position guid {}: map {} zone {} x={} y={} z={} o={}",
-             charGuidLow, mapIdDb, zoneIdDb, persistPos.x, persistPos.y,
-             persistPos.z, persistPos.orientation);
+            charGuidLow, mapIdDb, zoneIdDb, persistPos.x, persistPos.y,
+            persistPos.z, persistPos.orientation);
+  }
+
+  auto ch = _charService->GetCharacterByGuid(charGuidLow);
+  if (ch) {
+    auto invData = ch->GetBag0Inventory();
+    if (!_charService->SaveInventory(charGuidLow, invData)) {
+      LOG_ERROR("SaveInventory failed for guid {}, account {}",
+                charGuidLow, _accountId);
+    } else {
+      LOG_INFO("Saved inventory for guid {}", charGuidLow);
+    }
   }
 
   if (auto host = WorldService::Instance().GetScriptHost()) {

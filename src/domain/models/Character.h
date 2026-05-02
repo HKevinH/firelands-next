@@ -1,6 +1,8 @@
 #pragma once
 
+#include <domain/repositories/ICharacterRepository.h>
 #include <shared/Common.h>
+#include <shared/game/Bag0InventoryData.h>
 #include <shared/game/InventorySlots.h>
 #include <array>
 #include <string>
@@ -159,6 +161,21 @@ public:
       return 0;
     uint32 c = m_packItemStacks[packIndex];
     return c == 0 ? 1u : c;
+  }
+
+  Bag0InventoryData GetBag0Inventory() const {
+    Bag0InventoryData data;
+    for (size_t i = 0; i < kEquipmentSlotCount; ++i) {
+      data.equipEntries[i] = m_visibleItems[i];
+      data.equipGuids[i] = m_visibleItemGuids[i];
+      data.equipStacks[i] = m_visibleItemStacks[i];
+    }
+    for (size_t i = 0; i < kPackSlotCount; ++i) {
+      data.packEntries[i] = m_packItemEntries[i];
+      data.packGuids[i] = m_packItemGuids[i];
+      data.packStacks[i] = m_packItemStacks[i];
+    }
+    return data;
   }
 
   uint32 GetHealth() const { return m_health; }
