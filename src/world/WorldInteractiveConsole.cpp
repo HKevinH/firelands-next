@@ -1,5 +1,6 @@
 #include "WorldInteractiveConsole.h"
 #include <application/ports/ICommandService.h>
+#include <shared/Common.h>
 #include <shared/game/AccessLevel.h>
 #include <shared/network/MovementInfo.h>
 #include <shared/Logger.h>
@@ -30,11 +31,25 @@ public:
 
   const MovementInfo &GetPosition() const override { return _position; }
 
+  uint32 GetMapId() const override { return 0; }
+
   void TeleportTo(uint32_t /*mapId*/, float /*x*/, float /*y*/, float /*z*/,
                   float /*orientation*/) override {
-    LOG_WARN("[console] .tele needs a logged-in player; ignored from server "
-             "console.");
+    LOG_WARN("[console] Use: .tele <OnlineCharName> x y z [mapId] (this stub "
+             "session has no character).");
   }
+
+  void RequestDisconnect(std::string const &reason) override {
+    LOG_INFO("[console] RequestDisconnect (no world character): {}", reason);
+  }
+
+  bool GmLearnSpell(uint32 /*spellId*/) override { return false; }
+
+  bool GmModifyMoneyCopper(int64 /*delta*/) override { return false; }
+
+  bool GmAddItem(uint32 /*itemEntry*/, uint32 /*count*/) override { return false; }
+
+  bool GmSetLevel(uint8 /*level*/) override { return false; }
 
   AccessLevel GetAccountAccessLevel() const override {
     return AccessLevel::Player;
@@ -218,7 +233,7 @@ void WorldInteractiveConsole::ProcessPending() {
       continue;
     }
     // Same as bare quit/exit; users often type .exit after .help.
-    if (line.size() >= 2 && (line[0] == '.' || line[0] == '!')) {
+    if (line.size() >= 2 && line[0] == '.') {
       std::string const inner = TrimInPlace(line.substr(1));
       if (IEqualsAscii(inner, "quit") || IEqualsAscii(inner, "exit")) {
         _shutdownRequested = true;

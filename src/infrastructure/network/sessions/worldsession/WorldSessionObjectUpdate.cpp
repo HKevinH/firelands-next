@@ -156,6 +156,13 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(uint64 guid,
 
   AddLanguageSkillFields(fields, character.GetRace());
 
+  {
+    uint64 const coin = character.GetMoney();
+    fields[PLAYER_FIELD_COINAGE] = static_cast<uint32>(coin & 0xFFFFFFFFu);
+    fields[static_cast<uint16>(PLAYER_FIELD_COINAGE + 1)] =
+        static_cast<uint32>((coin >> 32) & 0xFFFFFFFFu);
+  }
+
   for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {
     uint32 const entry = character.GetVisibleItemEntry(slot);
     uint32 const itemGuidLow = character.GetVisibleItemGuidLow(slot);
@@ -184,6 +191,7 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(uint64 guid,
     fields[packBase] = ilo;
     fields[static_cast<uint16>(packBase + 1)] = ihi;
   }
+
   return fields;
 }
 
@@ -210,12 +218,14 @@ uint64 ReadClientTargetGuid(WorldPacket &packet) {
 
 void SendPlayerCreateToNotifier(std::shared_ptr<IMapNotifier> target, uint32 mapId,
                                 uint64 objectGuid, Character const &character,
-                                MovementInfo const &move) {
+                                MovementInfo const &move,
+                                PlayerGmAppearanceForUpdates const &gmAppearance) {
   if (!target)
     return;
+  auto fields = BuildPlayerUpdateFields(objectGuid, character);
+  MergeGmAppearanceIntoPlayerFields(fields, gmAppearance);
   UpdateData update(mapId);
-  update.AddCreateObject(objectGuid, TYPEID_PLAYER, move,
-                         BuildPlayerUpdateFields(objectGuid, character));
+  update.AddCreateObject(objectGuid, TYPEID_PLAYER, move, fields);
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
   update.Build(pkt);
   target->SendPacket(pkt);

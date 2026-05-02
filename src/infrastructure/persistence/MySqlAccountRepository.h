@@ -24,6 +24,9 @@ public:
                      const std::vector<uint8_t> &sessionKey) override;
   std::vector<uint8_t> GetSessionKey(uint32 accountId) override;
 
+  void SetLockedByUsername(const std::string &usernameUpper,
+                           bool locked) override;
+
 private:
   std::shared_ptr<sql::Connection> _connection;
 };

@@ -17,6 +17,8 @@ struct Account {
   std::vector<uint8_t> verifier;
   uint8 expansion;
   AccessLevel accessLevel = AccessLevel::Player;
+  /// When true, auth logon challenge rejects with `AUTH_FAIL_BANNED`.
+  bool locked = false;
 };
 
 class IAccountRepository {
@@ -32,6 +34,9 @@ public:
   virtual void CreateSession(uint32 accountId,
                              const std::vector<uint8_t> &sessionKey) = 0;
   virtual std::vector<uint8_t> GetSessionKey(uint32 accountId) = 0;
+
+  virtual void SetLockedByUsername(const std::string &usernameUpper,
+                                   bool locked) = 0;
 };
 
 } // namespace Firelands

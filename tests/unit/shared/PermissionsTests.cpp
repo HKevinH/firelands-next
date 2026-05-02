@@ -26,3 +26,8 @@ TEST(PermissionsTests, ConsoleGrantsTeleportToPlayerAccount) {
 TEST(PermissionsTests, ZeroRequiredAlwaysTrue) {
   EXPECT_TRUE(HasPermission(AccessLevel::Player, PrivilegeOrigin::GameClient, 0));
 }
+
+TEST(PermissionsTests, GameMasterHasGameplayCommands) {
+  EXPECT_TRUE(HasPermission(AccessLevel::GameMaster, PrivilegeOrigin::GameClient,
+                            ToMask(Permission::CommandGameplay)));
+}

@@ -18,7 +18,16 @@ public:
     MOCK_METHOD(bool, SwapBag0Slots, (uint32_t, uint8_t, uint8_t), (override));
     MOCK_METHOD(bool, SaveCharacterOnLogout,
                 (uint32_t, uint32_t, uint16_t, uint16_t, float, float, float,
-                 float),
+                 float, uint32_t),
+                (override));
+    MOCK_METHOD(bool, UpdateCharacterMoney,
+                (uint32_t, uint32_t, uint32_t), (override));
+    MOCK_METHOD(bool, UpdateCharacterLevel,
+                (uint32_t, uint32_t, uint8_t), (override));
+    MOCK_METHOD(std::vector<uint32_t>, GetCharacterSpellIds, (uint32_t),
+                (override));
+    MOCK_METHOD(bool, AddCharacterSpell, (uint32_t, uint32_t), (override));
+    MOCK_METHOD(bool, GrantItemToBag0, (uint32_t, uint32_t, uint32_t),
                 (override));
 };
 

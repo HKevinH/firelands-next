@@ -6,6 +6,8 @@
 #include <shared/game/ChatLanguages.h>
 #include <shared/Logger.h>
 #include <shared/network/BitReader.h>
+#include <shared/network/BitWriter.h>
+#include <shared/network/WorldOpcodes.h>
 
 namespace Firelands {
 
@@ -95,22 +97,33 @@ bool AddonLangAllowedForType(uint32 type) {
   }
 }
 
+/// Cataclysm 4.3.4 layout aligned with TCPP `ChatHandler::BuildChatPacket` (default
+/// branch): optional GM sender name only for `SMSG_GM_MESSAGECHAT`, then optional
+/// channel name, target GUID, message, `ChatTag` byte (not a second null).
 void AppendSmsgMessageChatPayload(WorldPacket &data, uint32 chatType, uint32 lang,
                                   uint64 senderGuid, uint64 receiverGuid,
                                   std::string const &message,
-                                  std::string const *channelNameOptional) {
+                                  std::string const *channelNameOptional,
+                                  bool gmMessage,
+                                  std::string const &senderNameForGmPacket,
+                                  uint8 chatTag) {
   data.Append<uint8>(static_cast<uint8>(chatType));
   int32 const langWire =
       (lang == CHAT_LANG_ADDON) ? -1 : static_cast<int32>(lang);
   data.Append<int32>(langWire);
   data.Append<uint64>(senderGuid);
   data.Append<uint32>(0);
+  if (gmMessage) {
+    data.Append<uint32>(
+        static_cast<uint32>(senderNameForGmPacket.length() + 1));
+    data.WriteString(senderNameForGmPacket);
+  }
   if (channelNameOptional && chatType == CHAT_MSG_CHANNEL)
     data.WriteString(*channelNameOptional);
   data.Append<uint64>(receiverGuid);
   data.Append<uint32>(static_cast<uint32>(message.length() + 1));
   data.WriteString(message);
-  data.Append<uint8>(0);
+  data.Append<uint8>(chatTag);
 }
 
 /// Build 15595 uses **per-opcode** chat (`CMSG_MESSAGECHAT_SAY`, etc.); the first
@@ -246,11 +259,31 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
   // TODO: set real target GUID for `CHAT_MSG_WHISPER` when name→guid exists.
   uint64 const receiverGuid = 0;
 
-  WorldPacket response(SMSG_MESSAGECHAT);
+  bool gmChat = _gmAppearance.gmTagOn;
+  std::string senderNameForGmPacket;
+  if (gmChat) {
+    if (auto ch = _charService->GetCharacterByGuid(_playerGuid))
+      senderNameForGmPacket = ch->GetName();
+    if (senderNameForGmPacket.empty())
+      gmChat = false;
+  }
+
+  uint8 chatTag = static_cast<uint8>(CHAT_TAG_WIRE_NONE);
+  if (_gmAppearance.dndOn)
+    chatTag |= static_cast<uint8>(CHAT_TAG_WIRE_DND);
+  if (_gmAppearance.devTagOn)
+    chatTag |= static_cast<uint8>(CHAT_TAG_WIRE_DEV);
+  if (gmChat)
+    chatTag |= static_cast<uint8>(CHAT_TAG_WIRE_GM);
+
+  WorldPacket response(
+      static_cast<uint32>(gmChat ? SMSG_GM_MESSAGECHAT : SMSG_MESSAGECHAT),
+      256 + message.size() + senderNameForGmPacket.size());
   std::string const *chPtr =
       (type == CHAT_MSG_CHANNEL && !channel.empty()) ? &channel : nullptr;
   AppendSmsgMessageChatPayload(response, type, lang, _playerGuid, receiverGuid,
-                              message, chPtr);
+                                message, chPtr, gmChat, senderNameForGmPacket,
+                                chatTag);
   LOG_INFO("[CHAT] out type={} lang={} receiverGuid={} msgLen={}", type, lang,
            receiverGuid, message.size());
   SendPacket(response);
@@ -263,10 +296,29 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
 }
 
 void WorldSession::SendNotification(const std::string &message) {
-  WorldPacket response(SMSG_MESSAGECHAT);
+  WorldPacket response(static_cast<uint32>(SMSG_MESSAGECHAT), 128 + message.size());
   AppendSmsgMessageChatPayload(response, CHAT_MSG_SYSTEM, LANG_UNIVERSAL, 0, 0,
-                               message, nullptr);
+                               message, nullptr, false, "", CHAT_TAG_WIRE_NONE);
   SendPacket(response);
+}
+
+void WorldSession::SendScreenNotification(std::string const &message) {
+  if (message.empty())
+    return;
+  WorldPacket pkt(static_cast<uint32>(SMSG_NOTIFICATION), 32 + message.size());
+  BitWriter bw(pkt);
+  bw.WriteBits(static_cast<uint32>(message.size()), 13);
+  bw.Flush();
+  pkt.WriteStringNoNull(message);
+  SendPacket(pkt);
+}
+
+void WorldSession::RequestDisconnect(std::string const &reason) {
+  std::string const msg =
+      reason.empty() ? std::string("You have been disconnected by a game master.")
+                       : (std::string("Disconnecting: ") + reason);
+  SendNotification(msg);
+  Close();
 }
 
 void WorldSession::TeleportTo(uint32 /*mapId*/, float x, float y, float z,

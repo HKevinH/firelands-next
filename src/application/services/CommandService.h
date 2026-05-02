@@ -1,5 +1,6 @@
 #pragma once
 #include <application/ports/ICommandService.h>
+#include <shared/game/AccessLevel.h>
 #include <shared/game/Permissions.h>
 #include <functional>
 #include <map>
@@ -10,35 +11,87 @@
 namespace Firelands {
 
 class ICommandSession;
+class IAccountRepository;
+class OnlineCharacterSessionRegistry;
+
+enum class ConsoleArgLayout {
+  /// Same argument order as in-game (e.g. `.tele x y z`).
+  SameAsInGame = 0,
+  /// From `PrivilegeOrigin::ServerConsole`, first arg is online character name,
+  /// then the same arguments as in-game (e.g. `.tele Name x y z`).
+  TargetOnlineCharacterFirst = 1,
+};
 
 class CommandService : public ICommandService {
 public:
-  CommandService();
+  CommandService(
+      std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharacters = {},
+      std::shared_ptr<IAccountRepository> accountRepo = {});
+
   bool ExecuteCommand(std::shared_ptr<ICommandSession> session,
                       const std::string &message,
                       PrivilegeOrigin origin = PrivilegeOrigin::GameClient) override;
   bool IsCommand(const std::string &message) const override;
 
 private:
-  using CommandHandler = std::function<bool(std::shared_ptr<ICommandSession>,
-                                            const std::vector<std::string> &)>;
+  using CommandHandler =
+      std::function<bool(std::shared_ptr<ICommandSession>,
+                         const std::vector<std::string> &, PrivilegeOrigin)>;
 
   struct CommandEntry {
     CommandHandler handler;
     PermissionMask requiredPermissions = 0;
     bool consoleOnly = false;
+    ConsoleArgLayout consoleLayout = ConsoleArgLayout::SameAsInGame;
   };
 
   void RegisterCommand(const std::string &name, CommandEntry entry);
 
-  // Handlers
   bool HandleGps(std::shared_ptr<ICommandSession> session,
-                 const std::vector<std::string> &args);
+                 const std::vector<std::string> &args, PrivilegeOrigin origin);
   bool HandleTele(std::shared_ptr<ICommandSession> session,
-                  const std::vector<std::string> &args);
+                  const std::vector<std::string> &args, PrivilegeOrigin origin);
   bool HandleHelp(std::shared_ptr<ICommandSession> session,
-                  const std::vector<std::string> &args);
+                  const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleAccount(std::shared_ptr<ICommandSession> session,
+                     const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleGmTag(std::shared_ptr<ICommandSession> session,
+                   const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleDndTag(std::shared_ptr<ICommandSession> session,
+                    const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleDevTag(std::shared_ptr<ICommandSession> session,
+                    const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleGmVisible(std::shared_ptr<ICommandSession> session,
+                       const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleGmFly(std::shared_ptr<ICommandSession> session,
+                   const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleGmSpeed(std::shared_ptr<ICommandSession> session,
+                     const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleOnline(std::shared_ptr<ICommandSession> session,
+                    const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleAnnounce(std::shared_ptr<ICommandSession> session,
+                      const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleKick(std::shared_ptr<ICommandSession> session,
+                  const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleGoto(std::shared_ptr<ICommandSession> session,
+                  const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleSummon(std::shared_ptr<ICommandSession> session,
+                    const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleLearn(std::shared_ptr<ICommandSession> session,
+                   const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleMoney(std::shared_ptr<ICommandSession> session,
+                    const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleAdditem(std::shared_ptr<ICommandSession> session,
+                      const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleLevel(std::shared_ptr<ICommandSession> session,
+                   const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleBan(std::shared_ptr<ICommandSession> session,
+                  const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleUnban(std::shared_ptr<ICommandSession> session,
+                   const std::vector<std::string> &args, PrivilegeOrigin origin);
 
+  std::shared_ptr<OnlineCharacterSessionRegistry> _onlineCharacters;
+  std::shared_ptr<IAccountRepository> _accountRepo;
   std::map<std::string, CommandEntry> _commands;
 };
 

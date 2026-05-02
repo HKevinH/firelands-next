@@ -138,9 +138,50 @@ public:
 
   bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
                              uint16_t mapId, uint16_t zoneId, float x, float y,
-                             float z, float orientation) {
+                             float z, float orientation, uint32_t moneyCopper) {
     return m_repository->SaveCharacterOnLogout(accountId, characterGuid, mapId,
-                                               zoneId, x, y, z, orientation);
+                                               zoneId, x, y, z, orientation,
+                                               moneyCopper);
+  }
+
+  bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
+                            uint32_t moneyCopper) {
+    return m_repository->UpdateCharacterMoney(accountId, characterGuid,
+                                                moneyCopper);
+  }
+
+  bool AddCharacterMoneyDelta(uint32_t accountId, uint32_t characterGuid,
+                              int64 deltaCopper) {
+    auto ch = m_repository->GetCharacterByGuid(characterGuid);
+    if (!ch || ch->GetAccount() != accountId)
+      return false;
+    int64 const base = static_cast<int64>(ch->GetMoney());
+    int64 sum = base + deltaCopper;
+    if (sum < 0)
+      sum = 0;
+    constexpr int64 kMaxMoney = static_cast<int64>(0xFFFFFFFFu);
+    if (sum > kMaxMoney)
+      sum = kMaxMoney;
+    return m_repository->UpdateCharacterMoney(accountId, characterGuid,
+                                                static_cast<uint32_t>(sum));
+  }
+
+  bool SetCharacterLevel(uint32_t accountId, uint32_t characterGuid,
+                         uint8_t level) {
+    return m_repository->UpdateCharacterLevel(accountId, characterGuid, level);
+  }
+
+  std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) {
+    return m_repository->GetCharacterSpellIds(characterGuid);
+  }
+
+  bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) {
+    return m_repository->AddCharacterSpell(characterGuid, spellId);
+  }
+
+  bool GrantItemToBag0(uint32_t characterGuid, uint32_t itemEntry,
+                       uint32_t count) {
+    return m_repository->GrantItemToBag0(characterGuid, itemEntry, count);
   }
 
 private:

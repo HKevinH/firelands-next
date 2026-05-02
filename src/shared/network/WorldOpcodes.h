@@ -44,6 +44,12 @@ enum WorldOpcode : uint32 {
   /// Reference: SMSG_UPDATE_ACTION_BUTTONS
   SMSG_ACTION_BUTTONS = 0x38B5,
   SMSG_UPDATE_OBJECT = 0x4715,
+  /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs` (server move acks).
+  SMSG_MOVE_SET_RUN_SPEED = 0x3DB5,
+  SMSG_MOVE_SET_CAN_FLY = 0x3DA1,
+  SMSG_MOVE_UNSET_CAN_FLY = 0x15A2,
+  /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs`
+  SMSG_MOVE_SET_FLIGHT_SPEED = 0x71A6,
   SMSG_MOTD = 0x0A35,
   SMSG_ACCOUNT_DATA_TIMES = 0x4B05,
   SMSG_REALM_SPLIT = 0x2714,
@@ -165,6 +171,8 @@ enum WorldOpcode : uint32 {
   /// Compact Unit Frame profiles save request.
   CMSG_SAVE_CUF_PROFILES = 0x730E,
   SMSG_MESSAGECHAT = 0x2026,
+  /// Reference: WowPacketParser V4_3_4_15595 — big on-screen banner (yellow UI).
+  SMSG_NOTIFICATION = 0x14A0,
   /// Reference: `SMSG_GM_MESSAGECHAT` (GM chat tag); not wired yet.
   SMSG_GM_MESSAGECHAT = 0x6434,
 

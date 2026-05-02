@@ -67,6 +67,44 @@ bool EnsureCharactersOrientationColumn(std::shared_ptr<sql::Connection> conn) {
   }
 }
 
+bool EnsureCharactersMoneyColumn(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "ALTER TABLE `firelands_characters`.`characters` "
+        "ADD COLUMN `money` int unsigned NOT NULL DEFAULT 0 AFTER `firstLogin`");
+    LOG_INFO("Added missing column `firelands_characters.characters.money`.");
+    return true;
+  } catch (sql::SQLException &e) {
+    if (e.getErrorCode() == 1060)
+      return true;
+    std::string const msg{e.what()};
+    if (msg.find("Duplicate column") != std::string::npos)
+      return true;
+    LOG_WARN("EnsureCharactersMoneyColumn failed: {}", e.what());
+    return false;
+  }
+}
+
+bool EnsureCharacterSpellTable(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS firelands_characters.character_spell ("
+        "guid INT UNSIGNED NOT NULL,"
+        "spell INT UNSIGNED NOT NULL,"
+        "PRIMARY KEY (guid, spell),"
+        "KEY idx_guid (guid),"
+        "CONSTRAINT fk_character_spell_guid FOREIGN KEY (guid) REFERENCES "
+        "characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return true;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("EnsureCharacterSpellTable failed: {}", e.what());
+    return false;
+  }
+}
+
 bool EnsureStarterInventoryTables(std::shared_ptr<sql::Connection> conn) {
   try {
     std::unique_ptr<sql::Statement> st(conn->createStatement());
@@ -188,6 +226,8 @@ MySqlCharacterRepository::MySqlCharacterRepository(
     std::shared_ptr<sql::Connection> connection)
     : _connection(std::move(connection)) {
   EnsureCharactersOrientationColumn(_connection);
+  EnsureCharactersMoneyColumn(_connection);
+  EnsureCharacterSpellTable(_connection);
 }
 
 std::vector<std::shared_ptr<Character>>
@@ -198,7 +238,7 @@ MySqlCharacterRepository::GetCharactersByAccount(uint32_t accountId) {
         "SELECT guid, account, name, race, class, gender, skin, face, "
         "hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin "
+        "customizationFlags, firstLogin, money "
         "FROM characters WHERE account = ?"));
     stmnt->setUInt(1, accountId);
 
@@ -225,7 +265,14 @@ MySqlCharacterRepository::GetCharactersByAccount(uint32_t accountId) {
           res->getUInt("customizationFlags"), res->getBoolean("firstLogin"),
           static_cast<uint8>(res->getUInt("outfitId")),
           res->isNull("equipmentCache") ? ""
-                                        : std::string(res->getString("equipmentCache"))));
+                                        : std::string(res->getString("equipmentCache")),
+          std::array<uint32_t, kEquipmentSlotCount>{},
+          std::array<uint32_t, kEquipmentSlotCount>{},
+          std::array<uint32_t, kEquipmentSlotCount>{},
+          std::array<uint32_t, kPackSlotCount>{},
+          std::array<uint32_t, kPackSlotCount>{},
+          std::array<uint32_t, kPackSlotCount>{},
+          res->getUInt("money")));
     }
   } catch (sql::SQLException &e) {
     LOG_ERROR("Database error in GetCharactersByAccount: {}", e.what());
@@ -240,8 +287,8 @@ MySqlCharacterRepository::CreateCharacter(const Character &character) {
         "INSERT INTO characters (account, name, race, class, gender, skin, "
         "face, hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "customizationFlags, firstLogin, money) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
 
     stmnt->setUInt(1, character.GetAccount());
     stmnt->setString(2, character.GetName());
@@ -266,6 +313,7 @@ MySqlCharacterRepository::CreateCharacter(const Character &character) {
     stmnt->setUInt(21, character.GetCharacterFlags());
     stmnt->setUInt(22, character.GetCustomizationFlags());
     stmnt->setBoolean(23, character.IsFirstLogin());
+    stmnt->setUInt(24, character.GetMoney());
 
     stmnt->executeUpdate();
 
@@ -450,7 +498,7 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
         "SELECT guid, account, name, race, class, gender, skin, face, "
         "hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin "
+        "customizationFlags, firstLogin, money "
         "FROM characters WHERE guid = ?"));
     stmnt->setUInt64(1, guid);
 
@@ -481,7 +529,8 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
           res->isNull("equipmentCache") ? ""
                                         : std::string(res->getString("equipmentCache")),
           bag0.equipEntries, bag0.equipGuids, bag0.equipStacks,
-          bag0.packEntries, bag0.packGuids, bag0.packStacks);
+          bag0.packEntries, bag0.packGuids, bag0.packStacks,
+          res->getUInt("money"));
     }
     return std::nullopt;
   } catch (sql::SQLException &e) {
@@ -492,22 +541,180 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
 
 bool MySqlCharacterRepository::SaveCharacterOnLogout(
     uint32_t accountId, uint32_t characterGuid, uint16_t mapId, uint16_t zoneId,
-    float x, float y, float z, float orientation) {
+    float x, float y, float z, float orientation, uint32_t moneyCopper) {
   try {
     std::shared_ptr<sql::PreparedStatement> stmnt(_connection->prepareStatement(
         "UPDATE characters SET mapId = ?, zoneId = ?, x = ?, y = ?, z = ?, "
-        "orientation = ?, firstLogin = 0 WHERE guid = ? AND account = ?"));
+        "orientation = ?, firstLogin = 0, money = ? WHERE guid = ? AND account = ?"));
     stmnt->setUInt(1, mapId);
     stmnt->setUInt(2, zoneId);
     stmnt->setDouble(3, static_cast<double>(FiniteOrZero(x)));
     stmnt->setDouble(4, static_cast<double>(FiniteOrZero(y)));
     stmnt->setDouble(5, static_cast<double>(FiniteOrZero(z)));
     stmnt->setDouble(6, static_cast<double>(FiniteOrZero(orientation)));
-    stmnt->setUInt(7, characterGuid);
-    stmnt->setUInt(8, accountId);
+    stmnt->setUInt(7, moneyCopper);
+    stmnt->setUInt(8, characterGuid);
+    stmnt->setUInt(9, accountId);
     return stmnt->executeUpdate() > 0;
   } catch (sql::SQLException &e) {
     LOG_ERROR("SaveCharacterOnLogout failed: {}", e.what());
+    return false;
+  }
+}
+
+bool MySqlCharacterRepository::UpdateCharacterMoney(uint32_t accountId,
+                                                    uint32_t characterGuid,
+                                                    uint32_t moneyCopper) {
+  try {
+    std::shared_ptr<sql::PreparedStatement> st(_connection->prepareStatement(
+        "UPDATE characters SET money = ? WHERE guid = ? AND account = ?"));
+    st->setUInt(1, moneyCopper);
+    st->setUInt(2, characterGuid);
+    st->setUInt(3, accountId);
+    return st->executeUpdate() > 0;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("UpdateCharacterMoney failed: {}", e.what());
+    return false;
+  }
+}
+
+bool MySqlCharacterRepository::UpdateCharacterLevel(uint32_t accountId,
+                                                    uint32_t characterGuid,
+                                                    uint8_t level) {
+  try {
+    std::shared_ptr<sql::PreparedStatement> st(_connection->prepareStatement(
+        "UPDATE characters SET level = ? WHERE guid = ? AND account = ?"));
+    st->setUInt(1, level);
+    st->setUInt(2, characterGuid);
+    st->setUInt(3, accountId);
+    return st->executeUpdate() > 0;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("UpdateCharacterLevel failed: {}", e.what());
+    return false;
+  }
+}
+
+std::vector<uint32_t>
+MySqlCharacterRepository::GetCharacterSpellIds(uint32_t characterGuid) {
+  std::vector<uint32_t> out;
+  if (!EnsureCharacterSpellTable(_connection))
+    return out;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(
+        _connection->prepareStatement("SELECT spell FROM character_spell WHERE "
+                                      "guid = ?"));
+    ps->setUInt(1, characterGuid);
+    std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+    while (rs->next())
+      out.push_back(rs->getUInt("spell"));
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("GetCharacterSpellIds failed: {}", e.what());
+  }
+  return out;
+}
+
+bool MySqlCharacterRepository::AddCharacterSpell(uint32_t characterGuid,
+                                                uint32_t spellId) {
+  if (spellId == 0)
+    return false;
+  if (!EnsureCharacterSpellTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "INSERT IGNORE INTO character_spell (guid, spell) VALUES (?, ?)"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spellId);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("AddCharacterSpell failed: {}", e.what());
+    return false;
+  }
+}
+
+bool MySqlCharacterRepository::GrantItemToBag0(uint32_t characterGuid,
+                                               uint32_t itemEntry,
+                                               uint32_t count) {
+  if (itemEntry == 0 || count == 0)
+    return false;
+  if (!EnsureStarterInventoryTables(_connection))
+    return false;
+
+  std::unordered_set<uint8_t> usedPackSlots;
+  try {
+    std::shared_ptr<sql::PreparedStatement> qslots(
+        _connection->prepareStatement(
+            "SELECT slot FROM character_inventory WHERE guid = ? AND bag = 0"));
+    qslots->setUInt(1, characterGuid);
+    std::unique_ptr<sql::ResultSet> rs(qslots->executeQuery());
+    while (rs->next()) {
+      unsigned const s = rs->getUInt("slot");
+      if (s >= INVENTORY_SLOT_ITEM_START && s < INVENTORY_SLOT_ITEM_END)
+        usedPackSlots.insert(static_cast<uint8_t>(s));
+    }
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("GrantItemToBag0 slot scan failed: {}", e.what());
+  }
+
+  auto proto = FetchItemProto(_connection, itemEntry);
+  uint32_t grantCount = count;
+  if (proto) {
+    if (grantCount == 0)
+      grantCount = proto->buyCount;
+  } else {
+    grantCount = std::max(1u, grantCount);
+    LOG_WARN("GrantItemToBag0: item {} missing template/proto.", itemEntry);
+  }
+  grantCount = std::max(1u, grantCount);
+
+  uint8_t bag = 0;
+  uint8_t slot = 0;
+  bool placed = false;
+  for (unsigned s = INVENTORY_SLOT_ITEM_START; s < INVENTORY_SLOT_ITEM_END; ++s) {
+    uint8_t bs = static_cast<uint8_t>(s);
+    if (!usedPackSlots.count(bs)) {
+      slot = bs;
+      placed = true;
+      break;
+    }
+  }
+  if (!placed) {
+    LOG_WARN("GrantItemToBag0: no free backpack slot for item {}", itemEntry);
+    return false;
+  }
+
+  try {
+    std::shared_ptr<sql::PreparedStatement> insItem(_connection->prepareStatement(
+        "INSERT INTO item_instance (itemEntry, owner_guid, creatorGuid, "
+        "giftCreatorGuid, count, duration, charges, flags, enchantments, "
+        "randomPropertyType, randomPropertyId, durability, creationTime, "
+        "text) VALUES (?, ?, 0, 0, ?, 0, '', 0, '', 0, 0, 0, UNIX_TIMESTAMP(), NULL)"));
+    insItem->setUInt(1, itemEntry);
+    insItem->setUInt(2, characterGuid);
+    insItem->setUInt(3, grantCount);
+    insItem->executeUpdate();
+
+    uint64_t itemGuid = 0;
+    {
+      std::unique_ptr<sql::Statement> st(_connection->createStatement());
+      std::unique_ptr<sql::ResultSet> rs(st->executeQuery("SELECT LAST_INSERT_ID()"));
+      if (!rs->next())
+        return false;
+      itemGuid = rs->getUInt64(1);
+    }
+
+    std::shared_ptr<sql::PreparedStatement> insInv(
+        _connection->prepareStatement(
+            "INSERT INTO character_inventory (guid, bag, slot, item) VALUES "
+            "(?, ?, ?, ?)"));
+    insInv->setUInt(1, characterGuid);
+    insInv->setUInt(2, bag);
+    insInv->setUInt(3, slot);
+    insInv->setUInt64(4, itemGuid);
+    insInv->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("GrantItemToBag0 failed: {}", e.what());
     return false;
   }
 }

@@ -23,7 +23,16 @@ namespace Firelands {
                            uint8_t dstSlot) override;
         bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
                                    uint16_t mapId, uint16_t zoneId, float x,
-                                   float y, float z, float orientation) override;
+                                   float y, float z, float orientation,
+                                   uint32_t moneyCopper) override;
+        bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
+                                  uint32_t moneyCopper) override;
+        bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,
+                                   uint8_t level) override;
+        std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) override;
+        bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) override;
+        bool GrantItemToBag0(uint32_t characterGuid, uint32_t itemEntry,
+                             uint32_t count) override;
     private:
         std::shared_ptr<sql::Connection> _connection;
     };

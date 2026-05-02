@@ -13,7 +13,7 @@ namespace Firelands {
 class ICommandService;
 
 /// Background stdin reader plus a queue drained from the main world loop.
-/// Commands use the same prefix as in-game (`.` or `!`) and run with
+/// Commands use the same prefix as in-game (`.`) and run with
 /// `PrivilegeOrigin::ServerConsole`. Lines `quit` / `exit` request process
 /// shutdown.
 class WorldInteractiveConsole {

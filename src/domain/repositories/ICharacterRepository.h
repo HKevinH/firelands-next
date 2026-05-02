@@ -28,7 +28,18 @@ public:
   /// Must verify `accountId` so callers cannot update another account's character.
   virtual bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
                                      uint16_t mapId, uint16_t zoneId, float x,
-                                     float y, float z, float orientation) = 0;
+                                     float y, float z, float orientation,
+                                     uint32_t moneyCopper) = 0;
+
+  virtual bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
+                                    uint32_t moneyCopper) = 0;
+  virtual bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,
+                                    uint8_t level) = 0;
+  virtual std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) = 0;
+  virtual bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) = 0;
+  /// Creates `item_instance` + `character_inventory` row in bag 0 (equipment or backpack).
+  virtual bool GrantItemToBag0(uint32_t characterGuid, uint32_t itemEntry,
+                               uint32_t count) = 0;
 };
 
 } // namespace Firelands

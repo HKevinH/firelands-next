@@ -103,4 +103,14 @@ enum Language {
 /// guild, whisper, battleground). Not part of the `Language` enumerator range.
 constexpr uint32 CHAT_LANG_ADDON = 0xFFFFFFFFu;
 
+/// Wire `ChatTag` suffix on `SMSG_MESSAGECHAT` / `SMSG_GM_MESSAGECHAT` (4.3.4).
+/// Bitflags — same order as WowPacketParser `ChatTag` / Trinity `ChatTags`.
+enum ChatTagWire : std::uint8_t {
+  CHAT_TAG_WIRE_NONE = 0x00,
+  CHAT_TAG_WIRE_AFK = 0x01,
+  CHAT_TAG_WIRE_DND = 0x02,
+  CHAT_TAG_WIRE_GM = 0x04,
+  CHAT_TAG_WIRE_DEV = 0x10,
+};
+
 } // namespace Firelands

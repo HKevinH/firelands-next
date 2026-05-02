@@ -14,6 +14,8 @@ public:
     MOCK_METHOD(void, DeleteByUsername, (const std::string&), (override));
     MOCK_METHOD(void, CreateSession, (uint32, const std::vector<uint8_t>&), (override));
     MOCK_METHOD(std::vector<uint8_t>, GetSessionKey, (uint32), (override));
+    MOCK_METHOD(void, SetLockedByUsername, (const std::string &, bool),
+                (override));
 };
 
 TEST(AuthServiceTests, Login_WithValidCredentials_ReturnsTrue) {

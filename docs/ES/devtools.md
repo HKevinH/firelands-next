@@ -39,6 +39,8 @@ Registra o actualiza un reino en la tabla `realmlist`.
 
 ```bash
 ./FirelandsDevTools realm <id> <name> <address> <port> [icon] [timezone] [secLevel] [population]
+
+Si el primer argumento tras `realm` **no** son solo dígitos, se interpreta como **nombre** y el segundo como **id** (p. ej. `./FirelandsDevTools realm Firelands 1 127.0.0.1 8085`). Nombres solo numéricos deben ir en el orden `<id> <nombre> ...`.
 ```
 
 - **id**: ID único del reino.

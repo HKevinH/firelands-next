@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `characterFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `customizationFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `firstLogin` tinyint(3) unsigned NOT NULL DEFAULT '1',
+  `money` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`),
   KEY `idx_account` (`account`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -39,3 +40,11 @@ CREATE TABLE IF NOT EXISTS `character_account_data` (
   PRIMARY KEY (`guid`,`type`),
   CONSTRAINT `fk_character_account_data_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `character_spell` (
+  `guid` int unsigned NOT NULL,
+  `spell` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`, `spell`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_spell_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -21,7 +21,8 @@ public:
             std::array<uint32_t, kEquipmentSlotCount> visibleItemStacks = {},
             std::array<uint32_t, kPackSlotCount> packItemEntries = {},
             std::array<uint32_t, kPackSlotCount> packItemGuids = {},
-            std::array<uint32_t, kPackSlotCount> packItemStacks = {})
+            std::array<uint32_t, kPackSlotCount> packItemStacks = {},
+            uint32 moneyCopper = 0)
       : m_guid(guid), m_account(account), m_name(std::move(name)), m_race(race),
         m_klass(klass), m_gender(gender), m_skin(skin), m_face(face),
         m_hairStyle(hairStyle), m_hairColor(hairColor),
@@ -33,7 +34,7 @@ public:
         m_visibleItems(visibleItems), m_visibleItemGuids(visibleItemGuids),
         m_visibleItemStacks(visibleItemStacks), m_packItemEntries(packItemEntries),
         m_packItemGuids(packItemGuids), m_packItemStacks(packItemStacks),
-        m_health(100), m_maxHealth(100),
+        m_moneyCopper(moneyCopper), m_health(100), m_maxHealth(100),
         m_factionTemplate(1), m_displayId(GetDefaultDisplayId(race, gender)) {}
 
   static uint32 GetDefaultDisplayId(uint8 race, uint8 gender) {
@@ -137,6 +138,9 @@ public:
   uint32 GetFactionTemplate() const { return m_factionTemplate; }
   uint32 GetDisplayId() const { return m_displayId; }
 
+  /// Copper (WoW money unit); persisted in `characters.money`.
+  uint32 GetMoney() const { return m_moneyCopper; }
+
 private:
   uint32 m_guid;
   uint32 m_account;
@@ -168,6 +172,8 @@ private:
   std::array<uint32_t, kPackSlotCount> m_packItemEntries{};
   std::array<uint32_t, kPackSlotCount> m_packItemGuids{};
   std::array<uint32_t, kPackSlotCount> m_packItemStacks{};
+
+  uint32 m_moneyCopper = 0;
 
   uint32 m_health;
   uint32 m_maxHealth;

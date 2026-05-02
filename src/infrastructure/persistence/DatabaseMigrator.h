@@ -181,9 +181,26 @@ private:
     std::string current;
     bool inString = false;
     char stringChar = 0;
+    /// `--` to end of line: semicolons here must not split statements (e.g.
+    /// comments mentioning "`auth` URL; `USE`" would otherwise produce garbage).
+    bool inLineComment = false;
 
     for (size_t i = 0; i < sql.length(); ++i) {
       char c = sql[i];
+
+      if (inLineComment) {
+        current += c;
+        if (c == '\n')
+          inLineComment = false;
+        continue;
+      }
+
+      if (!inString && c == '-' && i + 1 < sql.length() && sql[i + 1] == '-') {
+        current += c;
+        current += sql[++i];
+        inLineComment = true;
+        continue;
+      }
 
       // Basic string handling (single quote, double quote, backtick)
       if ((c == '\'' || c == '"' || c == '`') &&
@@ -247,9 +264,15 @@ private:
       stmnt->execute(trimmed);
       return true;
     } catch (sql::SQLException &e) {
-      // Log but don't stop (useful if some parts of the script are expected to
-      // fail if already present)
-      LOG_DEBUG("SQL Execution note ({}): {}", trimmed.substr(0, 50), e.what());
+      // Duplicate column / duplicate key name: treat as success so migrations are
+      // idempotent when re-run after a partial apply or when Ensure* already added
+      // the column (MariaDB/MySQL ER_DUP_FIELDNAME = 1060, ER_DUP_KEYNAME = 1061).
+      int const code = e.getErrorCode();
+      if (code == 1060 || code == 1061) {
+        LOG_INFO("Migration statement skipped (already present): {}", e.what());
+        return true;
+      }
+      LOG_DEBUG("SQL Execution note ({}): {}", trimmed.substr(0, 80), e.what());
       return false;
     }
   }

@@ -17,6 +17,10 @@ enum class Permission : uint64_t {
   ManagePlayers = 1ull << 3,
   ManageAccounts = 1ull << 4,
   ServerControl = 1ull << 5,
+  /// In-game GM appearance / movement helpers (`.gm`, `.visible`, `.fly`, `.speed`).
+  CommandGmTools = 1ull << 6,
+  /// Learn spell, money, items, level (`.learn`, `.money`, `.additem`, `.level`).
+  CommandGameplay = 1ull << 7,
 };
 
 inline constexpr PermissionMask ToMask(Permission p) {
@@ -32,7 +36,9 @@ inline PermissionMask DefaultPermissions(AccessLevel level) {
   case AccessLevel::GameMaster:
     return DefaultPermissions(AccessLevel::Moderator) |
            ToMask(Permission::CommandTeleport) |
-           ToMask(Permission::ManagePlayers);
+           ToMask(Permission::ManagePlayers) |
+           ToMask(Permission::CommandGmTools) |
+           ToMask(Permission::CommandGameplay);
   case AccessLevel::Administrator:
     return DefaultPermissions(AccessLevel::GameMaster) |
            ToMask(Permission::ManageAccounts) | ToMask(Permission::ServerControl);

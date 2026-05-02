@@ -7,6 +7,7 @@ add_library(FirelandsShared STATIC
     game/EquipmentCache.cpp
     game/ChatLanguages.cpp
     game/ItemEquipSlots.cpp
+    game/PlayerGmAppearance.cpp
     network/MovementWire.cpp
     network/SpellCastWire.cpp
 )

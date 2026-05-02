@@ -1,6 +1,7 @@
 add_library(FirelandsApplication STATIC
     services/RealmListService.cpp
     services/CommandService.cpp
+    services/OnlineCharacterSessionRegistry.cpp
     services/WorldService.cpp
 )
 

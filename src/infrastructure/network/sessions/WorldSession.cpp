@@ -5,6 +5,7 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionMovementChecks.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <application/services/OnlineCharacterSessionRegistry.h>
 #include <domain/repositories/IRealmRepository.h>
 #include <infrastructure/persistence/MySqlAccountDataRepository.h>
 #include <shared/Config.h>
@@ -17,11 +18,15 @@
 #include <shared/network/SpellCastWire.h>
 #include <shared/game/ChatLanguages.h>
 #include <shared/game/InventorySlots.h>
+#include <shared/game/PlayerGmAppearance.h>
 #include <shared/game/WowGuid.h>
 #include <algorithm>
+#include <map>
 #include <chrono>
 #include <cstring>
 #include <ctime>
+#include <cmath>
+#include <memory>
 #include <vector>
 
 namespace Firelands {
@@ -35,17 +40,19 @@ WorldSession::WorldSession(
     std::shared_ptr<MySqlAccountDataRepository> accountDataRepo,
     std::shared_ptr<LanguagesDbc const> languagesDbc,
     std::shared_ptr<SpellDbc const> spellDbc,
-    std::shared_ptr<IRealmRepository> realmRepo)
+    std::shared_ptr<IRealmRepository> realmRepo,
+    std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
       _accountDataRepo(std::move(accountDataRepo)),
       _languagesDbc(std::move(languagesDbc)),
       _spellDbc(std::move(spellDbc)),
-      _realmRepo(std::move(realmRepo)), _serverSeed(0),
+      _realmRepo(std::move(realmRepo)),
+      _onlineCharRegistry(std::move(onlineCharRegistry)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()) {}
 
-WorldSession::~WorldSession() = default;
+WorldSession::~WorldSession() { UnregisterFromOnlineCharacterRegistryIfNeeded(); }
 
 void WorldSession::Start() {
   LOG_INFO("WorldSession started for {}", GetIpAddress());
@@ -174,7 +181,15 @@ void WorldSession::SendAuthChallenge() {
 
   SendPacket(data);
 }
+void WorldSession::UnregisterFromOnlineCharacterRegistryIfNeeded() {
+  if (!_onlineCharRegistry || _activeCharacterName.empty())
+    return;
+  _onlineCharRegistry->Unregister(_activeCharacterName, this);
+  _activeCharacterName.clear();
+}
+
 void WorldSession::Close() {
+  UnregisterFromOnlineCharacterRegistryIfNeeded();
   CancelPeriodicTimeSync();
   if (_socket.is_open()) {
     LOG_INFO("Closing WorldSession for {}", GetIpAddress());
@@ -361,6 +376,7 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   }
   Character const &character = *characterOpt;
   _playerRace = character.GetRace();
+  _moneyCopper = character.GetMoney();
 
   LoginSendAccountDataAndPreMapPackets(guid, character);
   LoginBuildKnownSpellsAndSendSpellbook(character);
@@ -485,6 +501,17 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
           ++it;
       }
     }
+    for (uint32_t sid : _charService->GetCharacterSpellIds(character.GetGuid())) {
+      uint32 const u = static_cast<uint32>(sid);
+      if (u == 0)
+        continue;
+      if (_spellDbc && _spellDbc->IsLoaded() && !IsLanguagePassiveSpell(u) &&
+          !_spellDbc->HasSpell(u)) {
+        continue;
+      }
+      if (std::find(spells.begin(), spells.end(), u) == spells.end())
+        spells.push_back(u);
+    }
     EnsureRacialLanguageSpells(static_cast<uint8>(character.GetRace()), spells);
     PrioritizeDefaultLanguageSpell(static_cast<uint8>(character.GetRace()),
                                    spells);
@@ -584,8 +611,9 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
     uint64 guid, Character const &character, MovementInfo const &move) {
   // Now that the player is on the map, send create/update data and "after add" packets
   UpdateData update(_mapId);
-  update.AddCreateObject(guid, TYPEID_PLAYER, move,
-                         ws_obj::BuildPlayerUpdateFields(guid, character));
+  auto selfFields = ws_obj::BuildPlayerUpdateFields(guid, character);
+  MergeGmAppearanceIntoPlayerFields(selfFields, GetGmAppearanceForPlayerUpdates());
+  update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields);
 
   MovementInfo itemMove{};
   for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {
@@ -621,12 +649,21 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
                            std::shared_ptr<Player> const &other) {
       if (!other || other->GetGuid() == guid)
         return;
-      if (auto n = other->GetNotifier())
-        ws_obj::SendPlayerCreateToNotifier(n, _mapId, guid, character, move);
+      PlayerGmAppearanceForUpdates const newPlayerGm =
+          GetGmAppearanceForPlayerUpdates();
+      if (auto n = other->GetNotifier()) {
+        ws_obj::SendPlayerCreateToNotifier(n, _mapId, guid, character, move,
+                                           newPlayerGm);
+      }
       if (auto otherCh = _charService->GetCharacterByGuid(other->GetGuid())) {
+        PlayerGmAppearanceForUpdates otherGm{};
+        if (auto ows =
+                std::dynamic_pointer_cast<WorldSession>(other->GetNotifier())) {
+          otherGm = ows->GetGmAppearanceForPlayerUpdates();
+        }
         ws_obj::SendPlayerCreateToNotifier(
             std::static_pointer_cast<IMapNotifier>(shared_from_this()), _mapId,
-            other->GetGuid(), *otherCh, other->GetPosition());
+            other->GetGuid(), *otherCh, other->GetPosition(), otherGm);
       }
     });
   }
@@ -648,6 +685,19 @@ void WorldSession::LoginFinalizeWorldEntry(uint64 guid) {
   if (auto host = WorldService::Instance().GetScriptHost()) {
     host->FireEvent("player_login", guid);
   }
+
+  if (_onlineCharRegistry) {
+    if (auto ch = _charService->GetCharacterByGuid(guid)) {
+      _activeCharacterName = ch->GetName();
+      _onlineCharRegistry->Register(
+          _activeCharacterName,
+          std::weak_ptr<ICommandSession>(
+              std::static_pointer_cast<ICommandSession>(shared_from_this())));
+    }
+  }
+
+  if (_gmFlyEnabled || std::fabs(_gmRunSpeed - 7.0f) > 1e-3f)
+    PublishGmMovementPacketsIfInWorld();
 }
 
 void WorldSession::HandleLogoutRequest(WorldPacket & /*packet*/) {
@@ -687,7 +737,8 @@ void WorldSession::HandleLogoutRequest(WorldPacket & /*packet*/) {
   }
   if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
                                            zoneIdDb, persistPos.x, persistPos.y,
-                                           persistPos.z, persistPos.orientation)) {
+                                           persistPos.z, persistPos.orientation,
+                                           _moneyCopper)) {
     LOG_ERROR("SaveCharacterOnLogout failed for guid {}, account {}",
               charGuidLow, _accountId);
   } else {
@@ -702,11 +753,14 @@ void WorldSession::HandleLogoutRequest(WorldPacket & /*packet*/) {
 
   WorldService::Instance().RemovePlayerFromMap(mapId, guid);
 
+  UnregisterFromOnlineCharacterRegistryIfNeeded();
+
   _playerGuid = 0;
   _activeCharacterGuid = 0;
   _playerRace = 0;
   _knownSpells.clear();
   _gcdReady = {};
+  ResetGmStateForLogout();
   _mapId = 0;
   _zoneId = 0;
   _timeSyncNextCounter = 0;
@@ -1299,6 +1353,105 @@ void WorldSession::SendInitialFactions() {
 
 void WorldSession::SendLoginVerifyWorld(uint32 mapId, float x, float y, float z, float o) {
   SendPacket(new Firelands::WorldPackets::Login::VerifyWorld(mapId, x, y, z, o));
+}
+
+void WorldSession::PublishSelfCoinageUpdate() {
+  if (_playerGuid == 0)
+    return;
+  uint64 const coin = _moneyCopper;
+  std::map<uint16, uint32> f;
+  f[PLAYER_FIELD_COINAGE] = static_cast<uint32>(coin & 0xFFFFFFFFu);
+  f[static_cast<uint16>(PLAYER_FIELD_COINAGE + 1)] =
+      static_cast<uint32>((coin >> 32) & 0xFFFFFFFFu);
+  UpdateData update(_mapId);
+  update.AddValuesUpdate(_playerGuid, f);
+  WorldPacket pkt(SMSG_UPDATE_OBJECT);
+  update.Build(pkt);
+  SendPacket(pkt);
+}
+
+bool WorldSession::GmLearnSpell(uint32 spellId) {
+  if (_playerGuid == 0 || spellId == 0)
+    return false;
+  if (std::find(_knownSpells.begin(), _knownSpells.end(), spellId) !=
+      _knownSpells.end()) {
+    SendNotification("Already knows spell " + std::to_string(spellId) + ".");
+    return true;
+  }
+  if (_spellDbc && _spellDbc->IsLoaded() && !IsLanguagePassiveSpell(spellId) &&
+      !_spellDbc->HasSpell(spellId)) {
+    SendNotification("Spell id not in Spell.dbc (refused).");
+    return false;
+  }
+  uint32 const lowGuid = static_cast<uint32>(_playerGuid);
+  if (!_charService->AddCharacterSpell(lowGuid, spellId)) {
+    SendNotification("Failed to persist spell.");
+    return false;
+  }
+  _knownSpells.push_back(spellId);
+  SendLearnedSpell(spellId);
+  SendNotification("Learned spell " + std::to_string(spellId) + ".");
+  return true;
+}
+
+bool WorldSession::GmModifyMoneyCopper(int64 deltaCopper) {
+  if (_playerGuid == 0)
+    return false;
+  uint32 const lowGuid = static_cast<uint32>(_playerGuid);
+  if (!_charService->AddCharacterMoneyDelta(_accountId, lowGuid, deltaCopper))
+    return false;
+  if (auto ch = _charService->GetCharacterByGuid(_playerGuid))
+    _moneyCopper = ch->GetMoney();
+  PublishSelfCoinageUpdate();
+  SendNotification("Money updated (copper=" + std::to_string(_moneyCopper) + ").");
+  return true;
+}
+
+bool WorldSession::GmAddItem(uint32 itemEntry, uint32 count) {
+  if (_playerGuid == 0)
+    return false;
+  uint32 const c = std::max(1u, count);
+  if (!_charService->GrantItemToBag0(static_cast<uint32>(_playerGuid), itemEntry,
+                                       c)) {
+    SendNotification("Could not add item (full bags or DB error).");
+    return false;
+  }
+  auto refreshed = _charService->GetCharacterByGuid(_playerGuid);
+  if (!refreshed)
+    return false;
+  UpdateData update(_mapId);
+  update.AddValuesUpdate(_playerGuid,
+                         ws_obj::BuildPlayerBag0InventoryValues(*refreshed));
+  WorldPacket pkt(SMSG_UPDATE_OBJECT);
+  update.Build(pkt);
+  SendPacket(pkt);
+  SendNotification("Item " + std::to_string(itemEntry) + " x" + std::to_string(c) +
+                   " added to backpack.");
+  return true;
+}
+
+bool WorldSession::GmSetLevel(uint8 level) {
+  if (_playerGuid == 0)
+    return false;
+  uint8 lv = level;
+  if (lv < 1)
+    lv = 1;
+  if (lv > 85)
+    lv = 85;
+  if (!_charService->SetCharacterLevel(_accountId, static_cast<uint32>(_playerGuid),
+                                       lv)) {
+    SendNotification("Failed to set level.");
+    return false;
+  }
+  std::map<uint16, uint32> f;
+  f[UNIT_FIELD_LEVEL] = lv;
+  UpdateData update(_mapId);
+  update.AddValuesUpdate(_playerGuid, f);
+  WorldPacket pkt(SMSG_UPDATE_OBJECT);
+  update.Build(pkt);
+  SendPacket(pkt);
+  SendNotification("Level set to " + std::to_string(static_cast<int>(lv)) + ".");
+  return true;
 }
 
 } // namespace Firelands

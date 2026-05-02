@@ -1,5 +1,6 @@
 #include <application/services/CharacterService.h>
 #include <application/services/CommandService.h>
+#include <application/services/OnlineCharacterSessionRegistry.h>
 #include <application/services/PlayerCreateInfoService.h>
 #include <application/services/WorldService.h>
 #include <chrono>
@@ -161,7 +162,9 @@ int main(int argc, char **argv) {
                                                   charStartOutfitDbcPath);
     auto charService =
         std::make_shared<CharacterService>(charRepo, playerCreateInfoService);
-    auto commandService = std::make_shared<CommandService>();
+    auto onlineCharRegistry = std::make_shared<OnlineCharacterSessionRegistry>();
+    auto commandService = std::make_shared<CommandService>(onlineCharRegistry,
+                                                           accountRepo);
 
     const std::string dbcBasePath =
         config.GetNested<std::string>({"Data", "DbcPath"}, "data/dbc");
@@ -182,11 +185,12 @@ int main(int argc, char **argv) {
     }
 
     auto sessionFactory = [authService, charService, commandService,
-                           accountDataRepo, languagesDbc, spellDbc, realmRepo](
-                              boost::asio::ip::tcp::socket socket) {
+                           accountDataRepo, languagesDbc, spellDbc, realmRepo,
+                           onlineCharRegistry](boost::asio::ip::tcp::socket socket) {
       std::make_shared<WorldSession>(std::move(socket), authService, charService,
                                      commandService, accountDataRepo,
-                                     languagesDbc, spellDbc, realmRepo)
+                                     languagesDbc, spellDbc, realmRepo,
+                                     onlineCharRegistry)
           ->Start();
     };
 

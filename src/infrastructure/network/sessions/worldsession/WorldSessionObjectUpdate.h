@@ -3,6 +3,7 @@
 
 #include <application/ports/IMapNotifier.h>
 #include <domain/models/Character.h>
+#include <shared/game/PlayerGmAppearance.h>
 #include <shared/network/MovementInfo.h>
 #include <shared/network/WorldPacket.h>
 
@@ -39,7 +40,8 @@ uint64 ReadClientTargetGuid(WorldPacket &packet);
 
 void SendPlayerCreateToNotifier(std::shared_ptr<IMapNotifier> target, uint32 mapId,
                                 uint64 objectGuid, Character const &character,
-                                MovementInfo const &move);
+                                MovementInfo const &move,
+                                PlayerGmAppearanceForUpdates const &gmAppearance = {});
 
 } // namespace WorldSessionObjectUpdate
 

@@ -6,10 +6,27 @@
 #include <shared/Config.h>
 #include <shared/game/AccessLevel.h>
 #include <shared/Logger.h>
+#include <cctype>
 #include <string>
 #include <vector>
 
 using namespace Firelands;
+
+namespace {
+
+/// True if @p s is non-empty and every character is a decimal digit (realm id
+/// detection for `realm` argv disambiguation).
+bool IsAsciiUnsignedInteger(char const *s) {
+  if (!s || *s == '\0')
+    return false;
+  for (char const *p = s; *p; ++p) {
+    if (!std::isdigit(static_cast<unsigned char>(*p)))
+      return false;
+  }
+  return true;
+}
+
+} // namespace
 
 void PrintUsage(const char *progName) {
   LOG_ERROR("Usage:");
@@ -19,6 +36,8 @@ void PrintUsage(const char *progName) {
   LOG_ERROR("  {} realm <id> <name> <address> <port> [icon] [timezone] "
             "[secLevel] [population]",
             progName);
+  LOG_ERROR("       (or <name> <id> <address> <port> ... if <name> is not "
+            "all digits)");
 }
 
 int CreateAccount(int argc, char **argv,
@@ -69,8 +88,22 @@ int CreateAccount(int argc, char **argv,
 }
 
 int CreateRealm(int argc, char **argv, std::shared_ptr<sql::Connection> &conn) {
-  uint32_t id = std::stoul(argv[2]);
-  std::string name = argv[3];
+  if (argc < 6) {
+    LOG_ERROR("realm requires <id> <name> <address> <port> (or <name> <id> "
+              "<address> <port> when the name is not all digits) and optional "
+              "[icon] [timezone] [secLevel] [population]");
+    Logger::Shutdown();
+    return 1;
+  }
+  std::string name;
+  uint32_t id;
+  if (IsAsciiUnsignedInteger(argv[2])) {
+    id = std::stoul(argv[2]);
+    name = argv[3];
+  } else {
+    name = argv[2];
+    id = std::stoul(argv[3]);
+  }
   std::string address = argv[4];
   uint16_t port = static_cast<uint16_t>(std::stoul(argv[5]));
   uint8_t icon = (argc >= 7) ? static_cast<uint8_t>(std::stoul(argv[6])) : 0;
@@ -88,7 +121,8 @@ int CreateRealm(int argc, char **argv, std::shared_ptr<sql::Connection> &conn) {
   }
 
   Realm realm(id, name, address, port, icon, timezone, secLevel, population);
-  LOG_INFO("Inserting realm into database...");
+  LOG_INFO("Inserting realm id={} name='{}' {}:{}...", id, name, address,
+           static_cast<int>(port));
   realmRepo->Create(realm);
   LOG_INFO("Realm created successfully.");
   return 0;

@@ -19,6 +19,7 @@
 #include <shared/network/AccountDataTypes.h>
 #include <shared/dbc/LanguagesDbc.h>
 #include <shared/game/AccessLevel.h>
+#include <shared/game/PlayerGmAppearance.h>
 #include <shared/dbc/SpellDbc.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
@@ -42,6 +43,7 @@ struct AuthSecureAddonEntry {
 
 class MySqlAccountDataRepository;
 class IRealmRepository;
+class OnlineCharacterSessionRegistry;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -55,7 +57,9 @@ public:
       std::shared_ptr<MySqlAccountDataRepository> accountDataRepo,
       std::shared_ptr<LanguagesDbc const> languagesDbc = nullptr,
       std::shared_ptr<SpellDbc const> spellDbc = nullptr,
-      std::shared_ptr<IRealmRepository> realmRepo = nullptr);
+      std::shared_ptr<IRealmRepository> realmRepo = nullptr,
+      std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry =
+          nullptr);
 
   ~WorldSession();
 
@@ -70,16 +74,39 @@ public:
 
   // Command Support
   void SendNotification(const std::string &message) override;
+  void SendScreenNotification(std::string const &message) override;
   void TeleportTo(uint32 mapId, float x, float y, float z,
                   float orientation = 0.0f) override;
 
   uint64 GetGuid() const override { return _playerGuid; }
   const MovementInfo &GetPosition() const override { return _position; }
+  uint32 GetMapId() const override { return _mapId; }
   AccessLevel GetAccountAccessLevel() const override {
     return _accountAccessLevel;
   }
 
+  void RequestDisconnect(std::string const &reason) override;
+
+  void SetGmTagEnabled(bool on) override;
+  void SetDndEnabled(bool on) override;
+  void SetDevTagEnabled(bool on) override;
+  void SetGmVisibleToPlayers(bool visible) override;
+  void SetGmFlyEnabled(bool on) override;
+  void SetGmRunSpeed(float speed) override;
+
+  bool GmLearnSpell(uint32 spellId) override;
+  bool GmModifyMoneyCopper(int64 deltaCopper) override;
+  bool GmAddItem(uint32 itemEntry, uint32 count) override;
+  bool GmSetLevel(uint8 level) override;
+
+  PlayerGmAppearanceForUpdates GetGmAppearanceForPlayerUpdates() const {
+    return _gmAppearance;
+  }
+
 private:
+  void ResetGmStateForLogout();
+  void PublishGmVisualPatchIfInWorld();
+  void PublishGmMovementPacketsIfInWorld();
   // Core Network Logic
   void DoRead();
   void DoWrite();
@@ -183,6 +210,8 @@ private:
   void LoginSendCreateUpdatesAndMutualVisibility(uint64 guid, Character const &character,
                                                  MovementInfo const &move);
   void LoginFinalizeWorldEntry(uint64 guid);
+  void UnregisterFromOnlineCharacterRegistryIfNeeded();
+  void PublishSelfCoinageUpdate();
 
   tcp::socket _socket;
   std::shared_ptr<AuthService> _authService;
@@ -192,6 +221,10 @@ private:
   std::shared_ptr<LanguagesDbc const> _languagesDbc;
   std::shared_ptr<SpellDbc const> _spellDbc;
   std::shared_ptr<IRealmRepository> _realmRepo;
+  std::shared_ptr<OnlineCharacterSessionRegistry> _onlineCharRegistry;
+  /// Filled when the character is registered for console targeting; empty at
+  /// character select / disconnected.
+  std::string _activeCharacterName;
   std::array<AccountDataSlot, NUM_ACCOUNT_DATA_TYPES> _accountData{};
   uint32_t _activeCharacterGuid = 0;
   /// Per-character account blobs edited at character select (no guid yet); flushed on login.
@@ -202,6 +235,8 @@ private:
   AccessLevel _accountAccessLevel = AccessLevel::Player;
   uint64 _playerGuid = 0;
   uint8 _playerRace = 0;
+  /// Persisted copper; mirrored on logout and after `.money` GM commands.
+  uint32_t _moneyCopper = 0;
   uint32 _mapId = 0;
   uint32 _zoneId = 0;
   MovementInfo _position;
@@ -230,6 +265,11 @@ private:
   /// Known spells for the logged-in character (mirrors `SMSG_SEND_KNOWN_SPELLS` payload).
   std::vector<uint32> _knownSpells;
   std::chrono::steady_clock::time_point _gcdReady{};
+
+  PlayerGmAppearanceForUpdates _gmAppearance{};
+  bool _gmFlyEnabled = false;
+  float _gmRunSpeed = 7.0f;
+  uint32 _moveCounterForGmPackets = 0;
 };
 
 } // namespace Firelands

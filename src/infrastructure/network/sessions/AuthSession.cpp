@@ -111,6 +111,9 @@ void AuthSession::HandleLogonChallenge(AuthPacket &packet) {
 
   if (!account) {
     response.result = AUTH_FAIL_UNKNOWN_ACCOUNT;
+  } else if (account->locked) {
+    response.result = AUTH_FAIL_BANNED;
+    LOG_INFO("Login challenge rejected (locked): {} ({})", _username, GetIpAddress());
   } else {
     response.result = AUTH_SUCCESS;
 

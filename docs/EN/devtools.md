@@ -39,6 +39,8 @@ Registers or updates a realm instance in the `realmlist` table.
 
 ```bash
 ./FirelandsDevTools realm <id> <name> <address> <port> [icon] [timezone] [secLevel] [population]
+
+If the first argument after `realm` is **not** all digits, it is treated as the **name** and the second as **id** (e.g. `./FirelandsDevTools realm Firelands 1 127.0.0.1 8085`). Numeric-only names must use the `<id> <name> ...` order.
 ```
 
 - **id**: Unique ID for the realm.
