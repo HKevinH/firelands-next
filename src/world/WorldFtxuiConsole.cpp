@@ -223,8 +223,30 @@ void RunWorldFtxuiConsole(AsyncNetworkServer &worldServer,
   ReplaceStdoutColorSinkWith(log_sink);
 
   std::string command;
+  // Default FTXUI input uses `inverted` when focused; combined with our outer
+  // bgcolor/color decorators that yields unreadable text/cursor. Use explicit
+  // dark-field colors instead (similar idea to InputOption::Spacious()).
+  Color const kInputBg = Color::RGB(40, 36, 34);
+  Color const kInputBgHover = Color::RGB(46, 42, 40);
+  Color const kInputBgFocus = Color::RGB(54, 50, 46);
+  Color const kInputFg = Color::RGB(248, 242, 232);
   InputOption input_opts = InputOption::Default();
   input_opts.multiline() = false;
+  input_opts.transform = [=](InputState state) {
+    Element e = std::move(state.element);
+    Color bg = kInputBg;
+    if (state.focused) {
+      bg = kInputBgFocus;
+    } else if (state.hovered) {
+      bg = kInputBgHover;
+    }
+    e |= bgcolor(bg);
+    e |= color(kInputFg);
+    if (state.is_placeholder) {
+      e |= dim;
+    }
+    return e;
+  };
   auto input = Input(&command, " .help   .exit / quit ", input_opts);
   input |= CatchEvent([&](Event e) {
     if (e != Event::Return) {
@@ -297,8 +319,7 @@ void RunWorldFtxuiConsole(AsyncNetworkServer &worldServer,
     Element const input_rail =
         hbox({
             text(" ") | bgcolor(kAccent),
-            input->Render() | flex | bgcolor(Color::RGB(36, 34, 32)) |
-                color(Color::RGB(248, 242, 232)) |
+            input->Render() | flex |
                 borderStyled(ROUNDED, Color::RGB(100, 90, 82)),
         });
 

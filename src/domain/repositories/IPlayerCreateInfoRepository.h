@@ -1,6 +1,7 @@
 #pragma once
 
 #include <domain/models/PlayerCreateInfo.h>
+#include <domain/models/PlayerTemplateStats.h>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -25,6 +26,13 @@ public:
   /// rules as Trinity `playercreateinfo_spell` / `PlayerCreateInfo`.
   virtual std::vector<uint32_t> GetStarterSpells(uint8_t race,
                                                  uint8_t klass) = 0;
+
+  /// Trinity-style `player_classlevelstats`; empty when row missing.
+  virtual std::optional<PlayerClassLevelStats>
+  GetClassLevelStats(uint8_t klass, uint8_t level) = 0;
+
+  /// Trinity-style `player_racestats`; empty when row missing (treated as zeros).
+  virtual std::optional<PlayerRaceStats> GetRaceStats(uint8_t race) = 0;
 };
 
 } // namespace Firelands

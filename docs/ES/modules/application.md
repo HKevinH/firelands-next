@@ -9,7 +9,8 @@ La capa **aplicación** contiene los **casos de uso** y los **puertos** (interfa
 `src/application/CMakeLists.txt` compila:
 
 - `RealmListService.cpp` — combina filas persistidas de reinos con estado **en vivo** opcional (`IRealmLiveState`; ver `RealmLiveRegistry`).
-- `CommandService.cpp` — despacho de comandos (GM/jugador) usado por sesiones del mundo.
+- `CommandService.cpp` — despacho de comandos de staff (chat in-game con `.` y consola del world); ver [gm-administration.md](gm-administration.md).
+- `OnlineCharacterSessionRegistry.cpp` — nombre de personaje online → sesión para objetivos desde consola y difusiones (misma guía).
 - `WorldService.cpp` — singleton de estado del mundo: mapas, alta/baja de jugadores/criaturas/GO, host de Lua (`IGameScriptHost`) y colisión (`IMapCollisionQueries`).
 
 ## Servicios (representativos)

@@ -154,20 +154,17 @@ int main(int argc, char **argv) {
     auto charRepo = std::make_shared<MySqlCharacterRepository>(charConn);
     auto playerCreateInfoRepo =
         std::make_shared<MySqlPlayerCreateInfoRepository>(worldConn);
-    const std::string charStartOutfitDbcPath =
-        config.GetNested<std::string>({"Data", "DbcPath"}, "data/dbc") +
-        "/CharStartOutfit.dbc";
-    auto playerCreateInfoService =
-        std::make_shared<PlayerCreateInfoService>(playerCreateInfoRepo,
-                                                  charStartOutfitDbcPath);
+    const std::string dbcBasePath =
+        config.GetNested<std::string>({"Data", "DbcPath"}, "data/dbc");
+    const std::string charStartOutfitDbcPath = dbcBasePath + "/CharStartOutfit.dbc";
+    auto playerCreateInfoService = std::make_shared<PlayerCreateInfoService>(
+        playerCreateInfoRepo, charStartOutfitDbcPath, dbcBasePath);
     auto charService =
         std::make_shared<CharacterService>(charRepo, playerCreateInfoService);
     auto onlineCharRegistry = std::make_shared<OnlineCharacterSessionRegistry>();
     auto commandService = std::make_shared<CommandService>(onlineCharRegistry,
                                                            accountRepo);
 
-    const std::string dbcBasePath =
-        config.GetNested<std::string>({"Data", "DbcPath"}, "data/dbc");
     auto languagesDbc = std::make_shared<LanguagesDbc>();
     if (!languagesDbc->Load(dbcBasePath + "/Languages.dbc")) {
       LOG_WARN("Languages.dbc not loaded from {}; chat language validation "

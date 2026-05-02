@@ -141,6 +141,28 @@ public:
   /// Copper (WoW money unit); persisted in `characters.money`.
   uint32 GetMoney() const { return m_moneyCopper; }
 
+  /// STR, AGI, STA, INT, SPI (`UNIT_FIELD_STAT0`..`STAT4`) after world template apply.
+  uint32 GetPrimaryStat(uint8_t index) const {
+    return index < 5 ? m_primaryStats[index] : 0u;
+  }
+
+  uint8 GetPowerType() const { return m_powerType; }
+  uint32 GetPower1() const { return m_power1; }
+  uint32 GetMaxPower1() const { return m_maxPower1; }
+
+  /// Called after loading from DB using `player_*stats` + optional `gtOCT*.dbc` data.
+  void ApplyCombatStateFromTemplate(std::array<uint32_t, 5> const &primaryStats,
+                                    uint32 maxHealth, uint32 health,
+                                    uint32 power1, uint32 maxPower1,
+                                    uint8 powerType) {
+    m_primaryStats = primaryStats;
+    m_maxHealth = maxHealth;
+    m_health = health > maxHealth ? maxHealth : health;
+    m_maxPower1 = maxPower1;
+    m_power1 = power1 > maxPower1 ? maxPower1 : power1;
+    m_powerType = powerType;
+  }
+
 private:
   uint32 m_guid;
   uint32 m_account;
@@ -179,6 +201,11 @@ private:
   uint32 m_maxHealth;
   uint32 m_factionTemplate;
   uint32 m_displayId;
+
+  std::array<uint32_t, 5> m_primaryStats{};
+  uint8 m_powerType = 0;
+  uint32 m_power1 = 0;
+  uint32 m_maxPower1 = 0;
 };
 
 } // namespace Firelands

@@ -5,21 +5,20 @@
 #include <cstdint>
 #include <memory>
 #include <shared/dbc/CharStartOutfitDbc.h>
+#include <shared/dbc/GtOctCombatDbc.h>
 #include <string>
 #include <vector>
 
 namespace Firelands {
 
+class Character;
+
 class PlayerCreateInfoService {
 public:
   explicit PlayerCreateInfoService(
       std::shared_ptr<IPlayerCreateInfoRepository> repository,
-      std::string charStartOutfitDbcPath = "")
-      : m_repository(std::move(repository)) {
-    if (!charStartOutfitDbcPath.empty())
-      m_charStartOutfitDbcLoaded =
-          m_charStartOutfitDbc.Load(charStartOutfitDbcPath);
-  }
+      std::string charStartOutfitDbcPath = "",
+      std::string clientGameTablesDbcDir = "");
 
   std::optional<PlayerCreateInfo> GetStartPosition(uint8 race, uint8 klass) {
     if (!m_repository)
@@ -71,9 +70,14 @@ public:
     return grants;
   }
 
+  /// Applies `player_classlevelstats` + `player_racestats` and optional `gtOCT*.dbc`
+  /// (same sources as TrinityCore / `firelands-cata-ref`). Returns false if no class row.
+  bool TryApplyTemplateCombatState(Character &character);
+
 private:
   std::shared_ptr<IPlayerCreateInfoRepository> m_repository;
   CharStartOutfitDbc m_charStartOutfitDbc;
+  GtOctCombatDbc m_gtOct;
   bool m_charStartOutfitDbcLoaded = false;
 };
 

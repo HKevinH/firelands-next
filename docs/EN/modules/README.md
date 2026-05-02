@@ -10,6 +10,7 @@ Read in this order:
 | 4 | Infrastructure (`src/infrastructure`) | [infrastructure.md](infrastructure.md) |
 | 5 | Executables (`src/auth`, `src/world`) | [executables.md](executables.md) |
 | 6 | Tools, tests, SQL, CMake | [tools-sql-build.md](tools-sql-build.md) |
+| — | GM / staff commands & console | [gm-administration.md](gm-administration.md) |
 
 **Dependency direction (build):** `Infrastructure → Application → Domain → Shared`.
 

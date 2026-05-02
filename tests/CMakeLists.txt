@@ -15,6 +15,7 @@ add_executable(FirelandsUnitTests
     unit/application/RealmListServiceTests.cpp
     unit/application/AuthServiceTests.cpp
     unit/application/CharacterServiceTests.cpp
+    unit/application/PlayerCreateInfoServiceStatsTests.cpp
     unit/application/WorldServiceCreatureScriptTests.cpp
     unit/domain/MapTests.cpp
     unit/infrastructure/LuaGameScriptHostTests.cpp

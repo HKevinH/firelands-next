@@ -1,4 +1,5 @@
 #include <shared/dbc/DbcReader.h>
+#include <cstring>
 #include <fstream>
 #include <shared/Logger.h>
 
@@ -116,6 +117,32 @@ int32_t DbcReader::ReadInt32(uint32_t recordIndex, uint32_t fieldIndex,
                              std::vector<uint32_t> const &fieldOffsets) const {
   uint32_t u = ReadUInt32(recordIndex, fieldIndex, fieldOffsets);
   return static_cast<int32_t>(u);
+}
+
+float DbcReader::ReadFloat(uint32_t recordIndex, uint32_t fieldIndex,
+                           std::vector<uint32_t> const &fieldOffsets) const {
+  uint32_t const u = ReadUInt32(recordIndex, fieldIndex, fieldOffsets);
+  float f = 0.f;
+  static_assert(sizeof(u) == sizeof(f), "float bitcast");
+  std::memcpy(&f, &u, sizeof(f));
+  return f;
+}
+
+float DbcReader::ReadFirstFloatInRecord(uint32_t recordIndex) const {
+  if (recordIndex >= m_recordCount || m_recordSize < 4u)
+    return 0.f;
+  size_t const pos =
+      m_recordsOffset + static_cast<size_t>(recordIndex) * m_recordSize;
+  if (pos + sizeof(uint32_t) > m_data.size())
+    return 0.f;
+  uint32_t const u =
+      static_cast<uint32_t>(m_data[pos]) |
+      (static_cast<uint32_t>(m_data[pos + 1]) << 8) |
+      (static_cast<uint32_t>(m_data[pos + 2]) << 16) |
+      (static_cast<uint32_t>(m_data[pos + 3]) << 24);
+  float f = 0.f;
+  std::memcpy(&f, &u, sizeof(f));
+  return f;
 }
 
 } // namespace Firelands

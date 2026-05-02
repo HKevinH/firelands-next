@@ -128,7 +128,10 @@ public:
   }
 
   std::optional<Character> GetCharacterByGuid(uint64_t guid) {
-    return m_repository->GetCharacterByGuid(guid);
+    auto c = m_repository->GetCharacterByGuid(guid);
+    if (c && m_playerCreateInfoService)
+      m_playerCreateInfoService->TryApplyTemplateCombatState(*c);
+    return c;
   }
 
   bool SwapBag0Slots(uint64_t characterGuid, uint8_t srcSlot, uint8_t dstSlot) {

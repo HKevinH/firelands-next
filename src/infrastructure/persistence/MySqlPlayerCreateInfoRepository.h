@@ -23,6 +23,11 @@ public:
 
   std::vector<uint32_t> GetStarterSpells(uint8_t race, uint8_t klass) override;
 
+  std::optional<PlayerClassLevelStats>
+  GetClassLevelStats(uint8_t klass, uint8_t level) override;
+
+  std::optional<PlayerRaceStats> GetRaceStats(uint8_t race) override;
+
 private:
   std::shared_ptr<sql::Connection> m_connection;
 };

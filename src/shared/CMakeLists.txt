@@ -4,6 +4,7 @@ add_library(FirelandsShared STATIC
     dbc/CharStartOutfitDbc.cpp
     dbc/LanguagesDbc.cpp
     dbc/SpellDbc.cpp
+    dbc/GtOctCombatDbc.cpp
     game/EquipmentCache.cpp
     game/ChatLanguages.cpp
     game/ItemEquipSlots.cpp

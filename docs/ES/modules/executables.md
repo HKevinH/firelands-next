@@ -24,9 +24,11 @@ Servidor de **mundo**:
 4. Inicializa **`LuaGameScriptHost`** y lo registra en **`WorldService`**; dispara `world_startup`.
 5. Configura **`MapCollisionQueriesStub`** desde `Collision.DataRoot`.
 6. Migra SQL y conecta **tres** BDs: **auth**, **characters**, **world**.
-7. Cablea servicios (auth/personajes/comandos/playercreateinfo) y crea sesiones `WorldSession` en **`AsyncNetworkServer`**.
+7. Cablea servicios (auth/personajes, **`CommandService`** + **`OnlineCharacterSessionRegistry`**, playercreateinfo) y crea sesiones `WorldSession` en **`AsyncNetworkServer`**.
 
 Bucle: `worldServer.Update()`.
+
+Los comandos de staff con **`.` en el chat** y la **consola interactiva** (`WorldInteractiveConsole`) están descritos en [gm-administration.md](gm-administration.md).
 
 ## Vista operativa
 

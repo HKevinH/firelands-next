@@ -141,14 +141,21 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(uint64 guid,
   fields[OBJECT_FIELD_SCALE_X] = 0x3F800000;
 
   uint8 bytes0[4] = {character.GetRace(), character.GetClass(),
-                     character.GetGender(), 0};
+                     character.GetGender(), character.GetPowerType()};
   std::memcpy(&fields[UNIT_FIELD_BYTES_0], bytes0, 4);
 
   fields[UNIT_FIELD_HEALTH] = character.GetHealth();
   fields[UNIT_FIELD_MAXHEALTH] = character.GetMaxHealth();
-  fields[UNIT_FIELD_POWER1] = 0;
-  fields[UNIT_FIELD_MAXPOWER1] = 0;
+  fields[UNIT_FIELD_POWER1] = character.GetPower1();
+  fields[UNIT_FIELD_MAXPOWER1] = character.GetMaxPower1();
   fields[UNIT_FIELD_LEVEL] = character.GetLevel();
+  for (uint8_t i = 0; i < 5; ++i) {
+    fields[static_cast<uint16>(UNIT_FIELD_STAT0 + i)] =
+        character.GetPrimaryStat(i);
+    // Bonuses from gear/auras (zero until item/aura systems populate them).
+    fields[static_cast<uint16>(UNIT_FIELD_POSSTAT0 + i)] = 0;
+    fields[static_cast<uint16>(UNIT_FIELD_NEGSTAT0 + i)] = 0;
+  }
   fields[UNIT_FIELD_FACTIONTEMPLATE] = character.GetFactionTemplate();
   fields[UNIT_FIELD_DISPLAYID] = character.GetDisplayId();
   fields[UNIT_FIELD_NATIVEDISPLAYID] = character.GetDisplayId();

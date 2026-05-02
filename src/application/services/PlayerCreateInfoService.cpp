@@ -1,0 +1,103 @@
+#include <application/services/PlayerCreateInfoService.h>
+#include <domain/models/Character.h>
+#include <shared/game/PlayerPowerType.h>
+#include <shared/Logger.h>
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+
+namespace Firelands {
+
+namespace {
+
+uint32_t SumPrimary(uint16_t base, int16_t raceBonus) {
+  int64_t v = static_cast<int64_t>(base) + static_cast<int64_t>(raceBonus);
+  v = std::max<int64_t>(1, v);
+  v = std::min<int64_t>(v, static_cast<int64_t>(0xFFFFFFFFu));
+  return static_cast<uint32_t>(v);
+}
+
+} // namespace
+
+PlayerCreateInfoService::PlayerCreateInfoService(
+    std::shared_ptr<IPlayerCreateInfoRepository> repository,
+    std::string charStartOutfitDbcPath, std::string clientGameTablesDbcDir)
+    : m_repository(std::move(repository)) {
+  if (!charStartOutfitDbcPath.empty())
+    m_charStartOutfitDbcLoaded =
+        m_charStartOutfitDbc.Load(charStartOutfitDbcPath);
+  if (!clientGameTablesDbcDir.empty() && !m_gtOct.Load(clientGameTablesDbcDir)) {
+    LOG_DEBUG("PlayerCreateInfoService: optional gtOCT*.dbc not loaded from {}",
+              clientGameTablesDbcDir);
+  }
+}
+
+bool PlayerCreateInfoService::TryApplyTemplateCombatState(Character &character) {
+  if (!m_repository)
+    return false;
+
+  uint8_t const klass = character.GetClass();
+  uint8_t const level = character.GetLevel();
+  uint8_t const race = character.GetRace();
+
+  std::optional<PlayerClassLevelStats> clsRow =
+      m_repository->GetClassLevelStats(klass, level);
+  if (!clsRow) {
+    LOG_WARN(
+        "TryApplyTemplateCombatState: no player_classlevelstats row for "
+        "class={} level={} (guid={}); apply sql/17_player_class_and_race_stats.sql "
+        "to firelands_world or import reference data.",
+        static_cast<unsigned>(klass), static_cast<unsigned>(level),
+        character.GetGuid());
+    return false;
+  }
+
+  PlayerRaceStats raceBonus{};
+  if (auto r = m_repository->GetRaceStats(race))
+    raceBonus = *r;
+
+  std::array<uint32_t, 5> const prim{
+      SumPrimary(clsRow->str, raceBonus.str), SumPrimary(clsRow->agi, raceBonus.agi),
+      SumPrimary(clsRow->sta, raceBonus.sta), SumPrimary(clsRow->inte, raceBonus.inte),
+      SumPrimary(clsRow->spi, raceBonus.spi)};
+  uint32_t const sta = prim[2];
+  uint32_t const inte = prim[3];
+
+  PlayerPowerType const pt = GetDefaultPlayerPowerType(klass);
+  uint8_t const powerByte = static_cast<uint8_t>(pt);
+
+  double baseHp = static_cast<double>(m_gtOct.BaseHpByClassLevel(klass, level));
+  float const hpPerSta = m_gtOct.HpPerStaminaAtPlayerLevel(level);
+  uint32_t maxHp = 0;
+  if (baseHp > 0.0 && hpPerSta > 0.f)
+    maxHp = static_cast<uint32_t>(std::floor(baseHp + static_cast<double>(sta) *
+                                              static_cast<double>(hpPerSta)));
+  if (maxHp == 0)
+    maxHp = 15u + static_cast<uint32_t>(level) * 6u + sta * 8u;
+  maxHp = std::max(1u, maxHp);
+
+  uint32_t maxPow1 = DefaultMaxPower1(pt);
+  uint32_t pow1 = 0;
+  if (pt == PlayerPowerType::Mana) {
+    double baseMp = static_cast<double>(m_gtOct.BaseMpByClassLevel(klass, level));
+    float const mpPerInt = m_gtOct.MpPerIntellectAtPlayerLevel(level);
+    if (baseMp > 0.0 && mpPerInt > 0.f)
+      maxPow1 = static_cast<uint32_t>(
+          std::floor(baseMp + static_cast<double>(inte) * static_cast<double>(mpPerInt)));
+    if (maxPow1 == 0)
+      maxPow1 = 50u + inte * 15u;
+    maxPow1 = std::max(1u, maxPow1);
+    pow1 = maxPow1;
+  } else if (pt == PlayerPowerType::Energy || pt == PlayerPowerType::Focus) {
+    pow1 = maxPow1;
+  } else {
+    pow1 = 0;
+  }
+
+  character.ApplyCombatStateFromTemplate(prim, maxHp, maxHp, pow1, maxPow1,
+                                         powerByte);
+  return true;
+}
+
+} // namespace Firelands

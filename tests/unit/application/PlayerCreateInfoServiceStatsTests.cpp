@@ -1,0 +1,66 @@
+#include <gtest/gtest.h>
+#include <gmock/gmock.h>
+#include <application/services/PlayerCreateInfoService.h>
+#include <domain/models/Character.h>
+#include <domain/models/PlayerTemplateStats.h>
+#include <domain/repositories/IPlayerCreateInfoRepository.h>
+
+using namespace Firelands;
+using namespace testing;
+
+class MockPlayerCreateInfoRepo : public IPlayerCreateInfoRepository {
+public:
+  MOCK_METHOD(std::optional<PlayerCreateInfo>, GetStartPosition, (uint8, uint8),
+              (override));
+  MOCK_METHOD(std::vector<PlayerCreateVisualItem>, GetVisualItems,
+              (uint8, uint8, uint8, uint8), (override));
+  MOCK_METHOD(std::vector<StarterItemGrant>, GetExtraCreateItems, (uint8, uint8),
+              (override));
+  MOCK_METHOD(std::vector<uint32_t>, GetStarterSpells, (uint8_t, uint8_t),
+              (override));
+  MOCK_METHOD(std::optional<PlayerClassLevelStats>, GetClassLevelStats,
+              (uint8_t, uint8_t), (override));
+  MOCK_METHOD(std::optional<PlayerRaceStats>, GetRaceStats, (uint8_t),
+              (override));
+};
+
+TEST(PlayerCreateInfoServiceStats, AppliesClassRaceAndSetsHealth) {
+  auto repo = std::make_shared<MockPlayerCreateInfoRepo>();
+  PlayerCreateInfoService svc(repo, "", "");
+
+  PlayerClassLevelStats cls;
+  cls.str = 20;
+  cls.agi = 10;
+  cls.sta = 30;
+  cls.inte = 12;
+  cls.spi = 8;
+
+  PlayerRaceStats race;
+  race.str = 2;
+  race.sta = 1;
+  race.agi = race.inte = race.spi = 0;
+
+  EXPECT_CALL(*repo, GetClassLevelStats(1, 3))
+      .WillOnce(Return(std::optional<PlayerClassLevelStats>{cls}));
+  EXPECT_CALL(*repo, GetRaceStats(1)).WillOnce(Return(std::optional<PlayerRaceStats>{race}));
+
+  Character ch(1u, 1u, "T", 1, 1, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+               true);
+  ASSERT_TRUE(svc.TryApplyTemplateCombatState(ch));
+  EXPECT_EQ(ch.GetPrimaryStat(0), 22u);
+  EXPECT_EQ(ch.GetPrimaryStat(2), 31u);
+  EXPECT_GT(ch.GetMaxHealth(), 50u);
+  EXPECT_EQ(ch.GetPowerType(), 1u); // warrior rage
+}
+
+TEST(PlayerCreateInfoServiceStats, ReturnsFalseWithoutClassRow) {
+  auto repo = std::make_shared<MockPlayerCreateInfoRepo>();
+  PlayerCreateInfoService svc(repo, "", "");
+  EXPECT_CALL(*repo, GetClassLevelStats(9, 1))
+      .WillOnce(Return(std::optional<PlayerClassLevelStats>{}));
+
+  Character ch(1u, 1u, "T", 1, 9, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+               true);
+  EXPECT_FALSE(svc.TryApplyTemplateCombatState(ch));
+  EXPECT_EQ(ch.GetMaxHealth(), 100u);
+}

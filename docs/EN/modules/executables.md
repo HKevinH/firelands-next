@@ -24,9 +24,11 @@ The **world server** executable:
 4. Initializes **`LuaGameScriptHost`** and assigns it to **`WorldService`**; fires `world_startup`.
 5. Sets **`MapCollisionQueriesStub`** from `Collision.DataRoot`.
 6. Migrates DB (`sql/`), then connects **three** logical databases: **auth** (account validation), **characters**, **world** (e.g. player create info).
-7. Wires **`AuthService`**, **`CharacterService`**, **`CommandService`**, **`PlayerCreateInfoService`**, and **`WorldSession`** factory on **`AsyncNetworkServer`** (`Network.Port`, default world listener distinct from auth).
+7. Wires **`AuthService`**, **`CharacterService`**, **`CommandService`** + **`OnlineCharacterSessionRegistry`**, **`PlayerCreateInfoService`**, and **`WorldSession`** factory on **`AsyncNetworkServer`** (`Network.Port`, default world listener distinct from auth).
 
 Main loop: `worldServer.Update()` polling.
+
+Staff **`.` chat commands** and the **interactive console** (`WorldInteractiveConsole`) are documented in [gm-administration.md](gm-administration.md).
 
 ## Operational picture
 

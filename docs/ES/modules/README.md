@@ -10,6 +10,7 @@ Lectura recomendada:
 | 4 | Infrastructure (`src/infrastructure`) | [infrastructure.md](infrastructure.md) |
 | 5 | Ejecutables (`src/auth`, `src/world`) | [executables.md](executables.md) |
 | 6 | Herramientas, tests, SQL, CMake | [tools-sql-build.md](tools-sql-build.md) |
+| — | Comandos GM / staff y consola | [gm-administration.md](gm-administration.md) |
 
 **Dirección de dependencias (build):** `Infrastructure → Application → Domain → Shared`.
 

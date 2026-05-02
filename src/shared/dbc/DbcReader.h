@@ -29,6 +29,13 @@ public:
   int32_t ReadInt32(uint32_t recordIndex, uint32_t fieldIndex,
                     std::vector<uint32_t> const &fieldOffsets) const;
 
+  float ReadFloat(uint32_t recordIndex, uint32_t fieldIndex,
+                  std::vector<uint32_t> const &fieldOffsets) const;
+
+  /// First 4 bytes of the record as IEEE754 LE (used for `gt*` game tables where
+  /// `fieldCount`/`recordSize` may not match a single `f` fmt column).
+  float ReadFirstFloatInRecord(uint32_t recordIndex) const;
+
   bool VerifyFormat(std::string_view fmt) const {
     return static_cast<uint32_t>(fmt.size()) == m_fieldCount;
   }

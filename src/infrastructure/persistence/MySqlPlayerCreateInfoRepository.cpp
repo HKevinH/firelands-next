@@ -153,6 +153,65 @@ std::vector<uint32_t> MySqlPlayerCreateInfoRepository::GetStarterSpells(
   return out;
 }
 
+std::optional<PlayerClassLevelStats>
+MySqlPlayerCreateInfoRepository::GetClassLevelStats(uint8 klass, uint8 level) {
+  auto queryRow = [&](uint8 k, uint8 lv) -> std::optional<PlayerClassLevelStats> {
+    try {
+      std::unique_ptr<sql::PreparedStatement> stmt(m_connection->prepareStatement(
+          "SELECT `str`, `agi`, `sta`, `inte`, `spi` "
+          "FROM firelands_world.player_classlevelstats "
+          "WHERE `class` = ? AND `level` = ? LIMIT 1"));
+      stmt->setUInt(1, k);
+      stmt->setUInt(2, lv);
+      std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery());
+      if (!rs->next())
+        return std::nullopt;
+      PlayerClassLevelStats out;
+      // Column index (1-based): avoids connector/metadata quirks with the name `inte`.
+      out.str = static_cast<uint16_t>(rs->getUInt(1));
+      out.agi = static_cast<uint16_t>(rs->getUInt(2));
+      out.sta = static_cast<uint16_t>(rs->getUInt(3));
+      out.inte = static_cast<uint16_t>(rs->getUInt(4));
+      out.spi = static_cast<uint16_t>(rs->getUInt(5));
+      return out;
+    } catch (sql::SQLException &e) {
+      if (!IsMissingTableError(e))
+        LOG_ERROR("GetClassLevelStats query failed: {}", e.what());
+      return std::nullopt;
+    }
+  };
+
+  if (auto row = queryRow(klass, level))
+    return row;
+  if (level != 1)
+    return queryRow(klass, 1);
+  return std::nullopt;
+}
+
+std::optional<PlayerRaceStats>
+MySqlPlayerCreateInfoRepository::GetRaceStats(uint8 race) {
+  try {
+    std::unique_ptr<sql::PreparedStatement> stmt(m_connection->prepareStatement(
+        "SELECT `str`, `agi`, `sta`, `inte`, `spi` "
+        "FROM firelands_world.player_racestats WHERE `race` = ? LIMIT 1"));
+    stmt->setUInt(1, race);
+    std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery());
+    if (!rs->next())
+      return std::nullopt;
+    PlayerRaceStats out;
+    out.str = static_cast<int16_t>(rs->getInt(1));
+    out.agi = static_cast<int16_t>(rs->getInt(2));
+    out.sta = static_cast<int16_t>(rs->getInt(3));
+    out.inte = static_cast<int16_t>(rs->getInt(4));
+    out.spi = static_cast<int16_t>(rs->getInt(5));
+    return out;
+  } catch (sql::SQLException &e) {
+    if (!IsMissingTableError(e))
+      LOG_ERROR("GetRaceStats query failed: {}", e.what());
+    return std::nullopt;
+  }
+}
+
 std::vector<StarterItemGrant>
 MySqlPlayerCreateInfoRepository::GetExtraCreateItems(uint8 race, uint8 klass) {
   std::vector<StarterItemGrant> rows;
