@@ -359,11 +359,17 @@ bool CommandService::ExecuteCommand(std::shared_ptr<ICommandSession> session,
 
   auto it = _commands.find(cmdName);
   if (it == _commands.end()) {
+    LOG_DEBUG("Unknown command: .{} from Account={}", cmdName, session->GetAccountId());
     session->SendNotification("Unknown command: " + cmdName);
     return false;
   }
 
   CommandEntry const &entry = it->second;
+
+  LOG_INFO("Command executed: Account={} Access={} Cmd=.{} Args={}",
+           session->GetAccountId(),
+           static_cast<int>(session->GetAccountAccessLevel()),
+           cmdName, args.size());
   switch (entry.availability) {
   case CommandAvailability::Console:
     if (origin != PrivilegeOrigin::ServerConsole) {

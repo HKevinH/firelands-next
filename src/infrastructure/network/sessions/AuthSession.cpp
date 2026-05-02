@@ -76,8 +76,8 @@ void AuthSession::HandlePacket(ByteBuffer &buffer) {
 
 void AuthSession::ProcessPacket(AuthPacket &packet) {
   uint8 opcode = packet.GetOpcode();
-  LOG_INFO("AuthSession received packet: {}, size: {}", packet.GetOpcodeName(),
-           packet.Size());
+  LOG_DEBUG("AuthSession received packet: {}, size: {}", packet.GetOpcodeName(),
+             packet.Size());
 
   switch (opcode) {
   case AUTH_LOGON_CHALLENGE:
@@ -168,7 +168,7 @@ void AuthSession::HandleLogonProof(AuthPacket &packet) {
 
   if (std::memcmp(M1.data(), proof.M1, 20) != 0) {
     response.result = AUTH_FAIL_WRONG_PASSWORD;
-    LOG_WARN("Login failed for {} - Wrong Password", _username);
+    LOG_WARN("Auth failed: IP={} User='{}' Reason=Wrong Password", GetIpAddress(), _username);
     _accountAccessLevel = AccessLevel::Player;
   } else {
     response.result = AUTH_SUCCESS;
@@ -177,16 +177,17 @@ void AuthSession::HandleLogonProof(AuthPacket &packet) {
     response.account_flags = 0;
     response.survey_id = 0;
     response.login_flags = 0;
-    LOG_INFO("Login successful for {}", _username);
 
     // Persist the session key so the World Server can validate it
     auto account = _authService->FindAccount(_username);
+    uint32 accountId = account ? account->id : 0;
     if (account) {
       _authService->CreateSession(account->id, K);
       _accountAccessLevel = account->accessLevel;
     } else {
       _accountAccessLevel = AccessLevel::Player;
     }
+    LOG_INFO("Auth success: IP={} User='{}' AccountId={} Access={}", GetIpAddress(), _username, accountId, static_cast<int>(_accountAccessLevel));
   }
 
   AuthPacket res(AUTH_LOGON_PROOF);

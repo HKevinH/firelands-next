@@ -222,11 +222,11 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
       return message;
     return message.substr(0, 96) + "...";
   };
-  LOG_INFO("[CHAT] in opcode=0x{:X} legacy={} type={} lang={} msgLen={} msg='{}'",
-           packet.GetOpcode(), 0, type, lang,
-           message.size(), chatPreview());
-  LOG_INFO("[CHAT] knows lang={} => {}", lang,
-           PlayerKnowsLanguage(_knownSpells, lang) ? 1 : 0);
+  LOG_DEBUG("[CHAT] in opcode=0x{:X} legacy={} type={} lang={} msgLen={} msg='{}'",
+            packet.GetOpcode(), 0, type, lang,
+            message.size(), chatPreview());
+  LOG_DEBUG("[CHAT] knows lang={} => {}", lang,
+            PlayerKnowsLanguage(_knownSpells, lang) ? 1 : 0);
 
   if (_commandService->IsCommand(message)) {
     _commandService->ExecuteCommand(

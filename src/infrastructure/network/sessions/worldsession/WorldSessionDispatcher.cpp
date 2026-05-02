@@ -5,8 +5,8 @@ namespace Firelands {
 
 void WorldSession::ProcessPacket(WorldPacket &packet) {
   uint32 opcode = packet.GetOpcode();
-  LOG_INFO("[CMSG] {} payload={} crypt={}", packet.GetOpcodeName(),
-           packet.Size(), _crypt.IsInitialized());
+  LOG_DEBUG("[CMSG] {} payload={} crypt={}", packet.GetOpcodeName(),
+            packet.Size(), _crypt.IsInitialized());
 
   switch (opcode) {
   case CMSG_AUTH_SESSION:

@@ -52,7 +52,7 @@ public:
 
     std::sort(sqlFiles.begin(), sqlFiles.end());
 
-    LOG_INFO("Starting database migrations from directory: {} (init + migrations)", dirPath);
+    LOG_DEBUG("Starting database migrations from directory: {} (init + migrations)", dirPath);
 
     try {
       sql::Driver *driver = sql::mariadb::get_driver_instance();
@@ -71,7 +71,7 @@ public:
         const std::string name =
             std::filesystem::path(file).filename().string();
         if (IsMigrationApplied(conn, name)) {
-          LOG_INFO("Skipping already-applied migration: {}", name);
+          LOG_DEBUG("Skipping already-applied migration: {}", name);
           continue;
         }
         const size_t failedStatements = Migrate(uri, user, password, file);
@@ -88,7 +88,7 @@ public:
       LOG_ERROR("Migration bookkeeping error: {}", e.what());
     }
 
-    LOG_INFO("All migrations from {} completed.", dirPath);
+    LOG_DEBUG("All migrations from {} completed.", dirPath);
   }
 
   /**
@@ -120,7 +120,7 @@ public:
         return 1;
       }
 
-      LOG_INFO("Validating database schema: {}", sqlFilePath);
+      LOG_DEBUG("Validating database schema: {}", sqlFilePath);
 
 std::string content((std::istreambuf_iterator<char>(file)),
                           std::istreambuf_iterator<char>());
@@ -137,7 +137,7 @@ std::string content((std::istreambuf_iterator<char>(file)),
             std::unique_ptr<sql::Statement> createStmt(conn->createStatement());
             createStmt->execute("CREATE DATABASE IF NOT EXISTS `" + targetDb + "`");
             conn->setSchema(targetDb);
-            LOG_INFO("Created/selected database: {}", targetDb);
+            LOG_DEBUG("Created/selected database: {}", targetDb);
           }
         }
 
@@ -172,7 +172,7 @@ std::string content((std::istreambuf_iterator<char>(file)),
           } catch (sql::SQLException &e) {
             int code = e.getErrorCode();
             if (code == 1060 || code == 1061 || code == 1050) {
-              LOG_INFO("Skipped (already exists): {}", trimmed.substr(0, 60));
+              LOG_DEBUG("Skipped (already exists): {}", trimmed.substr(0, 60));
             } else {
               LOG_WARN("Failed: {} - {}", trimmed.substr(0, 60), e.what());
               ++failures;
@@ -184,7 +184,7 @@ std::string content((std::istreambuf_iterator<char>(file)),
         failures = 1;
       }
 
-      LOG_INFO("Schema validation completed for: {} ({} failed statements)", sqlFilePath, failures);
+      LOG_DEBUG("Schema validation completed for: {} ({} failed statements)", sqlFilePath, failures);
       return failures;
 
     } catch (sql::SQLException &e) {

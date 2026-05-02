@@ -140,6 +140,14 @@ void WorldSession::HandleCharCreate(WorldPacket &packet) {
                                     face, hairStyle, hairColor, facialHair,
                                     outfitId);
 
+  if (success) {
+    LOG_INFO("Character created: Account={} Name='{}' Race={} Class={}",
+             _accountId, name, race, klass);
+  } else {
+    LOG_WARN("Character creation failed: Account={} Name='{}' Race={} Class={}",
+             _accountId, name, race, klass);
+  }
+
   WorldPacket response(SMSG_CHAR_CREATE);
   response.Append<uint8>(success ? 0x2F : 0x30);
   SendPacket(response);
@@ -147,10 +155,15 @@ void WorldSession::HandleCharCreate(WorldPacket &packet) {
 
 void WorldSession::HandleCharDelete(WorldPacket &packet) {
   uint64 guid = packet.Read<uint64>();
-  LOG_DEBUG("CMSG_CHAR_DELETE for GUID: {}", guid);
 
   bool success =
       _charService->DeleteCharacter(static_cast<uint32>(guid), _accountId);
+
+  if (success) {
+    LOG_INFO("Character deleted: Account={} GUID={}", _accountId, guid);
+  } else {
+    LOG_WARN("Character deletion failed: Account={} GUID={}", _accountId, guid);
+  }
 
   WorldPacket response(SMSG_CHAR_DELETE);
   response.Append<uint8>(success ? 0x47 : 0x48);

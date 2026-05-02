@@ -132,7 +132,7 @@ void WorldSession::QueueOutgoing(std::shared_ptr<std::vector<uint8>> buffer) {
 void WorldSession::SendPacket(ByteBuffer &buffer) {
   auto shared_buffer = std::make_shared<std::vector<uint8>>(
       buffer.GetBuffer(), buffer.GetBuffer() + buffer.Size());
-  LOG_INFO("[SEND] raw {} bytes (handshake / non-opcode)", shared_buffer->size());
+  LOG_DEBUG("[SEND] raw {} bytes (handshake / non-opcode)", shared_buffer->size());
   QueueOutgoing(shared_buffer);
 }
 
@@ -200,15 +200,16 @@ void WorldSession::UnregisterFromOnlineCharacterRegistryIfNeeded() {
 
 void WorldSession::Close() {
   if (_playerGuid != 0) {
-    LOG_INFO("Closing WorldSession for {} (saving and removing from world)",
-             GetIpAddress());
+    LOG_INFO("Session disconnect: Account={} IP={} Character={} (saving and removing from world)",
+             _accountId, GetIpAddress(), _playerGuid);
     FinalizeWorldExit();
+    LOG_INFO("Character removed from world: Account={} GUID={}", _accountId, _playerGuid);
   } else {
     UnregisterFromOnlineCharacterRegistryIfNeeded();
   }
   CancelPeriodicTimeSync();
   if (_socket.is_open()) {
-    LOG_INFO("Closing WorldSession for {} (socket)", GetIpAddress());
+    LOG_DEBUG("Closing socket for Account={} IP={}", _accountId, GetIpAddress());
     _socket.close();
   }
 }
@@ -380,19 +381,21 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   uint64 guid = 0;
   LoginReadPackedPlayerGuid(packet, guid);
 
-  LOG_DEBUG("CMSG_PLAYER_LOGIN for GUID: {}", guid);
   _playerGuid = guid;
   _timeSyncNextCounter = 0;
 
   auto characterOpt = _charService->GetCharacterByGuid(guid);
   if (!characterOpt) {
-    LOG_ERROR("CMSG_PLAYER_LOGIN: Character not found.");
+    LOG_ERROR("PlayerLogin failed: Account={} GUID={} Reason=NotFound", _accountId, guid);
     Close();
     return;
   }
   Character const &character = *characterOpt;
   _playerRace = character.GetRace();
   _moneyCopper = character.GetMoney();
+
+  LOG_INFO("PlayerLogin: Account={} GUID={} Name='{}' Level={} Map={}",
+           _accountId, guid, character.GetName(), character.GetLevel(), character.GetMapId());
 
   LoginSendAccountDataAndPreMapPackets(guid, character);
   LoginBuildKnownSpellsAndSendSpellbook(character);
@@ -404,6 +407,10 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   LoginSpawnInWorld(guid, move);
   LoginSendCreateUpdatesAndMutualVisibility(guid, character, move);
   LoginFinalizeWorldEntry(guid);
+
+  LOG_INFO("Player entered world: Account={} GUID={} Name='{}' Map={} Pos=({},{:.2},{:.2})",
+           _accountId, guid, character.GetName(), character.GetMapId(),
+           character.GetX(), character.GetY(), character.GetZ());
 }
 
 void WorldSession::LoginReadPackedPlayerGuid(WorldPacket &packet,
@@ -804,8 +811,7 @@ void WorldSession::HandleLogoutRequest(WorldPacket & /*packet*/) {
 
   WorldPacket complete(SMSG_LOGOUT_COMPLETE, 0);
   SendPacket(complete);
-  LOG_INFO("Logout complete for GUID {}, account {} (character select)",
-           guid, _accountId);
+  LOG_INFO("Logout: Account={} GUID={} (returned to character select)", _accountId, guid);
 }
 
 void WorldSession::HandleLogoutCancel(WorldPacket & /*packet*/) {

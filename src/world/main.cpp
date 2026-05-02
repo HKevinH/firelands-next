@@ -243,6 +243,7 @@ int main(int argc, char **argv) {
       }
       stopRealmLink.store(true);
       LOG_INFO("World server main loop stopped.");
+      LOG_INFO("World server shutting down...");
       WorldService::Instance().ResetForShutdown();
       worldServer.Stop();
       if (realmLinkThread && realmLinkThread->joinable()) {
