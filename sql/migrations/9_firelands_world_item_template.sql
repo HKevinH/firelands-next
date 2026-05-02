@@ -7,5 +7,7 @@ CREATE TABLE IF NOT EXISTS `item_template` (
   `InventoryType` tinyint(3) unsigned NOT NULL DEFAULT '0',
   `displayid` int(10) unsigned NOT NULL DEFAULT '0',
   `BuyCount` int(11) NOT NULL DEFAULT '1',
+  `Material` tinyint(4) NOT NULL DEFAULT '0',
+  `SheatheType` tinyint(3) unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`entry`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

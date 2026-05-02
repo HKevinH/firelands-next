@@ -148,30 +148,16 @@ bool EnsureStarterInventoryTables(std::shared_ptr<sql::Connection> conn) {
 std::optional<ItemProtoRow> FetchItemProto(std::shared_ptr<sql::Connection> conn,
                                             uint32_t itemEntry) {
   try {
-    {
-      std::shared_ptr<sql::PreparedStatement> ps(conn->prepareStatement(
-          "SELECT InventoryType, buy_count FROM "
-          "firelands_world.item_proto_cache WHERE entry = ? LIMIT 1"));
-      ps->setUInt(1, itemEntry);
-      std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
-      if (rs->next()) {
-        ItemProtoRow row;
-        row.inventoryType = static_cast<uint8>(rs->getUInt("InventoryType"));
-        row.buyCount =
-            std::max(1u, static_cast<uint32_t>(rs->getInt("buy_count")));
-        return row;
-      }
-    }
-    std::shared_ptr<sql::PreparedStatement> ps2(conn->prepareStatement(
+    std::shared_ptr<sql::PreparedStatement> ps(conn->prepareStatement(
         "SELECT InventoryType, BuyCount FROM firelands_world.item_template "
         "WHERE entry = ? LIMIT 1"));
-    ps2->setUInt(1, itemEntry);
-    std::unique_ptr<sql::ResultSet> rs2(ps2->executeQuery());
-    if (rs2->next()) {
+    ps->setUInt(1, itemEntry);
+    std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+    if (rs->next()) {
       ItemProtoRow row;
-      row.inventoryType = static_cast<uint8>(rs2->getUInt("InventoryType"));
+      row.inventoryType = static_cast<uint8>(rs->getUInt("InventoryType"));
       row.buyCount =
-          std::max(1u, static_cast<uint32_t>(rs2->getInt("BuyCount")));
+          std::max(1u, static_cast<uint32_t>(rs->getInt("BuyCount")));
       return row;
     }
   } catch (sql::SQLException const &e) {
