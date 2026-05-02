@@ -5,8 +5,10 @@ target database (detected from USE `db` or CREATE DATABASE ... `db`).
 
 Unclassified files (no database reference) are written to _unclassified.sql.
 
-`0_init_permissions.sql` is never merged: it stays only under the input dir
-(e.g. sql/) so it is not copied into the output folder.
+Directory structure expected:
+  sql/init/          - Initial schemas (CREATE DATABASE + tables) - runs first
+  sql/migrations/    - Incremental updates (alter, insert, etc.) - runs after init
+  sql/merged/        - Output directory (generated)
 
 Usage:
   python3 tools/merge_migrations.py [--input-dir sql] [--output-dir sql/merged]
@@ -28,6 +30,8 @@ CREATE_DB_RE = re.compile(
 
 # Must remain only in sql/; never written to --output-dir (see project 0_init_permissions.sql).
 STANDALONE_INIT_SQL = frozenset({"0_init_permissions.sql"})
+
+SUBDIRS_ORDER = ["init", "migrations"]
 
 
 def detect_database(sql: str) -> str | None:
@@ -75,16 +79,20 @@ def main() -> int:
         print(f"error: input directory does not exist: {input_dir}", file=sys.stderr)
         return 1
 
-    sql_files = sorted(
-        f for f in input_dir.iterdir() if f.is_file() and f.suffix.lower() == ".sql"
-    )
+    sql_files: list[Path] = []
+    for subdir in SUBDIRS_ORDER:
+        subpath = input_dir / subdir
+        if subpath.is_dir():
+            for f in sorted(subpath.iterdir()):
+                if f.is_file() and f.suffix.lower() == ".sql":
+                    sql_files.append(f)
+
     if not sql_files:
-        print(f"warning: no .sql files in {input_dir}", file=sys.stderr)
+        print(f"warning: no .sql files in {input_dir}/init or {input_dir}/migrations", file=sys.stderr)
         return 0
 
-    # db_name -> list of (path, content)
-    buckets: dict[str, list[tuple[Path, str]]] = {}
-    standalone: list[Path] = []
+    buckets = {}
+    standalone = []
 
     for path in sql_files:
         if path.name in STANDALONE_INIT_SQL:
@@ -100,7 +108,7 @@ def main() -> int:
         buckets.setdefault(key, []).append((path, text))
 
     iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    plan: list[tuple[str, list[Path]]] = [
+    plan = [
         (db, [p for p, _ in items]) for db, items in sorted(buckets.items())
     ]
 
@@ -118,24 +126,34 @@ def main() -> int:
     for db, items in buckets.items():
         fname = f"{safe_db_filename(db)}.sql" if db != "_unclassified" else "_unclassified.sql"
         out_path = output_dir / fname
-        parts: list[str] = [
+        parts = [
             f"-- Merged SQL for database `{db}`" if db != "_unclassified"
             else "-- Merged SQL (no USE / CREATE DATABASE detected in source files)",
             f"-- Generated: {iso}",
-            "-- Sources (same order as DatabaseMigrator: all sql/*.sql sorted by filename):",
+            "-- Sources (sql/init/ then sql/migrations/ in order):",
         ]
         for p, _ in items:
-            parts.append(f"--   - {p.name}")
+            parts.append(f"--   - {p.parent.name}/{p.name}")
         parts.append("")
         parts.append("SET NAMES utf8mb4;")
         parts.append("SET FOREIGN_KEY_CHECKS=0;")
         parts.append("")
 
-        for p, text in items:
-            parts.append(f"-- >>> begin: {p.name}")
+        init_items = [(p, t) for (p, t) in items if p.parent.name == "init"]
+        migr_items = [(p, t) for (p, t) in items if p.parent.name == "migrations"]
+
+        for p, text in init_items:
+            parts.append(f"-- >>> begin: init/{p.name}")
             parts.append(text.rstrip())
             parts.append("")
-            parts.append(f"-- <<< end: {p.name}")
+            parts.append(f"-- <<< end: init/{p.name}")
+            parts.append("")
+
+        for p, text in migr_items:
+            parts.append(f"-- >>> begin: migrations/{p.name}")
+            parts.append(text.rstrip())
+            parts.append("")
+            parts.append(f"-- <<< end: migrations/{p.name}")
             parts.append("")
 
         parts.append("SET FOREIGN_KEY_CHECKS=1;")
