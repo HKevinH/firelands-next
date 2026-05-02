@@ -1,5 +1,6 @@
 add_library(FirelandsInfrastructure STATIC
     persistence/MySqlAccountRepository.cpp
+    persistence/MySqlAccountDataRepository.cpp
     persistence/MySqlRealmRepository.cpp
     persistence/MySqlCharacterRepository.cpp
     persistence/MySqlPlayerCreateInfoRepository.cpp

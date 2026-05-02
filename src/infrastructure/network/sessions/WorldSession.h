@@ -15,9 +15,12 @@
 #include <shared/network/MovementInfo.h>
 #include <shared/network/ServerPacket.h>
 #include <shared/network/WorldCrypt.h>
+#include <shared/network/AccountDataTypes.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
+#include <array>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -31,14 +34,19 @@ struct AuthSecureAddonEntry {
   bool hasKey = false;
 };
 
+class MySqlAccountDataRepository;
+
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
                      public std::enable_shared_from_this<WorldSession> {
 public:
-  explicit WorldSession(tcp::socket socket,
-                        std::shared_ptr<AuthService> authService,
-                        std::shared_ptr<CharacterService> charService,
-                        std::shared_ptr<ICommandService> commandService);
+  explicit WorldSession(
+      tcp::socket socket, std::shared_ptr<AuthService> authService,
+      std::shared_ptr<CharacterService> charService,
+      std::shared_ptr<ICommandService> commandService,
+      std::shared_ptr<MySqlAccountDataRepository> accountDataRepo);
+
+  ~WorldSession();
 
   void Start();
 
@@ -93,6 +101,7 @@ private:
   void HandleRealmSplit(WorldPacket &packet);
   void HandleReadyForAccountDataTimes(WorldPacket &packet);
   void HandleUpdateAccountData(WorldPacket &packet);
+  void HandleRequestAccountData(WorldPacket &packet);
   void HandleGossipHello(WorldPacket &packet);
   void HandleGossipSelectOption(WorldPacket &packet);
   void HandleQueryNextMailTime(WorldPacket &packet);
@@ -112,6 +121,8 @@ private:
   void SendClientCacheVersion(uint32 version = 0);
   void SendTutorialFlags();
   void SendAccountDataTimes(uint32 mask);
+  void ReloadGlobalAccountDataFromDb();
+  void ReloadCharacterAccountDataFromDb(uint32 characterGuid);
   void SendFeatureSystemStatus();
   void SendRealmSplit(uint32 realmId);
   void SendLoginSetTimeSpeed(float speed = 0.01666667f);
@@ -149,6 +160,11 @@ private:
   std::shared_ptr<AuthService> _authService;
   std::shared_ptr<CharacterService> _charService;
   std::shared_ptr<ICommandService> _commandService;
+  std::shared_ptr<MySqlAccountDataRepository> _accountDataRepo;
+  std::array<AccountDataSlot, NUM_ACCOUNT_DATA_TYPES> _accountData{};
+  uint32_t _activeCharacterGuid = 0;
+  /// Per-character account blobs edited at character select (no guid yet); flushed on login.
+  uint32_t _preLoginPerCharAccountDirtyMask = 0;
   bool _initialized = false;
   uint32 _serverSeed;
   uint32 _accountId = 0;

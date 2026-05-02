@@ -4,6 +4,7 @@
 #include <domain/models/Chat.h>
 #include <domain/world/Player.h>
 #include <infrastructure/network/sessions/WorldSession.h>
+#include <infrastructure/persistence/MySqlAccountDataRepository.h>
 #include <shared/Config.h>
 #include <shared/Crypto.h>
 #include <shared/Logger.h>
@@ -365,14 +366,18 @@ void SendPlayerCreateToNotifier(std::shared_ptr<IMapNotifier> target,
 
 } // namespace
 
-WorldSession::WorldSession(tcp::socket socket,
-                           std::shared_ptr<AuthService> authService,
-                           std::shared_ptr<CharacterService> charService,
-                           std::shared_ptr<ICommandService> commandService)
+WorldSession::WorldSession(
+    tcp::socket socket, std::shared_ptr<AuthService> authService,
+    std::shared_ptr<CharacterService> charService,
+    std::shared_ptr<ICommandService> commandService,
+    std::shared_ptr<MySqlAccountDataRepository> accountDataRepo)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
-      _commandService(std::move(commandService)), _serverSeed(0),
+      _commandService(std::move(commandService)),
+      _accountDataRepo(std::move(accountDataRepo)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()) {}
+
+WorldSession::~WorldSession() = default;
 
 void WorldSession::Start() {
   LOG_INFO("WorldSession started for {}", GetIpAddress());
@@ -775,6 +780,9 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_READY_FOR_ACCOUNT_DATA_TIMES:
     HandleReadyForAccountDataTimes(packet);
     break;
+  case CMSG_REQUEST_ACCOUNT_DATA:
+    HandleRequestAccountData(packet);
+    break;
   case CMSG_REALM_SPLIT:
     HandleRealmSplit(packet);
     break;
@@ -916,6 +924,8 @@ void WorldSession::HandleAuthSession(WorldPacket &packet) {
   _accountId = accountOpt->id;
   LOG_DEBUG("CMSG_AUTH_SESSION: Digest validated successfully for account '{}'.",
             account);
+
+  ReloadGlobalAccountDataFromDb();
 
   SendAuthResponse();
   SendAddonInfo();
@@ -1225,7 +1235,25 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   // and Player::SendInitialPacketsBeforeAddToMap (see Player.cpp ~23604).
   SendDungeonDifficulty(false);
 
-  SendAccountDataTimes(0x15);
+  _activeCharacterGuid = character.GetGuid();
+  if (_accountDataRepo && _preLoginPerCharAccountDirtyMask != 0) {
+    for (uint32_t t = 0; t < NUM_ACCOUNT_DATA_TYPES; ++t) {
+      if (!IsPerCharacterAccountDataType(t))
+        continue;
+      if ((_preLoginPerCharAccountDirtyMask & (1u << t)) == 0)
+        continue;
+      if (_accountData[t].data.empty() && _accountData[t].time == 0)
+        _accountDataRepo->DeleteCharacter(_activeCharacterGuid,
+                                           static_cast<uint8_t>(t));
+      else
+        _accountDataRepo->UpsertCharacter(
+            _activeCharacterGuid, static_cast<uint8_t>(t), _accountData[t].time,
+            _accountData[t].data);
+    }
+    _preLoginPerCharAccountDirtyMask = 0;
+  }
+  ReloadCharacterAccountDataFromDb(_activeCharacterGuid);
+  SendAccountDataTimes(kPerCharacterAccountDataMask);
   SendLearnedDanceMoves();
   SendHotfixNotifyBlobEmpty();
 
@@ -1416,6 +1444,7 @@ void WorldSession::HandleLogoutRequest(WorldPacket & /*packet*/) {
   WorldService::Instance().RemovePlayerFromMap(mapId, guid);
 
   _playerGuid = 0;
+  _activeCharacterGuid = 0;
   _knownSpells.clear();
   _gcdReady = {};
   _mapId = 0;
@@ -1811,31 +1840,128 @@ void WorldSession::HandleRealmSplit(WorldPacket &packet) {
 }
 
 void WorldSession::HandleReadyForAccountDataTimes(WorldPacket & /*packet*/) {
-  SendAccountDataTimes(0x15);
+  SendAccountDataTimes(kGlobalAccountDataMask);
+}
+
+void WorldSession::ReloadGlobalAccountDataFromDb() {
+  _accountData = {};
+  _preLoginPerCharAccountDirtyMask = 0;
+  if (!_accountDataRepo || _accountId == 0)
+    return;
+  _accountDataRepo->LoadGlobal(_accountId, _accountData);
+}
+
+void WorldSession::ReloadCharacterAccountDataFromDb(uint32 characterGuid) {
+  if (!_accountDataRepo)
+    return;
+  _accountDataRepo->LoadCharacter(characterGuid, _accountData);
 }
 
 void WorldSession::HandleUpdateAccountData(WorldPacket &packet) {
-  // Reference behavior: always ACK with SMSG_UPDATE_ACCOUNT_DATA_COMPLETE.
-  // We don't persist the data yet, but the client expects the completion packet.
-  uint32 type = packet.Read<uint32>();
-  uint32 timestamp = packet.Read<uint32>();
-  uint32 decompressedSize = packet.Read<uint32>();
+  uint32 const type = packet.Read<uint32>();
+  uint32 const timestamp = packet.Read<uint32>();
+  uint32 const decompressedSize = packet.Read<uint32>();
 
-  (void)timestamp;
+  auto sendAck = [this, type]() {
+    WorldPacket ack(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE);
+    ack.Append<uint32>(type);
+    ack.Append<uint32>(0);
+    SendPacket(ack);
+  };
 
-  // In reference, NUM_ACCOUNT_DATA_TYPES bounds are enforced. We keep it permissive for now,
-  // but still ACK to avoid client-side crashes.
-  if (decompressedSize > 0) {
-    // Skip remaining compressed payload (if any)
-    while (packet.GetReadPos() < packet.Size()) {
-      packet.Read<uint8>();
-    }
+  if (type >= NUM_ACCOUNT_DATA_TYPES) {
+    return;
   }
 
-  WorldPacket ack(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE);
-  ack.Append<uint32>(type);
-  ack.Append<uint32>(0); // result (0 = OK)
-  SendPacket(ack);
+  if (!_accountDataRepo || _accountId == 0) {
+    sendAck();
+    return;
+  }
+
+  if (decompressedSize == 0) {
+    _accountData[type].time = 0;
+    _accountData[type].data.clear();
+    if (IsGlobalAccountDataType(type))
+      _accountDataRepo->DeleteGlobal(_accountId, static_cast<uint8_t>(type));
+    else if (_activeCharacterGuid != 0)
+      _accountDataRepo->DeleteCharacter(_activeCharacterGuid,
+                                       static_cast<uint8_t>(type));
+    else if (IsPerCharacterAccountDataType(type))
+      _preLoginPerCharAccountDirtyMask |= (1u << type);
+    sendAck();
+    return;
+  }
+
+  if (decompressedSize > 0xFFFF) {
+    LOG_ERROR("CMSG_UPDATE_ACCOUNT_DATA: decompressedSize {} too large", decompressedSize);
+    return;
+  }
+
+  size_t const compressedOffset = packet.GetReadPos();
+  if (compressedOffset > packet.Size() ||
+      (packet.Size() - compressedOffset == 0)) {
+    LOG_ERROR("CMSG_UPDATE_ACCOUNT_DATA: missing compressed payload (size={}, "
+              "offset={})",
+              packet.Size(), compressedOffset);
+    return;
+  }
+  uLongf destLen = decompressedSize;
+  std::vector<uint8_t> dest(decompressedSize);
+  int const zrc = ::uncompress(
+      dest.data(), &destLen, packet.GetBuffer() + compressedOffset,
+      static_cast<uLong>(packet.Size() - compressedOffset));
+  if (zrc != Z_OK) {
+    LOG_ERROR("CMSG_UPDATE_ACCOUNT_DATA: zlib uncompress failed ({})", zrc);
+    return;
+  }
+  dest.resize(static_cast<size_t>(destLen));
+  std::string const adata(reinterpret_cast<char const *>(dest.data()),
+                          dest.size());
+
+  _accountData[type].time = timestamp;
+  _accountData[type].data = adata;
+  if (IsGlobalAccountDataType(type))
+    _accountDataRepo->UpsertGlobal(_accountId, static_cast<uint8_t>(type),
+                                   timestamp, adata);
+  else if (_activeCharacterGuid != 0)
+    _accountDataRepo->UpsertCharacter(_activeCharacterGuid,
+                                     static_cast<uint8_t>(type), timestamp, adata);
+  else if (IsPerCharacterAccountDataType(type))
+    _preLoginPerCharAccountDirtyMask |= (1u << type);
+  sendAck();
+}
+
+void WorldSession::HandleRequestAccountData(WorldPacket &packet) {
+  uint32 const type = packet.Read<uint32>();
+  if (type >= NUM_ACCOUNT_DATA_TYPES || !_accountDataRepo)
+    return;
+
+  AccountDataSlot const &slot = _accountData[type];
+  uint32 const size = static_cast<uint32>(slot.data.size());
+  uLongf destLen = ::compressBound(size);
+  std::vector<uint8_t> compressed(static_cast<size_t>(destLen));
+  if (size > 0) {
+    int const zc = ::compress(
+        compressed.data(), &destLen,
+        reinterpret_cast<unsigned char const *>(slot.data.data()),
+        static_cast<uLong>(size));
+    if (zc != Z_OK) {
+      LOG_ERROR("CMSG_REQUEST_ACCOUNT_DATA: zlib compress failed ({})", zc);
+      return;
+    }
+  } else {
+    destLen = 0;
+  }
+  compressed.resize(static_cast<size_t>(destLen));
+
+  WorldPacket data(SMSG_UPDATE_ACCOUNT_DATA);
+  data.Append<uint64>(_playerGuid);
+  data.Append<uint32>(type);
+  data.Append<uint32>(slot.time);
+  data.Append<uint32>(size);
+  if (!compressed.empty())
+    data.Append(compressed.data(), compressed.size());
+  SendPacket(data);
 }
 
 void WorldSession::HandleMovement(WorldPacket &packet) {
@@ -1889,7 +2015,10 @@ void WorldSession::SendAccountDataTimes(uint32 mask) {
   data.Append<uint32>(static_cast<uint32>(std::time(nullptr)));
   data.Append<uint8>(1);
   data.Append<uint32>(mask);
-  for (int i = 0; i < 8; ++i) { if (mask & (1 << i)) data.Append<uint32>(0); }
+  for (int i = 0; i < NUM_ACCOUNT_DATA_TYPES; ++i) {
+    if (mask & (1u << i))
+      data.Append<uint32>(_accountData[static_cast<size_t>(i)].time);
+  }
   SendPacket(data);
 }
 

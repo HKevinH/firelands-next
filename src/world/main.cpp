@@ -8,6 +8,7 @@
 #include <infrastructure/network/realm_link/RealmLinkOutbound.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/persistence/DatabaseMigrator.h>
+#include <infrastructure/persistence/MySqlAccountDataRepository.h>
 #include <infrastructure/persistence/MySqlAccountRepository.h>
 #include <infrastructure/persistence/MySqlCharacterRepository.h>
 #include <infrastructure/persistence/MySqlPlayerCreateInfoRepository.h>
@@ -128,6 +129,9 @@ int main(int argc, char **argv) {
     auto accountRepo = std::make_shared<MySqlAccountRepository>(authConn);
     auto authService = std::make_shared<AuthService>(accountRepo);
 
+    auto accountDataRepo =
+        std::make_shared<MySqlAccountDataRepository>(authConn, charConn);
+
     auto charRepo = std::make_shared<MySqlCharacterRepository>(charConn);
     auto playerCreateInfoRepo =
         std::make_shared<MySqlPlayerCreateInfoRepository>(worldConn);
@@ -141,10 +145,10 @@ int main(int argc, char **argv) {
         std::make_shared<CharacterService>(charRepo, playerCreateInfoService);
     auto commandService = std::make_shared<CommandService>();
 
-    auto sessionFactory = [authService, charService, commandService](
-                              boost::asio::ip::tcp::socket socket) {
-      std::make_shared<WorldSession>(std::move(socket), authService,
-                                     charService, commandService)
+    auto sessionFactory = [authService, charService, commandService,
+                           accountDataRepo](boost::asio::ip::tcp::socket socket) {
+      std::make_shared<WorldSession>(std::move(socket), authService, charService,
+                                     commandService, accountDataRepo)
           ->Start();
     };
 

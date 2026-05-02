@@ -15,6 +15,8 @@ public:
   ByteBuffer(size_t res) : _readPos(0) { _storage.reserve(res); }
 
   void Append(const uint8 *src, size_t cnt) {
+    if (cnt == 0)
+      return;
     _storage.insert(_storage.end(), src, src + cnt);
   }
 
