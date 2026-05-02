@@ -155,6 +155,11 @@ target_precompile_headers(<target_name> PRIVATE ${PROJECT_PCH_HEADERS})
 - Module guides: `docs/EN/modules/README.md`
 - Reference implementation: `firelands-cata-ref/`
 
+## Logs
+
+- **World server**: `logs/firelands-world.log`
+- **Auth server**: `logs/firelands-auth.log`
+
 ## Cross-Platform Notes
 
 - **Windows**: MSVC or MinGW
