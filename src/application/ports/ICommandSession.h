@@ -19,6 +19,17 @@ public:
   virtual void SendScreenNotification(std::string const &message) {
     (void)message;
   }
+  /// `SMSG_GMRESPONSE_RECEIVED` (in-world only; default no-op).
+  virtual void SendGmResponseReceived(uint32_t ticketId,
+                                      std::string const &playerMessage,
+                                      std::string const &gmResponse) {
+    (void)ticketId;
+    (void)playerMessage;
+    (void)gmResponse;
+  }
+
+  /// Auth `account.id` for the connected world client; 0 for console stub.
+  virtual uint32_t GetAccountId() const { return 0; }
   virtual const MovementInfo &GetPosition() const = 0;
   virtual uint32 GetMapId() const { return 0; }
   virtual void TeleportTo(uint32_t mapId, float x, float y, float z,

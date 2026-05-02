@@ -5,6 +5,7 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionMovementChecks.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <application/services/GmTicketService.h>
 #include <application/services/OnlineCharacterSessionRegistry.h>
 #include <domain/repositories/IRealmRepository.h>
 #include <infrastructure/persistence/MySqlAccountDataRepository.h>
@@ -19,6 +20,7 @@
 #include <shared/game/ChatLanguages.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/game/PlayerGmAppearance.h>
+#include <shared/dbc/GtPlayerStatGameTables.h>
 #include <shared/game/WowGuid.h>
 #include <algorithm>
 #include <map>
@@ -41,7 +43,8 @@ WorldSession::WorldSession(
     std::shared_ptr<LanguagesDbc const> languagesDbc,
     std::shared_ptr<SpellDbc const> spellDbc,
     std::shared_ptr<IRealmRepository> realmRepo,
-    std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry)
+    std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry,
+    std::shared_ptr<GmTicketService> gmTicketService)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
@@ -49,7 +52,8 @@ WorldSession::WorldSession(
       _languagesDbc(std::move(languagesDbc)),
       _spellDbc(std::move(spellDbc)),
       _realmRepo(std::move(realmRepo)),
-      _onlineCharRegistry(std::move(onlineCharRegistry)), _serverSeed(0),
+      _onlineCharRegistry(std::move(onlineCharRegistry)),
+      _gmTicketService(std::move(gmTicketService)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()) {}
 
 WorldSession::~WorldSession() { UnregisterFromOnlineCharacterRegistryIfNeeded(); }
@@ -609,9 +613,10 @@ void WorldSession::LoginSpawnInWorld(uint64 guid, MovementInfo const &move) {
 
 void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
     uint64 guid, Character const &character, MovementInfo const &move) {
+  GtPlayerStatGameTables const *const statGt = _charService->GetStatGameTables();
   // Now that the player is on the map, send create/update data and "after add" packets
   UpdateData update(_mapId);
-  auto selfFields = ws_obj::BuildPlayerUpdateFields(guid, character);
+  auto selfFields = ws_obj::BuildPlayerUpdateFields(guid, character, statGt);
   MergeGmAppearanceIntoPlayerFields(selfFields, GetGmAppearanceForPlayerUpdates());
   update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields);
 
@@ -645,7 +650,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
 
   // Other logged-in players see this client; this client sees them (same map).
   if (auto map = WorldService::Instance().GetMap(_mapId)) {
-    map->ForEachPlayer([this, guid, &character, &move](
+    map->ForEachPlayer([this, guid, &character, &move, statGt](
                            std::shared_ptr<Player> const &other) {
       if (!other || other->GetGuid() == guid)
         return;
@@ -653,7 +658,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
           GetGmAppearanceForPlayerUpdates();
       if (auto n = other->GetNotifier()) {
         ws_obj::SendPlayerCreateToNotifier(n, _mapId, guid, character, move,
-                                           newPlayerGm);
+                                           newPlayerGm, statGt);
       }
       if (auto otherCh = _charService->GetCharacterByGuid(other->GetGuid())) {
         PlayerGmAppearanceForUpdates otherGm{};
@@ -663,7 +668,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
         }
         ws_obj::SendPlayerCreateToNotifier(
             std::static_pointer_cast<IMapNotifier>(shared_from_this()), _mapId,
-            other->GetGuid(), *otherCh, other->GetPosition(), otherGm);
+            other->GetGuid(), *otherCh, other->GetPosition(), otherGm, statGt);
       }
     });
   }
@@ -978,12 +983,15 @@ void WorldSession::HandleNameQuery(WorldPacket &packet) {
   SendPacket(response);
 }
 
-void WorldSession::HandleQueryTime(WorldPacket & /*packet*/) {
-  // CMSG_QUERY_TIME: client asks server time for day/night and reset timers.
+void WorldSession::SendQueryTimeResponse() {
   WorldPacket response(SMSG_QUERY_TIME_RESPONSE);
   response.Append<uint32>(static_cast<uint32>(std::time(nullptr)));
   response.Append<uint32>(0); // next daily reset (unknown/not implemented)
   SendPacket(response);
+}
+
+void WorldSession::HandleQueryTime(WorldPacket & /*packet*/) {
+  SendQueryTimeResponse();
 }
 
 void WorldSession::HandlePlayedTime(WorldPacket &packet) {

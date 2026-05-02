@@ -44,6 +44,7 @@ struct AuthSecureAddonEntry {
 class MySqlAccountDataRepository;
 class IRealmRepository;
 class OnlineCharacterSessionRegistry;
+class GmTicketService;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -59,7 +60,8 @@ public:
       std::shared_ptr<SpellDbc const> spellDbc = nullptr,
       std::shared_ptr<IRealmRepository> realmRepo = nullptr,
       std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry =
-          nullptr);
+          nullptr,
+      std::shared_ptr<GmTicketService> gmTicketService = nullptr);
 
   ~WorldSession();
 
@@ -98,6 +100,11 @@ public:
   bool GmModifyMoneyCopper(int64 deltaCopper) override;
   bool GmAddItem(uint32 itemEntry, uint32 count) override;
   bool GmSetLevel(uint8 level) override;
+
+  void SendGmResponseReceived(uint32_t ticketId,
+                              std::string const &playerMessage,
+                              std::string const &gmResponse) override;
+  uint32_t GetAccountId() const override { return _accountId; }
 
   PlayerGmAppearanceForUpdates GetGmAppearanceForPlayerUpdates() const {
     return _gmAppearance;
@@ -155,6 +162,12 @@ private:
   void HandleCastSpell(WorldPacket &packet);
   void HandleSwapInvItem(WorldPacket &packet);
   void HandleSwapItem(WorldPacket &packet);
+  void HandleGmTicketCreate(WorldPacket &packet);
+  void HandleGmTicketUpdateText(WorldPacket &packet);
+  void HandleGmTicketDelete(WorldPacket &packet);
+  void HandleGmTicketGetTicket(WorldPacket &packet);
+  void HandleGmTicketSystemStatus(WorldPacket &packet);
+  void HandleGmTicketResponseResolve(WorldPacket &packet);
 
   // Server Packet Senders (SMSG)
   void SendAuthResponse();
@@ -192,6 +205,7 @@ private:
   void SendTalentsInfo();
   void SendInitialFactions();
   void SendLoginVerifyWorld(uint32 mapId, float x, float y, float z, float o);
+  void SendQueryTimeResponse();
 
   // Helpers
   /// Trinity schedules the next time-sync ~5s after SendTimeSync; never chains on
@@ -222,6 +236,7 @@ private:
   std::shared_ptr<SpellDbc const> _spellDbc;
   std::shared_ptr<IRealmRepository> _realmRepo;
   std::shared_ptr<OnlineCharacterSessionRegistry> _onlineCharRegistry;
+  std::shared_ptr<GmTicketService> _gmTicketService;
   /// Filled when the character is registered for console targeting; empty at
   /// character select / disconnected.
   std::string _activeCharacterName;

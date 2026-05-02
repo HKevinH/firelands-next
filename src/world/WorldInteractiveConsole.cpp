@@ -141,18 +141,16 @@ WorldInteractiveConsole::~WorldInteractiveConsole() {
   }
 }
 
-void WorldInteractiveConsole::Start(bool enabled, bool styledPrompt,
-                                    bool useStdinReader) {
+void WorldInteractiveConsole::Start(bool enabled, bool useStdinReader) {
   if (!enabled || !_commands) {
     _enabled = false;
     return;
   }
   _enabled = true;
-  _styledPrompt = useStdinReader && styledPrompt &&
-                  !EnvironmentRequestsPlainConsole() &&
-                  StdoutStdinLookInteractive();
+  _useAnsiCommandRail = useStdinReader && !EnvironmentRequestsPlainConsole() &&
+                        StdoutStdinLookInteractive();
 #ifdef _WIN32
-  _styledPrompt = false;
+  _useAnsiCommandRail = false;
 #endif
   if (useStdinReader) {
     _reader = std::make_unique<std::thread>([this] { ReaderLoop(); });
@@ -186,13 +184,13 @@ void WorldInteractiveConsole::ReaderLoop() {
     if ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) == 0) {
       continue;
     }
-    WriteReservedCommandInputRail(_styledPrompt);
+    WriteReservedCommandInputRail(_useAnsiCommandRail);
     std::string line;
     if (!std::getline(std::cin, line)) {
-      FinishReservedCommandInputRail(_styledPrompt);
+      FinishReservedCommandInputRail(_useAnsiCommandRail);
       break;
     }
-    FinishReservedCommandInputRail(_styledPrompt);
+    FinishReservedCommandInputRail(_useAnsiCommandRail);
     {
       std::lock_guard<std::mutex> lock(_mutex);
       _lines.push_back(std::move(line));

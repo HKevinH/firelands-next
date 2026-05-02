@@ -31,3 +31,8 @@ TEST(PermissionsTests, GameMasterHasGameplayCommands) {
   EXPECT_TRUE(HasPermission(AccessLevel::GameMaster, PrivilegeOrigin::GameClient,
                             ToMask(Permission::CommandGameplay)));
 }
+
+TEST(PermissionsTests, GameMasterHasGmTickets) {
+  EXPECT_TRUE(HasPermission(AccessLevel::GameMaster, PrivilegeOrigin::GameClient,
+                            ToMask(Permission::ManageGmTickets)));
+}

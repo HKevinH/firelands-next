@@ -1,5 +1,6 @@
 #include <application/services/CharacterService.h>
 #include <application/services/CommandService.h>
+#include <application/services/GmTicketService.h>
 #include <application/services/OnlineCharacterSessionRegistry.h>
 #include <application/services/PlayerCreateInfoService.h>
 #include <application/services/WorldService.h>
@@ -13,6 +14,7 @@
 #include <infrastructure/persistence/MySqlAccountRepository.h>
 #include <infrastructure/persistence/MySqlCharacterRepository.h>
 #include <infrastructure/persistence/MySqlPlayerCreateInfoRepository.h>
+#include <infrastructure/persistence/MySqlGmTicketRepository.h>
 #include <infrastructure/persistence/MySqlRealmRepository.h>
 #include <infrastructure/scripting/LuaGameScriptHost.h>
 #include <infrastructure/world/MapCollisionQueriesStub.h>
@@ -162,8 +164,11 @@ int main(int argc, char **argv) {
     auto charService =
         std::make_shared<CharacterService>(charRepo, playerCreateInfoService);
     auto onlineCharRegistry = std::make_shared<OnlineCharacterSessionRegistry>();
-    auto commandService = std::make_shared<CommandService>(onlineCharRegistry,
-                                                           accountRepo);
+    auto gmTicketRepo = std::make_shared<MySqlGmTicketRepository>(charConn);
+    auto gmTicketService =
+        std::make_shared<GmTicketService>(gmTicketRepo, charService);
+    auto commandService = std::make_shared<CommandService>(
+        onlineCharRegistry, accountRepo, charService, gmTicketService);
 
     auto languagesDbc = std::make_shared<LanguagesDbc>();
     if (!languagesDbc->Load(dbcBasePath + "/Languages.dbc")) {
@@ -183,11 +188,12 @@ int main(int argc, char **argv) {
 
     auto sessionFactory = [authService, charService, commandService,
                            accountDataRepo, languagesDbc, spellDbc, realmRepo,
-                           onlineCharRegistry](boost::asio::ip::tcp::socket socket) {
+                           onlineCharRegistry,
+                           gmTicketService](boost::asio::ip::tcp::socket socket) {
       std::make_shared<WorldSession>(std::move(socket), authService, charService,
                                      commandService, accountDataRepo,
                                      languagesDbc, spellDbc, realmRepo,
-                                     onlineCharRegistry)
+                                     onlineCharRegistry, gmTicketService)
           ->Start();
     };
 
@@ -209,18 +215,16 @@ int main(int argc, char **argv) {
       }
 
       WorldInteractiveConsole interactiveConsole(commandService);
-      const bool styledConsolePrompt =
-          config.GetNested<bool>({"Console", "StyledPrompt"}, true);
       const bool useTerminalUi =
           consoleEnabled &&
           config.GetNested<bool>({"Console", "Tui"}, true);
 
       if (useTerminalUi) {
-        interactiveConsole.Start(consoleEnabled, false, false);
+        interactiveConsole.Start(consoleEnabled, false);
         LOG_INFO("Terminal UI (FTXUI): logs above, command input fixed below.");
         RunWorldFtxuiConsole(worldServer, interactiveConsole);
       } else if (consoleEnabled) {
-        interactiveConsole.Start(consoleEnabled, styledConsolePrompt, true);
+        interactiveConsole.Start(consoleEnabled, true);
         LOG_INFO("Interactive console (stdin); type .help or quit to exit.");
         while (!interactiveConsole.ShutdownRequested()) {
           worldServer.Update();

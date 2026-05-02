@@ -30,10 +30,30 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_ZONEUPDATE:
     HandleZoneUpdate(packet);
     break;
+  case CMSG_GM_TICKET_CREATE:
+    HandleGmTicketCreate(packet);
+    break;
+  case CMSG_GM_TICKET_UPDATE_TEXT:
+    HandleGmTicketUpdateText(packet);
+    break;
+  case CMSG_GM_TICKET_DELETE_TICKET:
+    HandleGmTicketDelete(packet);
+    break;
+  case CMSG_GM_TICKET_GET_TICKET:
+    HandleGmTicketGetTicket(packet);
+    break;
+  case CMSG_GM_TICKET_GET_SYSTEM_STATUS:
+    HandleGmTicketSystemStatus(packet);
+    break;
+  case CMSG_GM_TICKET_RESPONSE_RESOLVE:
+    HandleGmTicketResponseResolve(packet);
+    break;
+  case CMSG_GM_SURVEY_SUBMIT:
+    // Optional post-resolution survey; not implemented.
+    break;
   case CMSG_SET_ACTIVE_MOVER:
   case CMSG_SET_ACTIONBAR_TOGGLES:
   case CMSG_REQUEST_RAID_INFO:
-  case CMSG_GMTICKET_GETTICKET:
   case CMSG_UNREGISTER_ALL_ADDON_PREFIXES:
   case CMSG_BATTLEFIELD_STATUS:
   case CMSG_QUERY_BATTLEFIELD_STATE:

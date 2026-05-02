@@ -21,6 +21,8 @@ enum class Permission : uint64_t {
   CommandGmTools = 1ull << 6,
   /// Learn spell, money, items, level (`.learn`, `.money`, `.additem`, `.level`).
   CommandGameplay = 1ull << 7,
+  /// GM help ticket queue (`.ticket …`).
+  ManageGmTickets = 1ull << 8,
 };
 
 inline constexpr PermissionMask ToMask(Permission p) {
@@ -38,7 +40,8 @@ inline PermissionMask DefaultPermissions(AccessLevel level) {
            ToMask(Permission::CommandTeleport) |
            ToMask(Permission::ManagePlayers) |
            ToMask(Permission::CommandGmTools) |
-           ToMask(Permission::CommandGameplay);
+           ToMask(Permission::CommandGameplay) |
+           ToMask(Permission::ManageGmTickets);
   case AccessLevel::Administrator:
     return DefaultPermissions(AccessLevel::GameMaster) |
            ToMask(Permission::ManageAccounts) | ToMask(Permission::ServerControl);
@@ -49,7 +52,7 @@ inline PermissionMask DefaultPermissions(AccessLevel level) {
 }
 
 /// `required == 0` means any authenticated game client (or console) may run the
-/// command (subject to `consoleOnly` in `CommandService`).
+/// command (subject to `CommandAvailability` in `CommandService`).
 inline bool HasPermission(AccessLevel account, PrivilegeOrigin origin,
                           PermissionMask required) {
   if (required == 0)

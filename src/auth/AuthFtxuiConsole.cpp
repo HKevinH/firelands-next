@@ -1,6 +1,8 @@
 #include "AuthFtxuiConsole.h"
 
 #include <ftxui/component/component.hpp>
+#include <ftxui/component/event.hpp>
+#include <ftxui/component/mouse.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/terminal.hpp>
@@ -68,6 +70,11 @@ public:
       return std::vector<std::string>(lines_.begin(), lines_.end());
     }
     return std::vector<std::string>(lines_.end() - maxRender, lines_.end());
+  }
+
+  std::size_t LineCount() {
+    std::lock_guard<std::mutex> lock(this->mutex_);
+    return lines_.size();
   }
 
 protected:
@@ -184,6 +191,14 @@ void MuteTerminalLogSinks() {
   }
 }
 
+int ComputeAuthLogViewportHeight() {
+  Dimensions const term = Terminal::Size();
+  int const term_h = (term.dimy > 2) ? term.dimy : 25;
+  int constexpr kBannerBudget = 12;
+  int constexpr kBottomChrome = 3;
+  return std::max(6, term_h - kBannerBudget - 1 - kBottomChrome);
+}
+
 } // namespace (anonymous)
 
 using namespace ftxui;
@@ -197,8 +212,53 @@ void RunAuthFtxuiConsole(AsyncNetworkServer &authTcpServer,
       std::make_shared<FtxuiLogSink>(std::size_t(12000));
   ReplaceStdoutColorSinkWith(log_sink);
 
+  int log_view_first = -1;
+
   auto key_sink = Container::Vertical({});
-  key_sink |= CatchEvent([requestExit](Event const &e) {
+
+  auto apply_log_scroll_delta = [&](int delta) -> bool {
+    int const log_h = ComputeAuthLogViewportHeight();
+    int const n = static_cast<int>(log_sink->LineCount());
+    int const max_s = std::max(0, n - log_h);
+    if (n == 0) {
+      return false;
+    }
+    int const cur =
+        (log_view_first < 0) ? max_s : std::clamp(log_view_first, 0, max_s);
+    if (log_view_first < 0 && delta > 0) {
+      return false;
+    }
+    int const next = std::clamp(cur + delta, 0, max_s);
+    int new_first = next;
+    if (next == max_s && delta >= 0) {
+      new_first = -1;
+    }
+    if (new_first == log_view_first) {
+      return false;
+    }
+    log_view_first = new_first;
+    screen.RequestAnimationFrame();
+    return true;
+  };
+
+  key_sink |= CatchEvent([&](Event e) {
+    if (e.is_mouse()) {
+      Mouse const &m = e.mouse();
+      if (m.button == Mouse::WheelUp) {
+        return apply_log_scroll_delta(-3);
+      }
+      if (m.button == Mouse::WheelDown) {
+        return apply_log_scroll_delta(3);
+      }
+    }
+    if (e == Event::PageUp) {
+      int const log_h = ComputeAuthLogViewportHeight();
+      return apply_log_scroll_delta(-std::max(1, log_h - 1));
+    }
+    if (e == Event::PageDown) {
+      int const log_h = ComputeAuthLogViewportHeight();
+      return apply_log_scroll_delta(std::max(1, log_h - 1));
+    }
     if (!e.is_character() || e.character().size() != 1) {
       return false;
     }
@@ -216,24 +276,25 @@ void RunAuthFtxuiConsole(AsyncNetworkServer &authTcpServer,
   Color const kShellBg = Color::RGB(28, 26, 24);
 
   auto root = Renderer(key_sink, [&] {
-    Dimensions const term = Terminal::Size();
-    int const term_h = (term.dimy > 2) ? term.dimy : 25;
-    int const kBannerBudget = 12;
-    int const kBottomChrome = 3;
-    int const log_h =
-        std::max(6, term_h - kBannerBudget - 1 - kBottomChrome);
+    int const log_h = ComputeAuthLogViewportHeight();
 
     constexpr std::size_t kBufferLines = 4000;
     std::vector<std::string> lines = log_sink->CopyRecentLines(kBufferLines);
-    if (lines.size() > static_cast<std::size_t>(log_h)) {
-      lines.assign(lines.end() - static_cast<std::ptrdiff_t>(log_h),
-                   lines.end());
-    }
+    int const n = static_cast<int>(lines.size());
+    int const max_start = std::max(0, n - log_h);
+    int const display_start =
+        (log_view_first < 0)
+            ? max_start
+            : std::clamp(log_view_first, 0, max_start);
 
     Elements rows;
-    rows.reserve(lines.size());
-    for (auto const &ln : lines) {
-      rows.push_back(text(StripTerminalAnsi(ln)) | color(kLogFg));
+    int const visible = std::min(log_h, n - display_start);
+    rows.reserve(static_cast<std::size_t>(std::max(0, visible)));
+    for (int i = 0; i < visible; ++i) {
+      rows.push_back(
+          text(StripTerminalAnsi(lines[static_cast<std::size_t>(display_start +
+                                                                 i)])) |
+          color(kLogFg));
     }
     if (rows.empty()) {
       rows.push_back(text("(waiting for log output...)") | color(Color::GrayLight));
@@ -243,6 +304,7 @@ void RunAuthFtxuiConsole(AsyncNetworkServer &authTcpServer,
     Element const log_title = hbox({
         text(" ") | bgcolor(kAccent),
         text(" log ") | bold | color(Color::RGB(210, 200, 190)),
+        text(" · PgUp/PgDn · rueda") | dim | color(Color::RGB(160, 150, 140)),
         filler() | bgcolor(Color::RGB(40, 36, 34)),
     });
     Element const log_area =

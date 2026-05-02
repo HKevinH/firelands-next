@@ -24,12 +24,10 @@ public:
   WorldInteractiveConsole(const WorldInteractiveConsole &) = delete;
   WorldInteractiveConsole &operator=(const WorldInteractiveConsole &) = delete;
 
-  /// @param styledPrompt Used only when @p useStdinReader is true: ANSI input
-  ///        rail before each `getline`. Ignored for TUI mode.
   /// @param useStdinReader When false, only the command queue is enabled (TUI
-  ///        submits lines via `SubmitLine`).
-  void Start(bool enabled, bool styledPrompt = true,
-             bool useStdinReader = true);
+  ///        submits lines via `SubmitLine`). When true, stdin uses an ANSI input
+  ///        rail when the terminal supports it (see NO_COLOR / plain console env).
+  void Start(bool enabled, bool useStdinReader = true);
   void SubmitLine(std::string line);
   void ProcessPending();
   bool ShutdownRequested() const { return _shutdownRequested.load(); }
@@ -43,7 +41,7 @@ private:
   std::atomic<bool> _enabled{false};
   std::atomic<bool> _stopReader{false};
   std::atomic<bool> _shutdownRequested{false};
-  bool _styledPrompt = false;
+  bool _useAnsiCommandRail = false;
   std::mutex _mutex;
   std::vector<std::string> _lines;
   std::unique_ptr<std::thread> _reader;

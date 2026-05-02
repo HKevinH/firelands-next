@@ -3,6 +3,7 @@ add_library(FirelandsInfrastructure STATIC
     persistence/MySqlAccountDataRepository.cpp
     persistence/MySqlRealmRepository.cpp
     persistence/MySqlCharacterRepository.cpp
+    persistence/MySqlGmTicketRepository.cpp
     persistence/MySqlPlayerCreateInfoRepository.cpp
     network/sessions/AuthSession.cpp
     network/sessions/WorldSession.cpp
@@ -12,7 +13,9 @@ add_library(FirelandsInfrastructure STATIC
     network/sessions/worldsession/WorldSessionChatHandlers.cpp
     network/sessions/worldsession/WorldSessionMovementHandlers.cpp
     network/sessions/worldsession/WorldSessionObjectUpdate.cpp
+    network/sessions/worldsession/GmTicketPackets.cpp
     network/sessions/worldsession/WorldSessionGmState.cpp
+    network/sessions/worldsession/WorldSessionGmTicketHandlers.cpp
     network/sessions/worldsession/WorldSessionCharacterHandlers.cpp
     network/asio/AsyncNetworkServer.cpp
     network/realm_link/RealmLiveRegistry.cpp

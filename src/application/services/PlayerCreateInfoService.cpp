@@ -31,6 +31,8 @@ PlayerCreateInfoService::PlayerCreateInfoService(
     LOG_DEBUG("PlayerCreateInfoService: optional gtOCT*.dbc not loaded from {}",
               clientGameTablesDbcDir);
   }
+  if (!clientGameTablesDbcDir.empty())
+    m_statGameTables.Load(clientGameTablesDbcDir);
 }
 
 bool PlayerCreateInfoService::TryApplyTemplateCombatState(Character &character) {

@@ -187,6 +187,12 @@ public:
     return m_repository->GrantItemToBag0(characterGuid, itemEntry, count);
   }
 
+  /// Client `gtCombatRatings` / `gtChanceTo*Crit*` tables (may be unloaded if DBC path empty).
+  GtPlayerStatGameTables const *GetStatGameTables() const {
+    return m_playerCreateInfoService ? &m_playerCreateInfoService->GetStatGameTables()
+                                     : nullptr;
+  }
+
 private:
   std::shared_ptr<ICharacterRepository> m_repository;
   std::shared_ptr<PlayerCreateInfoService> m_playerCreateInfoService;

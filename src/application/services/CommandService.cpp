@@ -1,6 +1,9 @@
 #include "CommandService.h"
 #include <application/ports/ICommandSession.h>
+#include <application/services/GmTicketService.h>
 #include <application/services/OnlineCharacterSessionRegistry.h>
+#include <application/services/CharacterService.h>
+#include <domain/models/Character.h>
 #include <application/services/SRPService.h>
 #include <domain/repositories/IAccountRepository.h>
 #include <shared/Common.h>
@@ -78,6 +81,13 @@ public:
   }
 
   bool GmSetLevel(uint8 level) override { return _subject->GmSetLevel(level); }
+
+  void SendGmResponseReceived(uint32_t ticketId, std::string const &playerMessage,
+                              std::string const &gmResponse) override {
+    _subject->SendGmResponseReceived(ticketId, playerMessage, gmResponse);
+  }
+
+  uint32_t GetAccountId() const override { return _subject->GetAccountId(); }
 };
 
 static std::string JoinArgs(std::vector<std::string>::const_iterator begin,
@@ -145,96 +155,105 @@ static std::string StripWowChatColorTokens(std::string const &in) {
 
 CommandService::CommandService(
     std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharacters,
-    std::shared_ptr<IAccountRepository> accountRepo)
+    std::shared_ptr<IAccountRepository> accountRepo,
+    std::shared_ptr<CharacterService> characterService,
+    std::shared_ptr<GmTicketService> gmTicketService)
     : _onlineCharacters(std::move(onlineCharacters)),
-      _accountRepo(std::move(accountRepo)) {
+      _accountRepo(std::move(accountRepo)),
+      _characterService(std::move(characterService)),
+      _gmTicketService(std::move(gmTicketService)) {
   RegisterCommand("gps", {[this](auto s, auto a, auto o) { return HandleGps(s, a, o); },
-                          ToMask(Permission::CommandGps), false,
+                          ToMask(Permission::CommandGps), CommandAvailability::Both,
                           ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand("tele", {[this](auto s, auto a, auto o) { return HandleTele(s, a, o); },
-                           ToMask(Permission::CommandTeleport), false,
+                           ToMask(Permission::CommandTeleport), CommandAvailability::Both,
                            ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand("help", {[this](auto s, auto a, auto o) { return HandleHelp(s, a, o); },
-                           0, false, ConsoleArgLayout::SameAsInGame});
+                           0, CommandAvailability::Both,
+                           ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "commands", {[this](auto s, auto a, auto o) { return HandleHelp(s, a, o); }, 0,
-                   false, ConsoleArgLayout::SameAsInGame});
+                   CommandAvailability::Both, ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "account", {[this](auto s, auto a, auto o) { return HandleAccount(s, a, o); },
-                  ToMask(Permission::ManageAccounts), true,
+                  ToMask(Permission::ManageAccounts), CommandAvailability::Console,
                   ConsoleArgLayout::SameAsInGame});
   RegisterCommand("gm", {[this](auto s, auto a, auto o) { return HandleGmTag(s, a, o); },
-                  ToMask(Permission::CommandGmTools), false,
+                  ToMask(Permission::CommandGmTools), CommandAvailability::Both,
                   ConsoleArgLayout::SameAsInGame});
   RegisterCommand("dnd", {[this](auto s, auto a, auto o) { return HandleDndTag(s, a, o); },
-                  ToMask(Permission::CommandGmTools), false,
+                  ToMask(Permission::CommandGmTools), CommandAvailability::Both,
                   ConsoleArgLayout::SameAsInGame});
   RegisterCommand("dev", {[this](auto s, auto a, auto o) { return HandleDevTag(s, a, o); },
-                  ToMask(Permission::CommandGmTools), false,
+                  ToMask(Permission::CommandGmTools), CommandAvailability::Both,
                   ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "visible", {[this](auto s, auto a, auto o) { return HandleGmVisible(s, a, o); },
-                  ToMask(Permission::CommandGmTools), false,
+                  ToMask(Permission::CommandGmTools), CommandAvailability::Both,
                   ConsoleArgLayout::SameAsInGame});
   RegisterCommand("fly", {[this](auto s, auto a, auto o) { return HandleGmFly(s, a, o); },
-                  ToMask(Permission::CommandGmTools), false,
+                  ToMask(Permission::CommandGmTools), CommandAvailability::Both,
                   ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "speed", {[this](auto s, auto a, auto o) { return HandleGmSpeed(s, a, o); },
-                ToMask(Permission::CommandGmTools), false,
+                ToMask(Permission::CommandGmTools), CommandAvailability::Both,
                 ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "online", {[this](auto s, auto a, auto o) { return HandleOnline(s, a, o); },
-                 ToMask(Permission::ManagePlayers), false,
+                 ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                  ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "who", {[this](auto s, auto a, auto o) { return HandleOnline(s, a, o); },
-              ToMask(Permission::ManagePlayers), false,
+              ToMask(Permission::ManagePlayers), CommandAvailability::Both,
               ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "announce", {[this](auto s, auto a, auto o) { return HandleAnnounce(s, a, o); },
-                   ToMask(Permission::ManagePlayers), false,
+                   ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                    ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "kick", {[this](auto s, auto a, auto o) { return HandleKick(s, a, o); },
-               ToMask(Permission::ManagePlayers), false,
+               ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "goto", {[this](auto s, auto a, auto o) { return HandleGoto(s, a, o); },
-               ToMask(Permission::ManagePlayers), false,
+               ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "appear", {[this](auto s, auto a, auto o) { return HandleGoto(s, a, o); },
-                 ToMask(Permission::ManagePlayers), false,
+                 ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                  ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "summon", {[this](auto s, auto a, auto o) { return HandleSummon(s, a, o); },
-                 ToMask(Permission::ManagePlayers), false,
+                 ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                  ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "learn", {[this](auto s, auto a, auto o) { return HandleLearn(s, a, o); },
-                ToMask(Permission::CommandGameplay), false,
+                ToMask(Permission::CommandGameplay), CommandAvailability::Both,
                 ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand(
       "money", {[this](auto s, auto a, auto o) { return HandleMoney(s, a, o); },
-               ToMask(Permission::CommandGameplay), false,
+               ToMask(Permission::CommandGameplay), CommandAvailability::Both,
                ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand(
       "additem", {[this](auto s, auto a, auto o) { return HandleAdditem(s, a, o); },
-                  ToMask(Permission::CommandGameplay), false,
+                  ToMask(Permission::CommandGameplay), CommandAvailability::Both,
                   ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand(
       "level", {[this](auto s, auto a, auto o) { return HandleLevel(s, a, o); },
-               ToMask(Permission::CommandGameplay), false,
+               ToMask(Permission::CommandGameplay), CommandAvailability::Both,
                ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand(
       "ban", {[this](auto s, auto a, auto o) { return HandleBan(s, a, o); },
-              ToMask(Permission::ManageAccounts), true,
+              ToMask(Permission::ManageAccounts), CommandAvailability::Console,
               ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
       "unban", {[this](auto s, auto a, auto o) { return HandleUnban(s, a, o); },
-                ToMask(Permission::ManageAccounts), true,
+                ToMask(Permission::ManageAccounts), CommandAvailability::Console,
                 ConsoleArgLayout::SameAsInGame});
+  RegisterCommand(
+      "ticket", {[this](auto s, auto a, auto o) { return HandleTicket(s, a, o); },
+                 ToMask(Permission::ManageGmTickets), CommandAvailability::Game,
+                 ConsoleArgLayout::SameAsInGame});
 }
 
 void CommandService::RegisterCommand(const std::string &name, CommandEntry entry) {
@@ -277,10 +296,22 @@ bool CommandService::ExecuteCommand(std::shared_ptr<ICommandSession> session,
   }
 
   CommandEntry const &entry = it->second;
-  if (entry.consoleOnly && origin != PrivilegeOrigin::ServerConsole) {
-    session->SendNotification(
-        "This command is only available from the server console.");
-    return true;
+  switch (entry.availability) {
+  case CommandAvailability::Console:
+    if (origin != PrivilegeOrigin::ServerConsole) {
+      session->SendNotification(
+          "This command is only available from the server console.");
+      return true;
+    }
+    break;
+  case CommandAvailability::Game:
+    if (origin != PrivilegeOrigin::GameClient) {
+      session->SendNotification("This command is only available in-game.");
+      return true;
+    }
+    break;
+  case CommandAvailability::Both:
+    break;
   }
   if (!HasPermission(session->GetAccountAccessLevel(), origin,
                      entry.requiredPermissions)) {
@@ -401,6 +432,17 @@ bool CommandService::HandleHelp(std::shared_ptr<ICommandSession> session,
       "|cffffffff.goto StaffName TargetName|r\n"
       "|cffCCCCCC.summon|r |cff888888—|r Bring an online player to you.  "
       "|cff666666Console:|r |cffffffff.summon VictimName AnchorName|r\n"
+      "|cffFFD200· GM tickets|r |cff666666(in-game only)|r\n"
+      "|cffCCCCCC.ticket queue|r |cff888888—|r Unassigned queue.  "
+      "|cff666666e.g.|r |cffffffff.ticket queue|r\n"
+      "|cffCCCCCC.ticket mine|r |cff888888—|r Assigned to you.  "
+      "|cff666666e.g.|r |cffffffff.ticket mine|r\n"
+      "|cffCCCCCC.ticket take|r |cff888888—|r |cff666666e.g.|r "
+      "|cffffffff.ticket take 1|r\n"
+      "|cffCCCCCC.ticket reply|r |cff888888—|r |cff666666e.g.|r "
+      "|cffffffff.ticket reply 1 Thanks for waiting.|r\n"
+      "|cffCCCCCC.ticket close|r |cff888888—|r Staff-close.  "
+      "|cff666666e.g.|r |cffffffff.ticket close 1|r\n"
       "|cffFFD200· Gameplay (GM)|r\n"
       "|cffCCCCCC.learn|r |cff888888—|r Learn spell by id (persists).  "
       "|cff666666Console:|r |cffffffff.learn CharName 475|r\n"
@@ -1033,6 +1075,121 @@ bool CommandService::HandleUnban(std::shared_ptr<ICommandSession> session,
   }
   _accountRepo->SetLockedByUsername(userUpper, false);
   session->SendNotification("Unbanned: " + userUpper);
+  return true;
+}
+
+bool CommandService::HandleTicket(std::shared_ptr<ICommandSession> session,
+                                  const std::vector<std::string> &args,
+                                  PrivilegeOrigin origin) {
+  (void)origin;
+  if (!_gmTicketService || !_characterService || !_onlineCharacters) {
+    session->SendNotification("Ticket system is not configured.");
+    return true;
+  }
+  if (args.empty()) {
+    session->SendNotification(
+        "Usage: .ticket queue | .ticket mine | .ticket take <id> | .ticket "
+        "reply <id> <message> | .ticket close <id>");
+    return true;
+  }
+
+  std::string const sub = args[0];
+  if (sub == "queue") {
+    auto list = _gmTicketService->ListQueue(20);
+    if (list.empty()) {
+      session->SendNotification("Ticket queue is empty.");
+      return true;
+    }
+    for (auto const &t : list) {
+      session->SendNotification("Ticket #" + std::to_string(t.id) + " char=" +
+                                std::to_string(t.characterGuid));
+    }
+    return true;
+  }
+  if (sub == "mine") {
+    auto list = _gmTicketService->ListAssignedTo(session->GetAccountId(), 20);
+    if (list.empty()) {
+      session->SendNotification("No tickets assigned to you.");
+      return true;
+    }
+    for (auto const &t : list) {
+      session->SendNotification("Ticket #" + std::to_string(t.id) + " char=" +
+                                std::to_string(t.characterGuid));
+    }
+    return true;
+  }
+  if (sub == "take") {
+    if (args.size() < 2) {
+      session->SendNotification("Usage: .ticket take <id>");
+      return true;
+    }
+    uint64_t id = 0;
+    try {
+      id = std::stoull(args[1]);
+    } catch (...) {
+      session->SendNotification("Invalid ticket id.");
+      return true;
+    }
+    if (_gmTicketService->AssignToStaff(id, session->GetAccountId()))
+      session->SendNotification("Ticket assigned to you.");
+    else
+      session->SendNotification("Could not take ticket (already assigned or closed).");
+    return true;
+  }
+  if (sub == "reply") {
+    if (args.size() < 3) {
+      session->SendNotification("Usage: .ticket reply <id> <message>");
+      return true;
+    }
+    uint64_t id = 0;
+    try {
+      id = std::stoull(args[1]);
+    } catch (...) {
+      session->SendNotification("Invalid ticket id.");
+      return true;
+    }
+    std::string const text = JoinArgs(args.begin() + 2, args.end());
+    if (!_gmTicketService->StaffReply(id, session->GetAccountId(), text)) {
+      session->SendNotification("Reply failed (not your ticket or bad state).");
+      return true;
+    }
+    auto updated = _gmTicketService->GetById(id);
+    if (!updated) {
+      session->SendNotification("Reply saved.");
+      return true;
+    }
+    auto ch = _characterService->GetCharacterByGuid(updated->characterGuid);
+    if (!ch) {
+      session->SendNotification("Reply saved (character offline).");
+      return true;
+    }
+    if (auto target = _onlineCharacters->TryResolve(ch->GetName())) {
+      target->SendGmResponseReceived(static_cast<uint32_t>(updated->id),
+                                     updated->message, updated->gmResponse);
+    }
+    session->SendNotification("Reply sent.");
+    return true;
+  }
+  if (sub == "close") {
+    if (args.size() < 2) {
+      session->SendNotification("Usage: .ticket close <id>");
+      return true;
+    }
+    uint64_t id = 0;
+    try {
+      id = std::stoull(args[1]);
+    } catch (...) {
+      session->SendNotification("Invalid ticket id.");
+      return true;
+    }
+    if (_gmTicketService->StaffClose(id, session->GetAccountId()))
+      session->SendNotification("Ticket closed.");
+    else
+      session->SendNotification("Close failed (not your ticket or already closed).");
+    return true;
+  }
+
+  session->SendNotification("Unknown .ticket subcommand.");
   return true;
 }
 

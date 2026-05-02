@@ -6,6 +6,7 @@
 #include <memory>
 #include <shared/dbc/CharStartOutfitDbc.h>
 #include <shared/dbc/GtOctCombatDbc.h>
+#include <shared/dbc/GtPlayerStatGameTables.h>
 #include <string>
 #include <vector>
 
@@ -74,10 +75,15 @@ public:
   /// (same sources as TrinityCore / `firelands-cata-ref`). Returns false if no class row.
   bool TryApplyTemplateCombatState(Character &character);
 
+  GtPlayerStatGameTables const &GetStatGameTables() const {
+    return m_statGameTables;
+  }
+
 private:
   std::shared_ptr<IPlayerCreateInfoRepository> m_repository;
   CharStartOutfitDbc m_charStartOutfitDbc;
   GtOctCombatDbc m_gtOct;
+  GtPlayerStatGameTables m_statGameTables;
   bool m_charStartOutfitDbcLoaded = false;
 };
 

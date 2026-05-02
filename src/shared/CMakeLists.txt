@@ -5,10 +5,12 @@ add_library(FirelandsShared STATIC
     dbc/LanguagesDbc.cpp
     dbc/SpellDbc.cpp
     dbc/GtOctCombatDbc.cpp
+    dbc/GtPlayerStatGameTables.cpp
     game/EquipmentCache.cpp
     game/ChatLanguages.cpp
     game/ItemEquipSlots.cpp
     game/PlayerGmAppearance.cpp
+    game/StatFormulas.cpp
     network/MovementWire.cpp
     network/SpellCastWire.cpp
 )

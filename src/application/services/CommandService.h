@@ -13,6 +13,8 @@ namespace Firelands {
 class ICommandSession;
 class IAccountRepository;
 class OnlineCharacterSessionRegistry;
+class CharacterService;
+class GmTicketService;
 
 enum class ConsoleArgLayout {
   /// Same argument order as in-game (e.g. `.tele x y z`).
@@ -22,11 +24,23 @@ enum class ConsoleArgLayout {
   TargetOnlineCharacterFirst = 1,
 };
 
+/// Where a registered dot-command may run (`ExecuteCommand` filters on this
+/// after lookup, before permissions). Maps to BOTH / GAME / CONSOLE in docs.
+enum class CommandAvailability {
+  Both,
+  /// In-game world client only (e.g. needs persisted `account.id` on session).
+  Game,
+  /// `PrivilegeOrigin::ServerConsole` only (stdin / TUI REPL).
+  Console,
+};
+
 class CommandService : public ICommandService {
 public:
   CommandService(
       std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharacters = {},
-      std::shared_ptr<IAccountRepository> accountRepo = {});
+      std::shared_ptr<IAccountRepository> accountRepo = {},
+      std::shared_ptr<CharacterService> characterService = {},
+      std::shared_ptr<GmTicketService> gmTicketService = {});
 
   bool ExecuteCommand(std::shared_ptr<ICommandSession> session,
                       const std::string &message,
@@ -41,7 +55,7 @@ private:
   struct CommandEntry {
     CommandHandler handler;
     PermissionMask requiredPermissions = 0;
-    bool consoleOnly = false;
+    CommandAvailability availability = CommandAvailability::Both;
     ConsoleArgLayout consoleLayout = ConsoleArgLayout::SameAsInGame;
   };
 
@@ -89,9 +103,13 @@ private:
                   const std::vector<std::string> &args, PrivilegeOrigin origin);
   bool HandleUnban(std::shared_ptr<ICommandSession> session,
                    const std::vector<std::string> &args, PrivilegeOrigin origin);
+  bool HandleTicket(std::shared_ptr<ICommandSession> session,
+                    const std::vector<std::string> &args, PrivilegeOrigin origin);
 
   std::shared_ptr<OnlineCharacterSessionRegistry> _onlineCharacters;
   std::shared_ptr<IAccountRepository> _accountRepo;
+  std::shared_ptr<CharacterService> _characterService;
+  std::shared_ptr<GmTicketService> _gmTicketService;
   std::map<std::string, CommandEntry> _commands;
 };
 
