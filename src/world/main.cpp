@@ -26,6 +26,7 @@
 #include "WorldInteractiveConsole.h"
 #include <shared/dbc/ItemDbHotfixStore.h>
 #include <shared/dbc/LanguagesDbc.h>
+#include <shared/dbc/SpellDifficultyDbc.h>
 #include <shared/dbc/SpellDbc.h>
 #include <shared/Logger.h>
 #include <thread>
@@ -185,6 +186,15 @@ int main(int argc, char **argv) {
                "against client data.",
                dbcBasePath + "/Spell.dbc");
       spellDbc.reset();
+    }
+
+    SpellDifficultyDbc spellDifficultyDbc;
+    if (spellDifficultyDbc.Load(dbcBasePath + "/SpellDifficulty.dbc")) {
+      LOG_DEBUG("SpellDifficulty.dbc ready ({} difficulty rows).",
+                spellDifficultyDbc.GetRowCount());
+    } else {
+      LOG_DEBUG("SpellDifficulty.dbc not loaded (optional; pairs with "
+                "`spelldifficulty_dbc` when present).");
     }
 
     auto itemDbHotfix = std::make_shared<ItemDbHotfixStore>();

@@ -7,6 +7,7 @@ add_library(FirelandsShared STATIC
     dbc/ItemDbHotfixStore.cpp
     dbc/LanguagesDbc.cpp
     dbc/SpellDbc.cpp
+    dbc/SpellDifficultyDbc.cpp
     dbc/GtOctCombatDbc.cpp
     dbc/GtPlayerStatGameTables.cpp
     game/EquipmentCache.cpp
