@@ -8,6 +8,7 @@
 #include <shared/dbc/ItemDb2Wdb2.h>
 #include <conncpp.hpp>
 #include <memory>
+#include <optional>
 
 namespace Firelands {
 
@@ -27,10 +28,12 @@ namespace Firelands {
         std::optional<Character> GetCharacterByGuid(uint64_t guid) override;
         bool SwapBag0Slots(uint32_t characterGuid, uint8_t srcSlot,
                            uint8_t dstSlot) override;
-        bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
-                                   uint16_t mapId, uint16_t zoneId, float x,
-                                   float y, float z, float orientation,
-                                   uint32_t moneyCopper, uint32_t xp) override;
+        bool SaveCharacterOnLogout(
+            uint32_t accountId, uint32_t characterGuid, uint16_t mapId,
+            uint16_t zoneId, float x, float y, float z, float orientation,
+            uint32_t moneyCopper, uint32_t xp,
+            std::optional<uint32_t> liveHealth = std::nullopt,
+            std::optional<uint32_t> livePower1 = std::nullopt) override;
         bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
                                   uint32_t moneyCopper) override;
         bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,

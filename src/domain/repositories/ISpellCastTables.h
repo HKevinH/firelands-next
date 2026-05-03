@@ -20,6 +20,10 @@ public:
   /// `SpellCooldowns.dbc` row for `Spell.dbc` `CooldownsID` (0 = leave outputs zeroed).
   virtual void GetCooldownTiming(uint32 cooldownsId, uint32 *categoryRecoveryMs,
                                  uint32 *recoveryMs, uint32 *startRecoveryMs) const = 0;
+
+  /// `SpellPower.dbc` `ManaCost` for row id `spellPowerId` (Spell.dbc `PowerDisplayID`); 0 if
+  /// id is 0 or row missing.
+  virtual uint32 GetSpellPowerManaCost(uint32 spellPowerId) const = 0;
 };
 
 } // namespace Firelands

@@ -184,18 +184,12 @@ int main(int argc, char **argv) {
       languagesDbc.reset();
     }
 
-    std::shared_ptr<ISpellDefinitionStore const> spellDefinitions;
-    {
-      auto store = std::make_shared<SpellEntryDbcStore>();
-      bool const spellDbcOk = store->Load(dbcBasePath + "/Spell.dbc");
-      if (!spellDbcOk) {
-        LOG_WARN("Spell.dbc not loaded from {}; definitions come only from "
-                 "`spell_dbc` if present.",
-                 dbcBasePath + "/Spell.dbc");
-      }
-      store->MergeSpellDbcRows(worldConn);
-      if (spellDbcOk || store->DefinitionCount() > 0u)
-        spellDefinitions = std::move(store);
+    auto spellEntryStore = std::make_shared<SpellEntryDbcStore>();
+    bool const spellDbcOk = spellEntryStore->Load(dbcBasePath + "/Spell.dbc");
+    if (!spellDbcOk) {
+      LOG_WARN("Spell.dbc not loaded from {}; definitions come only from "
+               "`spell_dbc` if present.",
+               dbcBasePath + "/Spell.dbc");
     }
 
     std::shared_ptr<ISpellCastTables const> spellCastTables;
@@ -203,14 +197,23 @@ int main(int argc, char **argv) {
       auto tables = std::make_shared<SpellCastTablesDbc>();
       if (!tables->Load(dbcBasePath + "/SpellCastTimes.dbc",
                         dbcBasePath + "/SpellRange.dbc",
-                        dbcBasePath + "/SpellCooldowns.dbc")) {
+                        dbcBasePath + "/SpellCooldowns.dbc",
+                        dbcBasePath + "/SpellPower.dbc")) {
         LOG_WARN(
-            "SpellCastTimes.dbc / SpellRange.dbc / SpellCooldowns.dbc were not all "
-            "loadable from {}; some cast timing, range, or GCD lookups stay at defaults.",
+            "SpellCastTimes.dbc / SpellRange.dbc / SpellCooldowns.dbc / SpellPower.dbc were "
+            "not all loadable from {}; some cast timing, range, GCD, or mana lookups stay at "
+            "defaults.",
             dbcBasePath);
       }
       spellCastTables = std::move(tables);
     }
+
+    spellEntryStore->ApplySpellPowerManaFromTables(*spellCastTables);
+    spellEntryStore->MergeSpellDbcRows(worldConn);
+
+    std::shared_ptr<ISpellDefinitionStore const> spellDefinitions;
+    if (spellDbcOk || spellEntryStore->DefinitionCount() > 0u)
+      spellDefinitions = spellEntryStore;
 
     SpellDifficultyDbc spellDifficultyDbc;
     if (spellDifficultyDbc.Load(dbcBasePath + "/SpellDifficulty.dbc")) {

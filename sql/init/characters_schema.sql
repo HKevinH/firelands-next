@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `firstLogin` tinyint(3) unsigned NOT NULL DEFAULT '1',
   `money` int unsigned NOT NULL DEFAULT '0',
   `xp` int unsigned NOT NULL DEFAULT '0',
+  `live_health` int unsigned NULL DEFAULT NULL,
+  `live_power1` int unsigned NULL DEFAULT NULL,
   PRIMARY KEY (`guid`),
   KEY `idx_account` (`account`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -23,6 +23,7 @@ add_executable(FirelandsUnitTests
     unit/domain/PlayerCombatTests.cpp
     unit/infrastructure/LuaGameScriptHostTests.cpp
     unit/infrastructure/MapCollisionQueriesStubTests.cpp
+    unit/infrastructure/SpellCastTablesSpellPowerTests.cpp
     unit/tools/WowDataMpqListTests.cpp
     unit/vmap/BihTests.cpp
     unit/vmap/ModelSpawnTests.cpp

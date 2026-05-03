@@ -1,6 +1,7 @@
 #include <application/spell/SpellManager.h>
 
 #include <application/ports/IMapCollisionQueries.h>
+#include <shared/game/SpellAttributes.h>
 
 #include <algorithm>
 #include <cmath>
@@ -103,7 +104,9 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
     }
   }
 
-  if (!req.skipLineOfSight && req.collisionQueries != nullptr &&
+  bool const ignoreLosFromSpell =
+      def && (def->attributesEx2 & SpellAttr2::kIgnoreLineOfSight) != 0u;
+  if (!req.skipLineOfSight && !ignoreLosFromSpell && req.collisionQueries != nullptr &&
       req.collisionQueries->IsNavMeshDataAvailable(req.mapId) &&
       req.hasCasterWorldPosition && req.hasTargetWorldPosition &&
       req.client.unitTargetGuid != 0u &&

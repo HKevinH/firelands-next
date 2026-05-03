@@ -168,8 +168,10 @@ public:
 
   std::optional<Character> GetCharacterByGuid(uint64_t guid) {
     auto c = m_repository->GetCharacterByGuid(guid);
-    if (c && m_playerCreateInfoService)
+    if (c && m_playerCreateInfoService) {
       m_playerCreateInfoService->TryApplyTemplateCombatState(*c);
+      c->ApplyPersistedResourceSnapshotAfterCombatTemplate();
+    }
     return c;
   }
 
@@ -178,13 +180,14 @@ public:
                                        srcSlot, dstSlot);
   }
 
-  bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
-                             uint16_t mapId, uint16_t zoneId, float x, float y,
-                             float z, float orientation, uint32_t moneyCopper,
-                             uint32_t xp) {
-    return m_repository->SaveCharacterOnLogout(accountId, characterGuid, mapId,
-                                             zoneId, x, y, z, orientation,
-                                             moneyCopper, xp);
+  bool SaveCharacterOnLogout(
+      uint32_t accountId, uint32_t characterGuid, uint16_t mapId, uint16_t zoneId,
+      float x, float y, float z, float orientation, uint32_t moneyCopper,
+      uint32_t xp, std::optional<uint32_t> liveHealth = std::nullopt,
+      std::optional<uint32_t> livePower1 = std::nullopt) {
+    return m_repository->SaveCharacterOnLogout(
+        accountId, characterGuid, mapId, zoneId, x, y, z, orientation, moneyCopper,
+        xp, liveHealth, livePower1);
   }
 
 bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,

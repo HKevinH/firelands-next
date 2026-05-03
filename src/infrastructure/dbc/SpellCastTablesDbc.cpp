@@ -88,11 +88,52 @@ static bool LoadSpellRange(std::string const &path,
   return true;
 }
 
+// TCPP `SpellPowerEntryfmt[] = "diiiixxf";`
+static bool LoadSpellPower(std::string const &path,
+                            std::unordered_map<uint32, uint32> &outManaById) {
+  outManaById.clear();
+  if (path.empty())
+    return false;
+  DbcReader reader;
+  if (!reader.Load(path)) {
+    LOG_WARN("SpellPower.dbc not found or unreadable: {}", path);
+    return false;
+  }
+  constexpr std::string_view kFmt = "diiiixxf";
+  std::vector<uint32_t> const offsets = DbcBuildFieldByteOffsets(kFmt);
+  if (!reader.VerifyFormat(kFmt)) {
+    LOG_WARN("SpellPower.dbc: field count mismatch (path={})", path);
+    return false;
+  }
+  char const last = kFmt[kFmt.size() - 1];
+  size_t const expected =
+      static_cast<size_t>(offsets.back()) +
+      (((last == 'b') || (last == 'X')) ? 1u : 4u);
+  if (expected != static_cast<size_t>(reader.GetRecordSize())) {
+    LOG_WARN("SpellPower.dbc: record size {} expected {} (path={})",
+             reader.GetRecordSize(), expected, path);
+    return false;
+  }
+
+  uint32_t const n = reader.GetRecordCount();
+  outManaById.reserve(static_cast<size_t>(n));
+  for (uint32_t rec = 0; rec < n; ++rec) {
+    uint32_t const id = reader.ReadUInt32(rec, 0, offsets);
+    if (id == 0u)
+      continue;
+    uint32_t const mana = reader.ReadUInt32(rec, 1, offsets);
+    outManaById.emplace(id, mana);
+  }
+  LOG_DEBUG("SpellPower.dbc: {} rows from {}.", outManaById.size(), path);
+  return true;
+}
+
 } // namespace
 
 bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
                               std::string const &spellRangePath,
-                              std::string const &spellCooldownsPath) {
+                              std::string const &spellCooldownsPath,
+                              std::string const &spellPowerPath) {
   bool const ct = LoadCastTimes(spellCastTimesPath, m_castBaseMs);
   bool const rg = LoadSpellRange(spellRangePath, m_rangeMaxYards);
   bool cd = false;
@@ -136,7 +177,9 @@ bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
       LOG_WARN("SpellCooldowns.dbc not found or unreadable: {}", spellCooldownsPath);
     }
   }
-  return ct || rg || cd;
+  m_spellPowerManaCost.clear();
+  bool const sp = LoadSpellPower(spellPowerPath, m_spellPowerManaCost);
+  return ct || rg || cd || sp;
 }
 
 uint32 SpellCastTablesDbc::GetCastTimeMs(uint32 castingTimeIndex) const {
@@ -178,6 +221,15 @@ void SpellCastTablesDbc::GetCooldownTiming(uint32 cooldownsId, uint32 *categoryR
     *recoveryMs = it->second.recoveryMs;
   if (startRecoveryMs)
     *startRecoveryMs = it->second.startRecoveryMs;
+}
+
+uint32 SpellCastTablesDbc::GetSpellPowerManaCost(uint32 spellPowerId) const {
+  if (spellPowerId == 0u)
+    return 0u;
+  auto it = m_spellPowerManaCost.find(spellPowerId);
+  if (it == m_spellPowerManaCost.end())
+    return 0u;
+  return it->second;
 }
 
 } // namespace Firelands

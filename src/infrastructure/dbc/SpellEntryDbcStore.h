@@ -8,10 +8,17 @@
 
 namespace Firelands {
 
+class ISpellCastTables;
+
 /// Loads `Spell.dbc` (4.3.4 / build 15595) using TCPP `SpellEntryfmt` layout.
 class SpellEntryDbcStore final : public ISpellDefinitionStore {
 public:
   bool Load(std::string const &path);
+
+  /// After `Load()` and before `MergeSpellDbcRows()`: sets `manaCost` from
+  /// `SpellPower.dbc` when `spellPowerId` is non-zero. SQL `MvpManaCost` (including 0)
+  /// then overrides in merge. Call after `SpellCastTablesDbc::Load`.
+  void ApplySpellPowerManaFromTables(ISpellCastTables const &tables);
 
   /// After `Load()`, merges `firelands_world.spell_dbc`: rows whose `Id` is not in
   /// DBC become full definitions (custom spells). For ids already in DBC: `PowerType`

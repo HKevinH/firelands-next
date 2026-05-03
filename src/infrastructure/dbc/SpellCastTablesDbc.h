@@ -6,8 +6,8 @@
 
 namespace Firelands {
 
-/// Loads `SpellCastTimes.dbc`, `SpellRange.dbc`, and optionally `SpellCooldowns.dbc`
-/// (Cataclysm 4.3.4 / TCPP `DBCfmt.h`).
+/// Loads `SpellCastTimes.dbc`, `SpellRange.dbc`, optional `SpellCooldowns.dbc`, and optional
+/// `SpellPower.dbc` (Cataclysm 4.3.4 / TCPP `DBCfmt.h`).
 class SpellCastTablesDbc final : public ISpellCastTables {
 public:
   struct CooldownRow {
@@ -18,7 +18,8 @@ public:
 
   /// Each file is optional: missing file logs a warning and that table stays empty.
   bool Load(std::string const &spellCastTimesPath, std::string const &spellRangePath,
-            std::string const &spellCooldownsPath);
+            std::string const &spellCooldownsPath,
+            std::string const &spellPowerPath);
 
   bool HasCastTimes() const { return !m_castBaseMs.empty(); }
   bool HasRanges() const { return !m_rangeMaxYards.empty(); }
@@ -29,10 +30,13 @@ public:
   void GetCooldownTiming(uint32 cooldownsId, uint32 *categoryRecoveryMs,
                          uint32 *recoveryMs, uint32 *startRecoveryMs) const override;
 
+  uint32 GetSpellPowerManaCost(uint32 spellPowerId) const override;
+
 private:
   std::unordered_map<uint32, int32> m_castBaseMs;
   std::unordered_map<uint32, float> m_rangeMaxYards;
   std::unordered_map<uint32, CooldownRow> m_cooldowns;
+  std::unordered_map<uint32, uint32> m_spellPowerManaCost;
 };
 
 } // namespace Firelands

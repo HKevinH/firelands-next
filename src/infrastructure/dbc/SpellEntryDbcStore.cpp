@@ -1,5 +1,6 @@
 #include <infrastructure/dbc/SpellEntryDbcStore.h>
 
+#include <domain/repositories/ISpellCastTables.h>
 #include <shared/dbc/DbcReader.h>
 #include <shared/Logger.h>
 
@@ -19,12 +20,15 @@ constexpr std::string_view kSpellEntryFmt =
 // Field indices = character index in `kSpellEntryFmt` (TCPP `SpellEntry` order).
 constexpr uint32_t kFieldId = 0;
 constexpr uint32_t kFieldAttributes = 1;
+constexpr uint32_t kFieldAttributesEx2 = 3;
 constexpr uint32_t kFieldCastingTimeIndex = 12;
 constexpr uint32_t kFieldDurationIndex = 13;
 constexpr uint32_t kFieldPowerType = 14;
 constexpr uint32_t kFieldRangeIndex = 15;
 constexpr uint32_t kFieldSchoolMask = 25;
 constexpr uint32_t kFieldCooldownsId = 37;
+/// TCPP `SpellEntry::PowerDisplayID` — row id in `SpellPower.dbc` (`SpellInfo::SpellPowerId`).
+constexpr uint32_t kFieldSpellPowerId = 42;
 
 static size_t LastFieldSizeBytes(char lastFmt) {
   return ((lastFmt == 'b') || (lastFmt == 'X')) ? 1u : 4u;
@@ -43,24 +47,28 @@ static bool ExpectedLayout(DbcReader const &reader,
 }
 
 static char const* const kSpellDbcMergeQueryFull =
-    "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
+    "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
+    "`RangeIndex`, "
     "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
     "`OvRangeIndex`, `OvSchoolMask` FROM `firelands_world`.`spell_dbc`";
 
 static char const* const kSpellDbcMergeQueryFullWithMvp =
-    "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
+    "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
+    "`RangeIndex`, "
     "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
     "`OvRangeIndex`, `OvSchoolMask`, `MvpDirectHealthDelta` FROM "
     "`firelands_world`.`spell_dbc`";
 
 static char const* const kSpellDbcMergeQueryFullWithMvpAndMana =
-    "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
+    "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
+    "`RangeIndex`, "
     "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
     "`OvRangeIndex`, `OvSchoolMask`, `MvpDirectHealthDelta`, `MvpManaCost` FROM "
     "`firelands_world`.`spell_dbc`";
 
 static char const* const kSpellDbcMergeQueryLegacy =
-    "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
+    "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
+    "`RangeIndex`, "
     "`SchoolMask`, `PowerType` FROM `firelands_world`.`spell_dbc`";
 
 static void ApplySpellDbcMergeRow(sql::ResultSet& rs, bool hasOvColumns,
@@ -105,9 +113,11 @@ static void ApplySpellDbcMergeRow(sql::ResultSet& rs, bool hasOvColumns,
     return;
   }
 
+  uint32 const attributesEx2 = static_cast<uint32>(rs.getUInt("AttributesEx2"));
   SpellDefinition d{};
   d.id = id;
   d.attributes = attributes;
+  d.attributesEx2 = attributesEx2;
   d.castingTimeIndex = castingTimeIndex;
   d.durationIndex = durationIndex;
   d.rangeIndex = rangeIndex;
@@ -165,18 +175,29 @@ bool SpellEntryDbcStore::Load(std::string const &path) {
     SpellDefinition def;
     def.id = id;
     def.attributes = reader.ReadUInt32(rec, kFieldAttributes, offsets);
+    def.attributesEx2 = reader.ReadUInt32(rec, kFieldAttributesEx2, offsets);
     def.castingTimeIndex = reader.ReadUInt32(rec, kFieldCastingTimeIndex, offsets);
     def.durationIndex = reader.ReadUInt32(rec, kFieldDurationIndex, offsets);
     def.powerType = reader.ReadUInt32(rec, kFieldPowerType, offsets);
     def.rangeIndex = reader.ReadUInt32(rec, kFieldRangeIndex, offsets);
     def.schoolMask = reader.ReadUInt32(rec, kFieldSchoolMask, offsets);
     def.cooldownsId = reader.ReadUInt32(rec, kFieldCooldownsId, offsets);
+    def.spellPowerId = reader.ReadUInt32(rec, kFieldSpellPowerId, offsets);
     m_byId.emplace(id, def);
   }
 
   m_loaded = true;
   LOG_DEBUG("Spell.dbc: {} spell definitions from {}.", m_byId.size(), path);
   return true;
+}
+
+void SpellEntryDbcStore::ApplySpellPowerManaFromTables(ISpellCastTables const &tables) {
+  for (auto &kv : m_byId) {
+    SpellDefinition &d = kv.second;
+    if (d.spellPowerId == 0u)
+      continue;
+    d.manaCost = tables.GetSpellPowerManaCost(d.spellPowerId);
+  }
 }
 
 void SpellEntryDbcStore::MergeSpellDbcRows(std::shared_ptr<sql::Connection> worldConn) {

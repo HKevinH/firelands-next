@@ -103,6 +103,45 @@ bool EnsureCharactersXpColumn(std::shared_ptr<sql::Connection> conn) {
   }
 }
 
+bool EnsureCharactersLiveHealthColumn(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "ALTER TABLE `firelands_characters`.`characters` "
+        "ADD COLUMN `live_health` int unsigned NULL DEFAULT NULL AFTER `xp`");
+    LOG_DEBUG("Added missing column `firelands_characters.characters.live_health`.");
+    return true;
+  } catch (sql::SQLException &e) {
+    if (e.getErrorCode() == 1060)
+      return true;
+    std::string const msg{e.what()};
+    if (msg.find("Duplicate column") != std::string::npos)
+      return true;
+    LOG_WARN("EnsureCharactersLiveHealthColumn failed: {}", e.what());
+    return false;
+  }
+}
+
+bool EnsureCharactersLivePower1Column(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "ALTER TABLE `firelands_characters`.`characters` "
+        "ADD COLUMN `live_power1` int unsigned NULL DEFAULT NULL AFTER "
+        "`live_health`");
+    LOG_DEBUG("Added missing column `firelands_characters.characters.live_power1`.");
+    return true;
+  } catch (sql::SQLException &e) {
+    if (e.getErrorCode() == 1060)
+      return true;
+    std::string const msg{e.what()};
+    if (msg.find("Duplicate column") != std::string::npos)
+      return true;
+    LOG_WARN("EnsureCharactersLivePower1Column failed: {}", e.what());
+    return false;
+  }
+}
+
 bool EnsureCharacterSpellTable(std::shared_ptr<sql::Connection> conn) {
   try {
     std::unique_ptr<sql::Statement> st(conn->createStatement());
@@ -528,6 +567,8 @@ MySqlCharacterRepository::MySqlCharacterRepository(
   EnsureCharactersOrientationColumn(_connection);
   EnsureCharactersMoneyColumn(_connection);
   EnsureCharactersXpColumn(_connection);
+  EnsureCharactersLiveHealthColumn(_connection);
+  EnsureCharactersLivePower1Column(_connection);
   EnsureCharacterSpellTable(_connection);
   _charStartOutfitLoaded =
       _charStartOutfitDbc.Load("data/dbc/CharStartOutfit.dbc");
@@ -840,7 +881,7 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
         "SELECT guid, account, name, race, class, gender, skin, face, "
         "hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin, money, xp "
+        "customizationFlags, firstLogin, money, xp, live_health, live_power1 "
         "FROM characters WHERE guid = ?"));
     stmnt->setUInt64(1, guid);
 
@@ -880,12 +921,21 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
       // for the inventory query on some MariaDB connector builds.
 
       Bag0InventoryData const bag0 = LoadBag0Inventory(_connection, lowGuid);
-      return Character(lowGuid, account, name, race, klass, gender, skin, face,
-                       hairStyle, hairColor, facialHair, level, zoneId, mapId, px,
-                       py, pz, po, guildId, characterFlags, customizationFlags,
-                       firstLogin, outfitId, equipmentCache, bag0.equipEntries,
-                       bag0.equipGuids, bag0.equipStacks, bag0.packEntries,
-                       bag0.packGuids, bag0.packStacks, money, xp);
+      Character ch(lowGuid, account, name, race, klass, gender, skin, face,
+                   hairStyle, hairColor, facialHair, level, zoneId, mapId, px, py,
+                   pz, po, guildId, characterFlags, customizationFlags, firstLogin,
+                   outfitId, equipmentCache, bag0.equipEntries, bag0.equipGuids,
+                   bag0.equipStacks, bag0.packEntries, bag0.packGuids,
+                   bag0.packStacks, money, xp);
+      std::optional<uint32> liveH;
+      std::optional<uint32> liveP1;
+      if (!res->isNull("live_health"))
+        liveH = static_cast<uint32>(res->getUInt("live_health"));
+      if (!res->isNull("live_power1"))
+        liveP1 = static_cast<uint32>(res->getUInt("live_power1"));
+      if (liveH.has_value() || liveP1.has_value())
+        ch.SetPersistedResourceSnapshotForLogin(liveH, liveP1);
+      return ch;
     }
     return std::nullopt;
   } catch (sql::SQLException &e) {
@@ -897,12 +947,24 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
 bool MySqlCharacterRepository::SaveCharacterOnLogout(
     uint32_t accountId, uint32_t characterGuid, uint16_t mapId, uint16_t zoneId,
     float x, float y, float z, float orientation, uint32_t moneyCopper,
-    uint32_t xp) {
+    uint32_t xp, std::optional<uint32_t> liveHealth,
+    std::optional<uint32_t> livePower1) {
   try {
-    std::shared_ptr<sql::PreparedStatement> stmnt(_connection->prepareStatement(
-        "UPDATE characters SET mapId = ?, zoneId = ?, x = ?, y = ?, z = ?, "
-        "orientation = ?, firstLogin = 0, money = ?, xp = ? WHERE guid = ? AND "
-        "account = ?"));
+    bool const persistVitals =
+        liveHealth.has_value() && livePower1.has_value();
+    std::shared_ptr<sql::PreparedStatement> const stmnt(
+        persistVitals ? _connection->prepareStatement(
+                          "UPDATE characters SET mapId = ?, zoneId = ?, x = ?, y = "
+                          "?, z = ?, "
+                          "orientation = ?, firstLogin = 0, money = ?, xp = ?, "
+                          "live_health = ?, "
+                          "live_power1 = ? WHERE guid = ? AND account = ?")
+                      : _connection->prepareStatement(
+                          "UPDATE characters SET mapId = ?, zoneId = ?, x = ?, y = "
+                          "?, z = ?, "
+                          "orientation = ?, firstLogin = 0, money = ?, xp = ? "
+                          "WHERE guid = ? AND "
+                          "account = ?"));
     stmnt->setUInt(1, mapId);
     stmnt->setUInt(2, zoneId);
     stmnt->setDouble(3, static_cast<double>(FiniteOrZero(x)));
@@ -911,8 +973,15 @@ bool MySqlCharacterRepository::SaveCharacterOnLogout(
     stmnt->setDouble(6, static_cast<double>(FiniteOrZero(orientation)));
     stmnt->setUInt(7, moneyCopper);
     stmnt->setUInt(8, xp);
-    stmnt->setUInt(9, characterGuid);
-    stmnt->setUInt(10, accountId);
+    if (persistVitals) {
+      stmnt->setUInt(9, static_cast<uint32>(*liveHealth));
+      stmnt->setUInt(10, static_cast<uint32>(*livePower1));
+      stmnt->setUInt(11, characterGuid);
+      stmnt->setUInt(12, accountId);
+    } else {
+      stmnt->setUInt(9, characterGuid);
+      stmnt->setUInt(10, accountId);
+    }
 
     auto affected = stmnt->executeUpdate();
     LOG_DEBUG("SaveCharacterOnLogout: guid={} account={} mapId={} zoneId={} rowsaffected={}",

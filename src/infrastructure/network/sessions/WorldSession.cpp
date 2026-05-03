@@ -34,6 +34,7 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -872,10 +873,20 @@ void WorldSession::FinalizeWorldExit() {
       persistPos = MovementInfo{};
     }
   }
-if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
-                                           zoneIdDb, persistPos.x, persistPos.y,
-                                           persistPos.z, persistPos.orientation,
-                                           _moneyCopper, _playerXp)) {
+
+  std::optional<uint32_t> liveHealth;
+  std::optional<uint32_t> livePower1;
+  if (auto map = WorldService::Instance().GetMap(mapId)) {
+    if (auto pl = map->TryGetPlayer(guid)) {
+      liveHealth = pl->GetLiveHealth();
+      livePower1 = pl->GetLivePower1();
+    }
+  }
+
+  if (!_charService->SaveCharacterOnLogout(
+          _accountId, charGuidLow, mapIdDb, zoneIdDb, persistPos.x, persistPos.y,
+          persistPos.z, persistPos.orientation, _moneyCopper, _playerXp, liveHealth,
+          livePower1)) {
     LOG_ERROR("SaveCharacterOnLogout failed for guid {}, account {}",
               charGuidLow, _accountId);
   } else {

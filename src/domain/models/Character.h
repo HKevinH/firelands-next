@@ -4,7 +4,9 @@
 #include <shared/Common.h>
 #include <shared/game/Bag0InventoryData.h>
 #include <shared/game/InventorySlots.h>
+#include <algorithm>
 #include <array>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -212,6 +214,25 @@ public:
     m_powerType = powerType;
   }
 
+  /// Set from `characters.live_*` when loading; consumed by
+  /// `ApplyPersistedResourceSnapshotAfterCombatTemplate` after template maxima exist.
+  void SetPersistedResourceSnapshotForLogin(std::optional<uint32> health,
+                                            std::optional<uint32> power1) {
+    m_loginPersistedHealth = health;
+    m_loginPersistedPower1 = power1;
+  }
+
+  void ApplyPersistedResourceSnapshotAfterCombatTemplate() {
+    if (m_loginPersistedHealth.has_value()) {
+      m_health = std::min(*m_loginPersistedHealth, m_maxHealth);
+      m_loginPersistedHealth.reset();
+    }
+    if (m_loginPersistedPower1.has_value()) {
+      m_power1 = std::min(*m_loginPersistedPower1, m_maxPower1);
+      m_loginPersistedPower1.reset();
+    }
+  }
+
 private:
   uint32 m_guid;
   uint32 m_account;
@@ -256,6 +277,9 @@ private:
   uint8 m_powerType = 0;
   uint32 m_power1 = 0;
   uint32 m_maxPower1 = 0;
+
+  std::optional<uint32> m_loginPersistedHealth;
+  std::optional<uint32> m_loginPersistedPower1;
 };
 
 } // namespace Firelands

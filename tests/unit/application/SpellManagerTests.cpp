@@ -5,6 +5,7 @@
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellCastTables.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
+#include <shared/game/SpellAttributes.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldOpcodes.h>
 
@@ -60,6 +61,8 @@ public:
       *startRecoveryMs = 0;
   }
 
+  uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
+
 private:
   uint32 m_castTimeMs;
   uint32 m_respondForIndex;
@@ -82,6 +85,26 @@ private:
   uint32 m_rangeIndex;
 };
 
+class SpellDefinitionWithRangeAndAttr2 final : public ISpellDefinitionStore {
+public:
+  SpellDefinitionWithRangeAndAttr2(uint32 rangeIndex, uint32 attributesEx2)
+      : m_rangeIndex(rangeIndex), m_attributesEx2(attributesEx2) {}
+
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.rangeIndex = m_rangeIndex;
+    d.castingTimeIndex = 1;
+    d.attributesEx2 = m_attributesEx2;
+    return d;
+  }
+
+private:
+  uint32 m_rangeIndex;
+  uint32 m_attributesEx2;
+};
+
 class MockHostileRangeTables final : public ISpellCastTables {
 public:
   MockHostileRangeTables(float maxYards, uint32 rangeIndex)
@@ -102,6 +125,8 @@ public:
     if (startRecoveryMs)
       *startRecoveryMs = 0;
   }
+
+  uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
 
 private:
   float m_maxYards;
@@ -145,6 +170,8 @@ public:
     if (startRecoveryMs)
       *startRecoveryMs = (cooldownsId == m_match) ? m_start : 0u;
   }
+
+  uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
 
 private:
   uint32 m_start;
@@ -330,6 +357,32 @@ TEST(SpellManagerTests, RangeWithinMax_ReturnsStartAndGo) {
   ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
 }
 
+TEST(SpellManagerTests, SpellAttr2IgnoreLineOfSight_BypassesBlockedLos) {
+  uint32 constexpr kRi = 11;
+  auto defs = std::make_shared<SpellDefinitionWithRangeAndAttr2>(
+      kRi, SpellAttr2::kIgnoreLineOfSight);
+  auto tables = std::make_shared<MockHostileRangeTables>(40.f, kRi);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = 0x20ULL;
+  req.hasCasterWorldPosition = true;
+  req.casterX = 0.f;
+  req.casterY = 0.f;
+  req.casterZ = 0.f;
+  req.hasTargetWorldPosition = true;
+  req.targetX = 10.f;
+  req.targetY = 0.f;
+  req.targetZ = 0.f;
+  static MockCollisionLineOfSight const kBlocked(false);
+  req.collisionQueries = &kBlocked;
+
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
 TEST(SpellManagerTests, LineOfSightBlocked_ReturnsLineOfSightFailure) {
   uint32 constexpr kRi = 11;
   auto defs = std::make_shared<SpellDefinitionWithRange>(kRi);
@@ -397,6 +450,33 @@ TEST(SpellManagerTests, GcdUsesSpellCooldownsStartRecovery) {
                       .count();
   EXPECT_GE(ms, 3190);
   EXPECT_LE(ms, 3210);
+}
+
+TEST(SpellManagerTests, SufficientMana_SetsPower1Delta) {
+  class DefMana final : public ISpellDefinitionStore {
+  public:
+    bool HasSpell(uint32 /*spellId*/) const override { return true; }
+    std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+      SpellDefinition d{};
+      d.id = spellId;
+      d.castingTimeIndex = 1;
+      d.rangeIndex = 0;
+      d.manaCost = 30;
+      return d;
+    }
+  };
+  auto defs = std::make_shared<DefMana>();
+  auto tables = std::make_shared<MockSpellCastTables>(0u);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {555};
+  SpellCastRequest req = MakeRequest(0x10ULL, 555, &known);
+  req.hasCasterPowerSnapshot = true;
+  req.casterPower1 = 100;
+  req.casterMaxPower1 = 100;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  EXPECT_EQ(out.power1Delta, -30);
 }
 
 TEST(SpellManagerTests, InsufficientMana_ReturnsNoPower) {
