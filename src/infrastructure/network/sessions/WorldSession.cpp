@@ -810,7 +810,7 @@ void WorldSession::LoginFinalizeWorldEntry(uint64 guid) {
 }
 
 void WorldSession::FinalizeWorldExit() {
-  if (_playerGuid == 0)
+  if (_playerGuid == 0 || _accountId == 0)
     return;
 
   CancelPeriodicTimeSync();

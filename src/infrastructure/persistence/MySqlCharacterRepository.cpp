@@ -913,7 +913,11 @@ bool MySqlCharacterRepository::SaveCharacterOnLogout(
     stmnt->setUInt(8, xp);
     stmnt->setUInt(9, characterGuid);
     stmnt->setUInt(10, accountId);
-    return stmnt->executeUpdate() > 0;
+
+    auto affected = stmnt->executeUpdate();
+    LOG_DEBUG("SaveCharacterOnLogout: guid={} account={} mapId={} zoneId={} rowsaffected={}",
+             characterGuid, accountId, mapId, zoneId, affected);
+    return affected > 0;
   } catch (sql::SQLException &e) {
     LOG_ERROR("SaveCharacterOnLogout failed: {}", e.what());
     return false;
