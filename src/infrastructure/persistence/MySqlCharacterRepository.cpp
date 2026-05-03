@@ -84,6 +84,25 @@ bool EnsureCharactersMoneyColumn(std::shared_ptr<sql::Connection> conn) {
   }
 }
 
+bool EnsureCharactersXpColumn(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "ALTER TABLE `firelands_characters`.`characters` "
+        "ADD COLUMN `xp` int unsigned NOT NULL DEFAULT 0 AFTER `money`");
+    LOG_DEBUG("Added missing column `firelands_characters.characters.xp`.");
+    return true;
+  } catch (sql::SQLException &e) {
+    if (e.getErrorCode() == 1060)
+      return true;
+    std::string const msg{e.what()};
+    if (msg.find("Duplicate column") != std::string::npos)
+      return true;
+    LOG_WARN("EnsureCharactersXpColumn failed: {}", e.what());
+    return false;
+  }
+}
+
 bool EnsureCharacterSpellTable(std::shared_ptr<sql::Connection> conn) {
   try {
     std::unique_ptr<sql::Statement> st(conn->createStatement());
@@ -496,6 +515,7 @@ struct AccountCharacterRow {
   uint8_t outfitId = 0;
   std::string dbEquipmentCache;
   uint32_t money = 0;
+  uint32_t xp = 0;
 };
 
 } // namespace
@@ -507,6 +527,7 @@ MySqlCharacterRepository::MySqlCharacterRepository(
       _worldConnection(std::move(worldConnection)) {
   EnsureCharactersOrientationColumn(_connection);
   EnsureCharactersMoneyColumn(_connection);
+  EnsureCharactersXpColumn(_connection);
   EnsureCharacterSpellTable(_connection);
   _charStartOutfitLoaded =
       _charStartOutfitDbc.Load("data/dbc/CharStartOutfit.dbc");
@@ -526,7 +547,7 @@ MySqlCharacterRepository::GetCharactersByAccount(uint32_t accountId) {
         "SELECT guid, account, name, race, class, gender, skin, face, "
         "hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin, money "
+        "customizationFlags, firstLogin, money, xp "
         "FROM characters WHERE account = ?"));
     stmnt->setUInt(1, accountId);
 
@@ -562,6 +583,7 @@ MySqlCharacterRepository::GetCharactersByAccount(uint32_t accountId) {
           res->isNull("equipmentCache") ? ""
                                         : std::string(res->getString("equipmentCache"));
       row.money = res->getUInt("money");
+      row.xp = res->getUInt("xp");
       rows.push_back(std::move(row));
     }
     res.reset();
@@ -585,7 +607,7 @@ MySqlCharacterRepository::GetCharactersByAccount(uint32_t accountId) {
           std::array<uint32_t, kPackSlotCount>{},
           std::array<uint32_t, kPackSlotCount>{},
           std::array<uint32_t, kPackSlotCount>{},
-          r.money));
+          r.money, r.xp));
     }
   } catch (sql::SQLException &e) {
     LOG_ERROR("Database error in GetCharactersByAccount: {}", e.what());
@@ -600,8 +622,8 @@ MySqlCharacterRepository::CreateCharacter(const Character &character) {
         "INSERT INTO characters (account, name, race, class, gender, skin, "
         "face, hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin, money) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "customizationFlags, firstLogin, money, xp) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
 
     stmnt->setUInt(1, character.GetAccount());
     stmnt->setString(2, character.GetName());
@@ -627,6 +649,7 @@ MySqlCharacterRepository::CreateCharacter(const Character &character) {
     stmnt->setUInt(22, character.GetCustomizationFlags());
     stmnt->setBoolean(23, character.IsFirstLogin());
     stmnt->setUInt(24, character.GetMoney());
+    stmnt->setUInt(25, static_cast<unsigned int>(character.GetXp()));
 
     stmnt->executeUpdate();
 
@@ -817,7 +840,7 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
         "SELECT guid, account, name, race, class, gender, skin, face, "
         "hairStyle, hairColor, facialHair, outfitId, equipmentCache, "
         "level, zoneId, mapId, x, y, z, orientation, guildId, characterFlags, "
-        "customizationFlags, firstLogin, money "
+        "customizationFlags, firstLogin, money, xp "
         "FROM characters WHERE guid = ?"));
     stmnt->setUInt64(1, guid);
 
@@ -851,6 +874,7 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
           res->isNull("equipmentCache") ? ""
                                         : std::string(res->getString("equipmentCache"));
       uint32_t const money = res->getUInt("money");
+      uint32_t const xp = res->getUInt("xp");
       // Read the full row before nested queries; do not `res.reset()` here — closing
       // the result set early has been observed to upset the same connection/session
       // for the inventory query on some MariaDB connector builds.
@@ -861,7 +885,7 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
                        py, pz, po, guildId, characterFlags, customizationFlags,
                        firstLogin, outfitId, equipmentCache, bag0.equipEntries,
                        bag0.equipGuids, bag0.equipStacks, bag0.packEntries,
-                       bag0.packGuids, bag0.packStacks, money);
+                       bag0.packGuids, bag0.packStacks, money, xp);
     }
     return std::nullopt;
   } catch (sql::SQLException &e) {
@@ -872,11 +896,13 @@ MySqlCharacterRepository::GetCharacterByGuid(uint64_t guid) {
 
 bool MySqlCharacterRepository::SaveCharacterOnLogout(
     uint32_t accountId, uint32_t characterGuid, uint16_t mapId, uint16_t zoneId,
-    float x, float y, float z, float orientation, uint32_t moneyCopper) {
+    float x, float y, float z, float orientation, uint32_t moneyCopper,
+    uint32_t xp) {
   try {
     std::shared_ptr<sql::PreparedStatement> stmnt(_connection->prepareStatement(
         "UPDATE characters SET mapId = ?, zoneId = ?, x = ?, y = ?, z = ?, "
-        "orientation = ?, firstLogin = 0, money = ? WHERE guid = ? AND account = ?"));
+        "orientation = ?, firstLogin = 0, money = ?, xp = ? WHERE guid = ? AND "
+        "account = ?"));
     stmnt->setUInt(1, mapId);
     stmnt->setUInt(2, zoneId);
     stmnt->setDouble(3, static_cast<double>(FiniteOrZero(x)));
@@ -884,8 +910,9 @@ bool MySqlCharacterRepository::SaveCharacterOnLogout(
     stmnt->setDouble(5, static_cast<double>(FiniteOrZero(z)));
     stmnt->setDouble(6, static_cast<double>(FiniteOrZero(orientation)));
     stmnt->setUInt(7, moneyCopper);
-    stmnt->setUInt(8, characterGuid);
-    stmnt->setUInt(9, accountId);
+    stmnt->setUInt(8, xp);
+    stmnt->setUInt(9, characterGuid);
+    stmnt->setUInt(10, accountId);
     return stmnt->executeUpdate() > 0;
   } catch (sql::SQLException &e) {
     LOG_ERROR("SaveCharacterOnLogout failed: {}", e.what());
@@ -912,9 +939,10 @@ bool MySqlCharacterRepository::UpdateCharacterMoney(uint32_t accountId,
 bool MySqlCharacterRepository::UpdateCharacterLevel(uint32_t accountId,
                                                     uint32_t characterGuid,
                                                     uint8_t level) {
+  // Only used by GM set-level today: clears XP like Trinity `SetLevel` debug path.
   try {
     std::shared_ptr<sql::PreparedStatement> st(_connection->prepareStatement(
-        "UPDATE characters SET level = ? WHERE guid = ? AND account = ?"));
+        "UPDATE characters SET level = ?, xp = 0 WHERE guid = ? AND account = ?"));
     st->setUInt(1, level);
     st->setUInt(2, characterGuid);
     st->setUInt(3, accountId);

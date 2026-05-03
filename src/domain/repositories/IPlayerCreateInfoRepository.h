@@ -33,6 +33,10 @@ public:
 
   /// Trinity-style `player_racestats`; empty when row missing (treated as zeros).
   virtual std::optional<PlayerRaceStats> GetRaceStats(uint8_t race) = 0;
+
+  /// Trinity `player_xp_for_level`: XP to advance from `currentLevel` to
+  /// `currentLevel + 1` (levels 1..84). Returns 0 if the table/row is missing.
+  virtual uint32_t GetXpForNextLevel(uint8_t currentLevel) const = 0;
 };
 
 } // namespace Firelands

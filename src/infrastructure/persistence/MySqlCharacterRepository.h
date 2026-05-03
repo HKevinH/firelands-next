@@ -30,7 +30,7 @@ namespace Firelands {
         bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
                                    uint16_t mapId, uint16_t zoneId, float x,
                                    float y, float z, float orientation,
-                                   uint32_t moneyCopper) override;
+                                   uint32_t moneyCopper, uint32_t xp) override;
         bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
                                   uint32_t moneyCopper) override;
         bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,

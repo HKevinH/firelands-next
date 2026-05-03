@@ -17,6 +17,7 @@
 #include <shared/network/packets/SetProficiencyPacket.h>
 #include <shared/network/BitReader.h>
 #include <shared/network/SpellCastWire.h>
+#include <shared/network/UpdateFields.h>
 #include <shared/game/ChatLanguages.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/game/PlayerGmAppearance.h>
@@ -465,6 +466,7 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   Character const &character = *characterOpt;
   _playerRace = character.GetRace();
   _moneyCopper = character.GetMoney();
+  _playerXp = character.GetXp();
 
   LOG_DEBUG("PlayerLogin: Account={} GUID={} Name='{}' Level={} Map={}",
             _accountId, guid, character.GetName(), character.GetLevel(),
@@ -706,9 +708,14 @@ void WorldSession::LoginSpawnInWorld(uint64 guid, MovementInfo const &move) {
 void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
     uint64 guid, Character const &character, MovementInfo const &move) {
   GtPlayerStatGameTables const *const statGt = _charService->GetStatGameTables();
+  uint32_t const selfNextXp =
+      character.GetLevel() < 85
+          ? _charService->GetXpToNextLevelForLevel(character.GetLevel())
+          : 0u;
   // Now that the player is on the map, send create/update data and "after add" packets
   UpdateData update(_mapId);
-  auto selfFields = ws_obj::BuildPlayerUpdateFields(guid, character, statGt);
+  auto selfFields =
+      ws_obj::BuildPlayerUpdateFields(guid, character, statGt, selfNextXp);
   MergeGmAppearanceIntoPlayerFields(selfFields, GetGmAppearanceForPlayerUpdates());
   update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields);
 
@@ -742,7 +749,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
 
   // Other logged-in players see this client; this client sees them (same map).
   if (auto map = WorldService::Instance().GetMap(_mapId)) {
-    map->ForEachPlayer([this, guid, &character, &move, statGt](
+    map->ForEachPlayer([this, guid, &character, &move, statGt, selfNextXp](
                            std::shared_ptr<Player> const &other) {
       if (!other || other->GetGuid() == guid)
         return;
@@ -750,7 +757,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
           GetGmAppearanceForPlayerUpdates();
       if (auto n = other->GetNotifier()) {
         ws_obj::SendPlayerCreateToNotifier(n, _mapId, guid, character, move,
-                                           newPlayerGm, statGt);
+                                           newPlayerGm, statGt, selfNextXp);
       }
       if (auto otherCh = _charService->GetCharacterByGuid(other->GetGuid())) {
         PlayerGmAppearanceForUpdates otherGm{};
@@ -758,9 +765,14 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
                 std::dynamic_pointer_cast<WorldSession>(other->GetNotifier())) {
           otherGm = ows->GetGmAppearanceForPlayerUpdates();
         }
+        uint32_t const otherNext =
+            otherCh->GetLevel() < 85
+                ? _charService->GetXpToNextLevelForLevel(otherCh->GetLevel())
+                : 0u;
         ws_obj::SendPlayerCreateToNotifier(
             std::static_pointer_cast<IMapNotifier>(shared_from_this()), _mapId,
-            other->GetGuid(), *otherCh, other->GetPosition(), otherGm, statGt);
+            other->GetGuid(), *otherCh, other->GetPosition(), otherGm, statGt,
+            otherNext);
       }
     });
   }
@@ -825,7 +837,7 @@ void WorldSession::FinalizeWorldExit() {
 if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
                                            zoneIdDb, persistPos.x, persistPos.y,
                                            persistPos.z, persistPos.orientation,
-                                           _moneyCopper)) {
+                                           _moneyCopper, _playerXp)) {
     LOG_ERROR("SaveCharacterOnLogout failed for guid {}, account {}",
               charGuidLow, _accountId);
   } else {
@@ -857,6 +869,7 @@ if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
   _clientSelectionGuid = 0;
   _activeCharacterGuid = 0;
   _playerRace = 0;
+  _playerXp = 0;
   _knownSpells.clear();
   _gcdReady = {};
   ResetGmStateForLogout();
@@ -1722,8 +1735,17 @@ bool WorldSession::GmSetLevel(uint8 level) {
     SendNotification("Failed to set level.");
     return false;
   }
+  _playerXp = 0;
   std::map<uint16, uint32> f;
   f[UNIT_FIELD_LEVEL] = lv;
+  if (lv < 85) {
+    uint32_t const next = _charService->GetXpToNextLevelForLevel(lv);
+    f[PLAYER_XP] = 0;
+    f[PLAYER_NEXT_LEVEL_XP] = next;
+  } else {
+    f[PLAYER_XP] = 0;
+    f[PLAYER_NEXT_LEVEL_XP] = 0;
+  }
   UpdateData update(_mapId);
   update.AddValuesUpdate(_playerGuid, f);
   WorldPacket pkt(SMSG_UPDATE_OBJECT);

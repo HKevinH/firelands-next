@@ -104,6 +104,21 @@ CREATE TABLE IF NOT EXISTS `firelands_characters`.`gm_ticket` (
   CONSTRAINT `fk_gm_ticket_character` FOREIGN KEY (`character_guid`) REFERENCES `firelands_characters`.`characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- === 14_characters_add_xp.sql ===
+SET @exist :=
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+   WHERE TABLE_SCHEMA = DATABASE()
+     AND TABLE_NAME = 'characters'
+     AND COLUMN_NAME = 'xp');
+
+SET @sqlstmt := IF(@exist = 0,
+  'ALTER TABLE `characters` ADD COLUMN `xp` int unsigned NOT NULL DEFAULT 0 AFTER `money`',
+  'SELECT 1');
+
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 -- === z_ensure_character_account_data.sql ===
 CREATE TABLE IF NOT EXISTS `character_account_data` (
   `guid` int(10) unsigned NOT NULL,

@@ -274,6 +274,8 @@ private:
   uint8 _playerRace = 0;
   /// Persisted copper; mirrored on logout and after `.money` GM commands.
   uint32_t _moneyCopper = 0;
+  /// Persisted experience (`characters.xp`); mirrored on logout and GM level.
+  uint32_t _playerXp = 0;
   uint32 _mapId = 0;
   uint32 _zoneId = 0;
   MovementInfo _position;

@@ -50,7 +50,7 @@ public:
   virtual bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
                                      uint16_t mapId, uint16_t zoneId, float x,
                                      float y, float z, float orientation,
-                                     uint32_t moneyCopper) = 0;
+                                     uint32_t moneyCopper, uint32_t xp) = 0;
 
   virtual bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
                                     uint32_t moneyCopper) = 0;

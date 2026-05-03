@@ -364,7 +364,8 @@ std::map<uint16, uint32> BuildPlayerBag0InventoryValues(Character const &charact
 
 std::map<uint16, uint32> BuildPlayerUpdateFields(
     uint64 guid, Character const &character,
-    GtPlayerStatGameTables const *statGameTables) {
+    GtPlayerStatGameTables const *statGameTables,
+    uint32_t nextLevelXpFromWorld) {
   std::map<uint16, uint32> fields;
   fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
   fields[OBJECT_FIELD_GUID + 1] = (uint32)(guid >> 32);
@@ -392,6 +393,29 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
   fields[UNIT_FIELD_DISPLAYID] = character.GetDisplayId();
   fields[UNIT_FIELD_NATIVEDISPLAYID] = character.GetDisplayId();
   fields[UNIT_FIELD_BYTES_2] = 0;
+
+  // Action bar experience vs reputation: watched faction index -1 (as uint32 0xFFFFFFFF)
+  // means track XP. If this field is omitted from the create update, the client
+  // defaults to slot 0 and shows that faction's name/rep bar instead of experience.
+  fields[PLAYER_FIELD_WATCHED_FACTION_INDEX] = static_cast<uint32>(-1);
+  {
+    uint8 const lv = character.GetLevel();
+    constexpr uint8 kMaxLevelCata = 85;
+    if (lv >= kMaxLevelCata) {
+      fields[PLAYER_XP] = 0;
+      fields[PLAYER_NEXT_LEVEL_XP] = 0;
+    } else {
+      uint32_t next = nextLevelXpFromWorld;
+      if (next == 0)
+        next = 400u;
+      uint32_t xp = character.GetXp();
+      if (xp > next)
+        xp = next;
+      fields[PLAYER_XP] = xp;
+      fields[PLAYER_NEXT_LEVEL_XP] = next;
+    }
+  }
+
   AddBaselineMeleeFields(fields, character);
   AddBaselineSpellFields(fields, character, statGameTables);
   AddBaselineDefenseAndResistanceFields(fields, character, statGameTables);
@@ -467,10 +491,12 @@ void SendPlayerCreateToNotifier(
     std::shared_ptr<IMapNotifier> target, uint32 mapId, uint64 objectGuid,
     Character const &character, MovementInfo const &move,
     PlayerGmAppearanceForUpdates const &gmAppearance,
-    GtPlayerStatGameTables const *statGameTables) {
+    GtPlayerStatGameTables const *statGameTables,
+    uint32_t nextLevelXpFromWorld) {
   if (!target)
     return;
-  auto fields = BuildPlayerUpdateFields(objectGuid, character, statGameTables);
+  auto fields = BuildPlayerUpdateFields(objectGuid, character, statGameTables,
+                                        nextLevelXpFromWorld);
   MergeGmAppearanceIntoPlayerFields(fields, gmAppearance);
   UpdateData update(mapId);
   update.AddCreateObject(objectGuid, TYPEID_PLAYER, move, fields);

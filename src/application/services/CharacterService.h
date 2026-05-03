@@ -1,8 +1,8 @@
 #pragma once
 
+#include <domain/repositories/ICharacterRepository.h>
 #include <domain/models/Character.h>
 #include <domain/models/PlayerCreateInfo.h>
-#include <domain/repositories/ICharacterRepository.h>
 #include <application/services/PlayerCreateInfoService.h>
 #include <cstdint>
 #include <memory>
@@ -180,10 +180,11 @@ public:
 
   bool SaveCharacterOnLogout(uint32_t accountId, uint32_t characterGuid,
                              uint16_t mapId, uint16_t zoneId, float x, float y,
-                             float z, float orientation, uint32_t moneyCopper) {
+                             float z, float orientation, uint32_t moneyCopper,
+                             uint32_t xp) {
     return m_repository->SaveCharacterOnLogout(accountId, characterGuid, mapId,
-                                               zoneId, x, y, z, orientation,
-                                               moneyCopper);
+                                             zoneId, x, y, z, orientation,
+                                             moneyCopper, xp);
   }
 
 bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
@@ -334,6 +335,16 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
   GtPlayerStatGameTables const *GetStatGameTables() const {
     return m_playerCreateInfoService ? &m_playerCreateInfoService->GetStatGameTables()
                                      : nullptr;
+  }
+
+  /// XP to reach `level+1` from `level` (1..84). World DB `player_xp_for_level`; else 400.
+  uint32_t GetXpToNextLevelForLevel(uint8_t level) const {
+    constexpr uint8_t kMaxLevel = 85;
+    if (level == 0 || level >= kMaxLevel)
+      return 0;
+    if (!m_playerCreateInfoService)
+      return 400u;
+    return m_playerCreateInfoService->GetXpToNextLevelForLevel(level);
   }
 
 private:

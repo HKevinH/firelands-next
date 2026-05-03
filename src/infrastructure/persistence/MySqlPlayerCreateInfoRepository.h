@@ -2,7 +2,9 @@
 
 #include <domain/repositories/IPlayerCreateInfoRepository.h>
 #include <conncpp.hpp>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace Firelands {
 
@@ -28,8 +30,14 @@ public:
 
   std::optional<PlayerRaceStats> GetRaceStats(uint8_t race) override;
 
+  uint32_t GetXpForNextLevel(uint8_t currentLevel) const override;
+
 private:
+  void ensureXpForLevelLoaded() const;
+
   std::shared_ptr<sql::Connection> m_connection;
+  mutable bool m_xpForLevelLoadAttempted = false;
+  mutable std::vector<uint32_t> m_xpExperienceByLevel;
 };
 
 } // namespace Firelands

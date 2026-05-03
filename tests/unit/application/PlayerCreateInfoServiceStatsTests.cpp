@@ -22,6 +22,7 @@ public:
               (uint8_t, uint8_t), (override));
   MOCK_METHOD(std::optional<PlayerRaceStats>, GetRaceStats, (uint8_t),
               (override));
+  MOCK_METHOD(uint32_t, GetXpForNextLevel, (uint8_t), (const, override));
 };
 
 TEST(PlayerCreateInfoServiceStats, AppliesClassRaceAndSetsHealth) {

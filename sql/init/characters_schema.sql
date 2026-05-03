@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `customizationFlags` int(10) unsigned NOT NULL DEFAULT '0',
   `firstLogin` tinyint(3) unsigned NOT NULL DEFAULT '1',
   `money` int unsigned NOT NULL DEFAULT '0',
+  `xp` int unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`guid`),
   KEY `idx_account` (`account`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

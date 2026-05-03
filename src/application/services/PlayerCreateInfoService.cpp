@@ -35,6 +35,18 @@ PlayerCreateInfoService::PlayerCreateInfoService(
     m_statGameTables.Load(clientGameTablesDbcDir);
 }
 
+uint32_t PlayerCreateInfoService::GetXpToNextLevelForLevel(uint8_t level) const {
+  constexpr uint8_t kMaxLevel = 85;
+  if (level == 0 || level >= kMaxLevel)
+    return 0;
+  if (m_repository) {
+    uint32_t const v = m_repository->GetXpForNextLevel(level);
+    if (v != 0u)
+      return v;
+  }
+  return 400u;
+}
+
 bool PlayerCreateInfoService::TryApplyTemplateCombatState(Character &character) {
   if (!m_repository)
     return false;

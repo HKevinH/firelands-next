@@ -79,6 +79,9 @@ public:
     return m_statGameTables;
   }
 
+  /// XP to reach `level + 1` from world DB `player_xp_for_level`; fallback 400 if unset.
+  uint32_t GetXpToNextLevelForLevel(uint8_t level) const;
+
 private:
   std::shared_ptr<IPlayerCreateInfoRepository> m_repository;
   CharStartOutfitDbc m_charStartOutfitDbc;

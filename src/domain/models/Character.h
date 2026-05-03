@@ -24,7 +24,7 @@ public:
             std::array<uint32_t, kPackSlotCount> packItemEntries = {},
             std::array<uint32_t, kPackSlotCount> packItemGuids = {},
             std::array<uint32_t, kPackSlotCount> packItemStacks = {},
-            uint32 moneyCopper = 0)
+            uint32 moneyCopper = 0, uint32_t xp = 0)
       : m_guid(guid), m_account(account), m_name(std::move(name)), m_race(race),
         m_klass(klass), m_gender(gender), m_skin(skin), m_face(face),
         m_hairStyle(hairStyle), m_hairColor(hairColor),
@@ -36,7 +36,7 @@ public:
         m_visibleItems(visibleItems), m_visibleItemGuids(visibleItemGuids),
         m_visibleItemStacks(visibleItemStacks), m_packItemEntries(packItemEntries),
         m_packItemGuids(packItemGuids), m_packItemStacks(packItemStacks),
-        m_moneyCopper(moneyCopper), m_health(100), m_maxHealth(100),
+        m_moneyCopper(moneyCopper), m_xp(xp), m_health(100), m_maxHealth(100),
         m_factionTemplate(1), m_displayId(GetDefaultDisplayId(race, gender)),
         m_primaryStats(GetDefaultPrimaryStats(klass)) {}
 
@@ -186,6 +186,10 @@ public:
   /// Copper (WoW money unit); persisted in `characters.money`.
   uint32 GetMoney() const { return m_moneyCopper; }
 
+  /// Experience toward next level; persisted in `characters.xp`.
+  uint32_t GetXp() const { return m_xp; }
+  void SetXp(uint32_t xp) { m_xp = xp; }
+
   /// STR, AGI, STA, INT, SPI (`UNIT_FIELD_STAT0`..`STAT4`) after world template apply.
   uint32 GetPrimaryStat(uint8_t index) const {
     return index < 5 ? m_primaryStats[index] : 0u;
@@ -241,6 +245,7 @@ private:
   std::array<uint32_t, kPackSlotCount> m_packItemStacks{};
 
   uint32 m_moneyCopper = 0;
+  uint32_t m_xp = 0;
 
   uint32 m_health;
   uint32 m_maxHealth;

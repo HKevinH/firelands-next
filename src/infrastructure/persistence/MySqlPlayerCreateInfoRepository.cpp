@@ -244,4 +244,42 @@ MySqlPlayerCreateInfoRepository::GetExtraCreateItems(uint8 race, uint8 klass) {
   return rows;
 }
 
+void MySqlPlayerCreateInfoRepository::ensureXpForLevelLoaded() const {
+  if (m_xpForLevelLoadAttempted)
+    return;
+  m_xpForLevelLoadAttempted = true;
+  try {
+    std::unique_ptr<sql::Statement> st(m_connection->createStatement());
+    std::unique_ptr<sql::ResultSet> rs(st->executeQuery(
+        "SELECT `Level`, `Experience` FROM firelands_world.player_xp_for_level "
+        "ORDER BY `Level`"));
+    m_xpExperienceByLevel.assign(86u, 0u);
+    while (rs->next()) {
+      uint32_t const lvl = rs->getUInt("Level");
+      uint32_t const xp = rs->getUInt("Experience");
+      if (lvl > 0 && lvl < m_xpExperienceByLevel.size() && xp > 0)
+        m_xpExperienceByLevel[lvl] = xp;
+    }
+  } catch (sql::SQLException &e) {
+    if (IsMissingTableError(e))
+      LOG_WARN(
+          "player_xp_for_level missing in firelands_world; XP bar uses fallback "
+          "until sql/migrations/15_world_player_xp_for_level.sql is applied.");
+    else
+      LOG_ERROR("ensureXpForLevelLoaded failed: {}", e.what());
+    m_xpExperienceByLevel.clear();
+  }
+}
+
+uint32_t
+MySqlPlayerCreateInfoRepository::GetXpForNextLevel(uint8_t currentLevel) const {
+  if (currentLevel == 0 || currentLevel >= 85)
+    return 0;
+  ensureXpForLevelLoaded();
+  if (currentLevel < m_xpExperienceByLevel.size() &&
+      m_xpExperienceByLevel[currentLevel] != 0)
+    return m_xpExperienceByLevel[currentLevel];
+  return 0;
+}
+
 } // namespace Firelands
