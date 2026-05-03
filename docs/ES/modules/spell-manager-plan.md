@@ -94,13 +94,15 @@ Estas reglas deben aplicarse **desde la Fase A**, no al final.
 
 **Rendimiento:** orden estricto cheap→caro; caché opcional de LoS documentada.
 
-### Fase D — Primer efecto jugable (MVP)
+### Fase D — Primer efecto jugable
 
 1. Pipeline de efectos extensible (`IEffectHandler` o tabla de punteros a funciones).
 2. Un solo tipo: daño o curación directa a unidad con update de vida vía update fields existentes.
 3. Sin persistir cada tick de DoT en esta fase.
 
-**Estado (MVP inicial):** `SpellDefinition.directHealthEffectBasePoints` + merge opcional `spell_dbc.MvpDirectHealthDelta` (migración `19_world_spell_dbc_mvp_direct_health.sql`). Tras un cast válido, `SpellCastOutcome` indica el objetivo y el delta; `WorldSession` aplica el cambio en `Player` (vida en runtime) y emite `SMSG_UPDATE_OBJECT` (`UPDATETYPE_VALUES`) vía `BuildPlayerHealthValuesUpdate`. Criaturas / persistencia de vida en logout: pendiente.
+**Estado (pipeline):** composición de golpe en `application/spell/SpellHitEffects.*` (`ResolvePrimarySpellHitUnitGuid`, `ApplyImmediateHealthFromDefinition`, …). `SpellManager` solo valida y delega ahí para no mezclar reglas de targeting/efecto con GCD/cooldowns/red.
+
+**Estado:** `SpellDefinition.immediateHealthEffectDelta` se rellena desde cliente `SpellEffect.dbc` (efectos 2 daño por escuela, 10 curación): primera fila por `SpellID` en orden de `EffectIndex`; magnitud aproximada `(EffectBasePoints + 1) + punto medio del dado` cuando `EffectDieSides > 0`. Daño → delta negativo; curación → positivo. Sin columnas MVP en `spell_dbc` (limpieza migración `22_world_spell_dbc_drop_mvp_columns.sql`). Tras un cast válido, `SpellCastOutcome` indica objetivo y delta; `WorldSession` aplica en `Player` y emite `SMSG_UPDATE_OBJECT` (`UPDATETYPE_VALUES`) vía `BuildPlayerHealthValuesUpdate`. Criaturas / persistencia de vida en logout: pendiente.
 
 **Rendimiento:** evitar virtual calls profundos en cadena caliente si el profiler lo pide: switch por “family” de efecto o tabla estática por `Effect` id acotado.
 
@@ -111,7 +113,7 @@ Estas reglas deben aplicarse **desde la Fase A**, no al final.
 
 **Rendimiento:** no escanear listas largas; cooldown como mapa plano por spellId por sesión.
 
-**Estado (MVP inicial):** `Spell.dbc` carga `cooldownsId` → `SpellCooldowns.dbc` vía `ISpellCastTables::GetCooldownTiming` (`SpellCastTablesDbc` carga `SpellCooldowns.dbc`). GCD del cast = `StartRecoveryTime` si > 0, si no 1500 ms. `RecoveryTime` del mismo row se publica en `SpellCastOutcome.spellCooldownDurationMs`; `WorldSession` guarda `_spellCooldownUntil[spellId]`. Maná: `SpellDefinition.manaCost` desde merge opcional `spell_dbc.MvpManaCost` (migración 20); snapshot `casterPower1` desde `Player` en el mapa; fallo `SPELL_FAILED_NO_POWER`; en éxito `power1Delta` + `SMSG_UPDATE_OBJECT` POWER1. Power cost desde `SpellPower.dbc` / stats reales: pendiente.
+**Estado:** `Spell.dbc` carga `cooldownsId` → `SpellCooldowns.dbc` vía `ISpellCastTables::GetCooldownTiming` (`SpellCastTablesDbc` carga `SpellCooldowns.dbc`). GCD del cast = `StartRecoveryTime` si > 0, si no 1500 ms. `RecoveryTime` del mismo row se publica en `SpellCastOutcome.spellCooldownDurationMs`; `WorldSession` guarda `_spellCooldownUntil[spellId]`. Maná: `SpellDefinition.manaCost` desde `SpellPower.dbc` (`spellPowerId` en `Spell.dbc`) tras `SpellEntryDbcStore::ApplySpellPowerManaFromTables`; snapshot `casterPower1` desde `Player`; fallo `SPELL_FAILED_NO_POWER`; en éxito `power1Delta` + `SMSG_UPDATE_OBJECT` POWER1. Escalado por stats / otros power types: pendiente.
 
 ### Fase F — Auras, procs, scripts
 

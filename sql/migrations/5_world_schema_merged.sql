@@ -373,8 +373,6 @@ CREATE TABLE IF NOT EXISTS `spell_dbc` (
   `OvDurationIndex` int unsigned DEFAULT NULL COMMENT 'Override durationIndex, NULL keeps DBC',
   `OvRangeIndex` int unsigned DEFAULT NULL COMMENT 'Override rangeIndex, NULL keeps DBC',
   `OvSchoolMask` int unsigned DEFAULT NULL COMMENT 'Override schoolMask, NULL keeps DBC',
-  `MvpDirectHealthDelta` int DEFAULT NULL COMMENT 'Phase D MVP: direct health delta on hit, NULL = none',
-  `MvpManaCost` int unsigned DEFAULT NULL COMMENT 'Phase E MVP: flat POWER1 cost, NULL = none',
   `SpellName` varchar(128) NOT NULL,
   PRIMARY KEY (`Id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom spell.dbc entries';
@@ -568,8 +566,37 @@ CREATE TABLE IF NOT EXISTS `spelleffect_dbc` (
 
 -- spell_dbc: see sql/migrations/17_world_spell_dbc_merge.sql (PowerType ALTER for old DBs),
 -- sql/migrations/18_world_spell_dbc_ov_columns.sql (Ov* ALTER for DBs created before Ov* in CREATE),
--- sql/migrations/19_world_spell_dbc_mvp_direct_health.sql (MvpDirectHealthDelta for Phase D MVP),
--- sql/migrations/20_world_spell_dbc_mvp_mana_cost.sql (MvpManaCost for Phase E MVP).
+-- sql/migrations/22_world_spell_dbc_drop_mvp_columns.sql (drops legacy MVP columns if present).
+
+-- === 22_world_spell_dbc_drop_mvp_columns.sql ===
+SET @exist :=
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+   WHERE TABLE_SCHEMA = DATABASE()
+     AND TABLE_NAME = 'spell_dbc'
+     AND COLUMN_NAME = 'MvpManaCost');
+
+SET @sqlstmt := IF(@exist > 0,
+  'ALTER TABLE `spell_dbc` DROP COLUMN `MvpManaCost`',
+  'SELECT 1');
+
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @exist :=
+  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+   WHERE TABLE_SCHEMA = DATABASE()
+     AND TABLE_NAME = 'spell_dbc'
+     AND COLUMN_NAME = 'MvpDirectHealthDelta');
+
+SET @sqlstmt := IF(@exist > 0,
+  'ALTER TABLE `spell_dbc` DROP COLUMN `MvpDirectHealthDelta`',
+  'SELECT 1');
+
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 
 -- === z_ensure_player_classlevelstats_seed.sql (idempotent seed) ===
 INSERT IGNORE INTO `player_classlevelstats` (`class`, `level`, `str`, `agi`, `sta`, `inte`, `spi`) VALUES

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <domain/world/Creature.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
 #include <shared/Logger.h>
@@ -92,6 +93,14 @@ std::shared_ptr<Player> Map::TryGetPlayer(uint64 guid) {
   if (it == m_objects.end())
     return nullptr;
   return std::dynamic_pointer_cast<Player>(it->second);
+}
+
+std::shared_ptr<Creature> Map::TryGetCreature(uint64 guid) {
+  std::lock_guard<std::mutex> lock(m_mapMutex);
+  auto it = m_objects.find(guid);
+  if (it == m_objects.end())
+    return nullptr;
+  return std::dynamic_pointer_cast<Creature>(it->second);
 }
 
 void Map::BroadcastPacket(uint64 senderGuid, WorldPacket &packet,

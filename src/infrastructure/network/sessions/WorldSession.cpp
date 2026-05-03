@@ -666,6 +666,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
   }
   _gcdReady = {};
   _spellCooldownUntil.clear();
+  _spellCategoryCooldownUntil.clear();
   // At world login this packet must initialize client spellbook state,
   // including passive language spells. Existing characters may have
   // `firstLogin = false`, but the client still expects InitialLogin=1 here.
@@ -922,6 +923,7 @@ void WorldSession::FinalizeWorldExit() {
   _knownSpells.clear();
   _gcdReady = {};
   _spellCooldownUntil.clear();
+  _spellCategoryCooldownUntil.clear();
   ResetGmStateForLogout();
   _mapId = 0;
   _zoneId = 0;
@@ -1156,6 +1158,7 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
     req.collisionQueries = collisionHeld.get();
 
   req.spellCooldownUntilBySpellId = &_spellCooldownUntil;
+  req.spellCategoryCooldownUntilByGroup = &_spellCategoryCooldownUntil;
   if (auto map = WorldService::Instance().GetMap(_mapId)) {
     if (auto casterPl = map->TryGetPlayer(_playerGuid)) {
       req.hasCasterPowerSnapshot = true;
@@ -1184,6 +1187,14 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
               target->GetLiveHealth(), target->GetLiveMaxHealth(), hpUpdate);
           map->BroadcastPacketToNearby(out.directHealthTargetGuid, hpUpdate,
                                        true);
+        } else if (auto cr = map->TryGetCreature(out.directHealthTargetGuid)) {
+          cr->ApplyHealthDelta(out.directHealthDelta);
+          WorldPacket hpUpdate;
+          ws_obj::BuildPlayerHealthValuesUpdate(
+              static_cast<uint16>(_mapId), out.directHealthTargetGuid,
+              cr->GetLiveHealth(), cr->GetLiveMaxHealth(), hpUpdate);
+          map->BroadcastPacketToNearby(out.directHealthTargetGuid, hpUpdate,
+                                       true);
         }
       }
       if (out.power1Delta != 0) {
@@ -1201,6 +1212,12 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
         _spellCooldownUntil[sid] =
             now + std::chrono::milliseconds(
                       static_cast<int64_t>(out.spellCooldownDurationMs));
+      }
+      if (out.spellCategoryCooldownGroup > 0 &&
+          out.spellCategoryCooldownDurationMs > 0) {
+        _spellCategoryCooldownUntil[out.spellCategoryCooldownGroup] =
+            now + std::chrono::milliseconds(static_cast<int64_t>(
+                out.spellCategoryCooldownDurationMs));
       }
     } else {
       SendPacket(out.spellStart);

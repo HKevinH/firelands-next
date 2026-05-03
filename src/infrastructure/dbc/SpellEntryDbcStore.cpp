@@ -4,14 +4,29 @@
 #include <shared/dbc/DbcReader.h>
 #include <shared/Logger.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace Firelands {
 
 namespace {
+
+// TCPP `SpellEffectEntryfmt[] = "nifiiiffiiiiiifiifiiiiiiiix"`
+constexpr std::string_view kSpellEffectFmt =
+    "nifiiiffiiiiiifiifiiiiiiiix";
+
+constexpr uint32_t kSpellEffectFieldEffect = 1;
+constexpr uint32_t kSpellEffectFieldBasePoints = 5;
+constexpr uint32_t kSpellEffectFieldDieSides = 9;
+constexpr uint32_t kSpellEffectFieldSpellID = 24;
+constexpr uint32_t kSpellEffectFieldEffectIndex = 25;
+
+constexpr uint32_t SPELL_EFFECT_SCHOOL_DAMAGE = 2;
+constexpr uint32_t SPELL_EFFECT_HEAL = 10;
 
 // TCPP `src/server/game/DataStores/DBCfmt.h` — must match client `Spell.dbc` for 15595.
 constexpr std::string_view kSpellEntryFmt =
@@ -26,6 +41,7 @@ constexpr uint32_t kFieldDurationIndex = 13;
 constexpr uint32_t kFieldPowerType = 14;
 constexpr uint32_t kFieldRangeIndex = 15;
 constexpr uint32_t kFieldSchoolMask = 25;
+constexpr uint32_t kFieldCategoriesId = 35;
 constexpr uint32_t kFieldCooldownsId = 37;
 /// TCPP `SpellEntry::PowerDisplayID` — row id in `SpellPower.dbc` (`SpellInfo::SpellPowerId`).
 constexpr uint32_t kFieldSpellPowerId = 42;
@@ -34,13 +50,13 @@ static size_t LastFieldSizeBytes(char lastFmt) {
   return ((lastFmt == 'b') || (lastFmt == 'X')) ? 1u : 4u;
 }
 
-static bool ExpectedLayout(DbcReader const &reader,
-                           std::vector<uint32_t> const &offsets) {
+static bool ExpectedRecordLayout(DbcReader const &reader, std::string_view fmt,
+                                 std::vector<uint32_t> const &offsets) {
   if (offsets.size() != reader.GetFieldCount())
     return false;
   if (offsets.empty())
     return false;
-  char const last = kSpellEntryFmt[kSpellEntryFmt.size() - 1];
+  char const last = fmt[fmt.size() - 1];
   size_t const expected =
       static_cast<size_t>(offsets.back()) + LastFieldSizeBytes(last);
   return expected == static_cast<size_t>(reader.GetRecordSize());
@@ -52,27 +68,12 @@ static char const* const kSpellDbcMergeQueryFull =
     "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
     "`OvRangeIndex`, `OvSchoolMask` FROM `firelands_world`.`spell_dbc`";
 
-static char const* const kSpellDbcMergeQueryFullWithMvp =
-    "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
-    "`RangeIndex`, "
-    "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
-    "`OvRangeIndex`, `OvSchoolMask`, `MvpDirectHealthDelta` FROM "
-    "`firelands_world`.`spell_dbc`";
-
-static char const* const kSpellDbcMergeQueryFullWithMvpAndMana =
-    "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
-    "`RangeIndex`, "
-    "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
-    "`OvRangeIndex`, `OvSchoolMask`, `MvpDirectHealthDelta`, `MvpManaCost` FROM "
-    "`firelands_world`.`spell_dbc`";
-
 static char const* const kSpellDbcMergeQueryLegacy =
     "SELECT `Id`, `Attributes`, `AttributesEx2`, `CastingTimeIndex`, `DurationIndex`, "
     "`RangeIndex`, "
     "`SchoolMask`, `PowerType` FROM `firelands_world`.`spell_dbc`";
 
 static void ApplySpellDbcMergeRow(sql::ResultSet& rs, bool hasOvColumns,
-                                  bool hasMvpHealthColumn, bool hasMvpManaColumn,
                                   std::unordered_map<uint32, SpellDefinition>& byId) {
   uint32 const id = static_cast<uint32>(rs.getUInt("Id"));
   if (id == 0u)
@@ -105,11 +106,6 @@ static void ApplySpellDbcMergeRow(sql::ResultSet& rs, bool hasOvColumns,
       if (!rs.isNull("OvSchoolMask"))
         d.schoolMask = static_cast<uint32>(rs.getUInt("OvSchoolMask"));
     }
-    if (hasMvpHealthColumn && !rs.isNull("MvpDirectHealthDelta"))
-      d.directHealthEffectBasePoints =
-          static_cast<int32>(rs.getInt("MvpDirectHealthDelta"));
-    if (hasMvpManaColumn && !rs.isNull("MvpManaCost"))
-      d.manaCost = static_cast<uint32>(rs.getUInt("MvpManaCost"));
     return;
   }
 
@@ -135,12 +131,23 @@ static void ApplySpellDbcMergeRow(sql::ResultSet& rs, bool hasOvColumns,
     if (!rs.isNull("OvSchoolMask"))
       d.schoolMask = static_cast<uint32>(rs.getUInt("OvSchoolMask"));
   }
-  if (hasMvpHealthColumn && !rs.isNull("MvpDirectHealthDelta"))
-    d.directHealthEffectBasePoints =
-        static_cast<int32>(rs.getInt("MvpDirectHealthDelta"));
-  if (hasMvpManaColumn && !rs.isNull("MvpManaCost"))
-    d.manaCost = static_cast<uint32>(rs.getUInt("MvpManaCost"));
   byId.emplace(id, d);
+}
+
+static int32 SignedImmediateHealthDelta(uint32 effect, int32 basePoints,
+                                        int32 dieSides) {
+  int32 const bpPlusOne = basePoints + 1;
+  int32 diceMid = 0;
+  if (dieSides > 0)
+    diceMid = (dieSides + 1) / 2;
+  int32 const magnitude = bpPlusOne + diceMid;
+  if (magnitude == 0)
+    return 0;
+  if (effect == SPELL_EFFECT_SCHOOL_DAMAGE)
+    return -magnitude;
+  if (effect == SPELL_EFFECT_HEAL)
+    return magnitude;
+  return 0;
 }
 
 } // namespace
@@ -159,7 +166,7 @@ bool SpellEntryDbcStore::Load(std::string const &path) {
              reader.GetFieldCount(), kSpellEntryFmt.size());
     return false;
   }
-  if (!ExpectedLayout(reader, offsets)) {
+  if (!ExpectedRecordLayout(reader, kSpellEntryFmt, offsets)) {
     LOG_WARN(
         "Spell.dbc: record size {} does not match SpellEntryfmt-derived size (path={})",
         reader.GetRecordSize(), path);
@@ -181,6 +188,7 @@ bool SpellEntryDbcStore::Load(std::string const &path) {
     def.powerType = reader.ReadUInt32(rec, kFieldPowerType, offsets);
     def.rangeIndex = reader.ReadUInt32(rec, kFieldRangeIndex, offsets);
     def.schoolMask = reader.ReadUInt32(rec, kFieldSchoolMask, offsets);
+    def.categoriesId = reader.ReadUInt32(rec, kFieldCategoriesId, offsets);
     def.cooldownsId = reader.ReadUInt32(rec, kFieldCooldownsId, offsets);
     def.spellPowerId = reader.ReadUInt32(rec, kFieldSpellPowerId, offsets);
     m_byId.emplace(id, def);
@@ -207,42 +215,22 @@ void SpellEntryDbcStore::MergeSpellDbcRows(std::shared_ptr<sql::Connection> worl
     std::unique_ptr<sql::Statement> st(worldConn->createStatement());
     std::unique_ptr<sql::ResultSet> rs;
     bool hasOvColumns = true;
-    bool hasMvpHealthColumn = false;
-    bool hasMvpManaColumn = false;
     try {
-      rs.reset(st->executeQuery(kSpellDbcMergeQueryFullWithMvpAndMana));
-      hasMvpHealthColumn = true;
-      hasMvpManaColumn = true;
+      rs.reset(st->executeQuery(kSpellDbcMergeQueryFull));
     } catch (sql::SQLException& e) {
       if (e.getErrorCode() != 1054) {
         throw;
       }
-      try {
-        rs.reset(st->executeQuery(kSpellDbcMergeQueryFullWithMvp));
-        hasMvpHealthColumn = true;
-      } catch (sql::SQLException& e2) {
-        if (e2.getErrorCode() != 1054) {
-          throw;
-        }
-        try {
-          rs.reset(st->executeQuery(kSpellDbcMergeQueryFull));
-        } catch (sql::SQLException& e3) {
-          if (e3.getErrorCode() != 1054) {
-            throw;
-          }
-          hasOvColumns = false;
-          LOG_DEBUG(
-              "spell_dbc: Ov* columns missing (apply migration 18); merge uses PowerType "
-              "and full-row custom spells only.");
-          rs.reset(st->executeQuery(kSpellDbcMergeQueryLegacy));
-        }
-      }
+      hasOvColumns = false;
+      LOG_DEBUG(
+          "spell_dbc: Ov* columns missing (apply migration 18); merge uses PowerType "
+          "and full-row custom spells only.");
+      rs.reset(st->executeQuery(kSpellDbcMergeQueryLegacy));
     }
 
     size_t merged = 0;
     while (rs->next()) {
-      ApplySpellDbcMergeRow(*rs, hasOvColumns, hasMvpHealthColumn, hasMvpManaColumn,
-                            m_byId);
+      ApplySpellDbcMergeRow(*rs, hasOvColumns, m_byId);
       ++merged;
     }
     if (merged > 0u)
@@ -256,6 +244,92 @@ void SpellEntryDbcStore::MergeSpellDbcRows(std::shared_ptr<sql::Connection> worl
       LOG_WARN("spell_dbc merge skipped: {}", e.what());
     }
   }
+}
+
+void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
+    std::string const &path) {
+  if (m_byId.empty())
+    return;
+
+  DbcReader reader;
+  if (!reader.Load(path)) {
+    LOG_WARN("SpellEffect.dbc: failed to load {}.", path);
+    return;
+  }
+
+  std::vector<uint32_t> const offsets = DbcBuildFieldByteOffsets(kSpellEffectFmt);
+  if (!reader.VerifyFormat(kSpellEffectFmt)) {
+    LOG_WARN("SpellEffect.dbc: field count {} does not match format length {} (path={}).",
+             reader.GetFieldCount(), kSpellEffectFmt.size(), path);
+    return;
+  }
+  if (!ExpectedRecordLayout(reader, kSpellEffectFmt, offsets)) {
+    LOG_WARN(
+        "SpellEffect.dbc: record size {} does not match format-derived size (path={}).",
+        reader.GetRecordSize(), path);
+    return;
+  }
+
+  struct CandidateRow {
+    uint32_t spellId;
+    uint32_t effectIndex;
+    uint32_t effect;
+    int32_t basePoints;
+    int32_t dieSides;
+  };
+  std::vector<CandidateRow> candidates;
+  uint32_t const n = reader.GetRecordCount();
+  candidates.reserve(static_cast<size_t>(n) / 8u + 8u);
+
+  for (uint32_t rec = 0; rec < n; ++rec) {
+    uint32_t const spellId =
+        reader.ReadUInt32(rec, kSpellEffectFieldSpellID, offsets);
+    if (spellId == 0u)
+      continue;
+    uint32_t const effect =
+        reader.ReadUInt32(rec, kSpellEffectFieldEffect, offsets);
+    if (effect != SPELL_EFFECT_SCHOOL_DAMAGE && effect != SPELL_EFFECT_HEAL)
+      continue;
+    int32_t const basePoints =
+        reader.ReadInt32(rec, kSpellEffectFieldBasePoints, offsets);
+    int32_t const dieSides =
+        reader.ReadInt32(rec, kSpellEffectFieldDieSides, offsets);
+    uint32_t const effectIndex =
+        reader.ReadUInt32(rec, kSpellEffectFieldEffectIndex, offsets);
+    candidates.push_back(CandidateRow{spellId, effectIndex, effect, basePoints,
+                                      dieSides});
+  }
+
+  std::sort(candidates.begin(), candidates.end(),
+            [](CandidateRow const &a, CandidateRow const &b) {
+              if (a.spellId != b.spellId)
+                return a.spellId < b.spellId;
+              return a.effectIndex < b.effectIndex;
+            });
+
+  size_t applied = 0;
+  uint32_t skipSpellId = 0;
+  for (CandidateRow const &row : candidates) {
+    if (row.spellId == skipSpellId)
+      continue;
+    auto it = m_byId.find(row.spellId);
+    if (it == m_byId.end()) {
+      skipSpellId = row.spellId;
+      continue;
+    }
+    skipSpellId = row.spellId;
+    int32_t const delta =
+        SignedImmediateHealthDelta(row.effect, row.basePoints, row.dieSides);
+    if (delta != 0) {
+      it->second.immediateHealthEffectDelta = delta;
+      ++applied;
+    }
+  }
+
+  if (applied > 0u)
+    LOG_DEBUG(
+        "SpellEffect.dbc: set immediateHealthEffectDelta on {} spell(s) from {}.",
+        applied, path);
 }
 
 bool SpellEntryDbcStore::HasSpell(uint32 spellId) const {

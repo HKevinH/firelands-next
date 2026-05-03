@@ -128,12 +128,55 @@ static bool LoadSpellPower(std::string const &path,
   return true;
 }
 
+// TCPP `SpellCategoriesEntryfmt[] = "diiiiii";`
+static bool LoadSpellCategories(
+    std::string const &path,
+    std::unordered_map<uint32, uint32> &outCategoriesRowIdToCategoryGroup) {
+  outCategoriesRowIdToCategoryGroup.clear();
+  if (path.empty())
+    return false;
+  constexpr std::string_view kFmt = "diiiiii";
+  DbcReader reader;
+  if (!reader.Load(path)) {
+    LOG_WARN("SpellCategories.dbc not found or unreadable: {}", path);
+    return false;
+  }
+  std::vector<uint32_t> const offsets = DbcBuildFieldByteOffsets(kFmt);
+  if (!reader.VerifyFormat(kFmt)) {
+    LOG_WARN("SpellCategories.dbc: field count mismatch (path={})", path);
+    return false;
+  }
+  char const last = kFmt[kFmt.size() - 1];
+  size_t const expected =
+      static_cast<size_t>(offsets.back()) +
+      (((last == 'b') || (last == 'X')) ? 1u : 4u);
+  if (expected != static_cast<size_t>(reader.GetRecordSize())) {
+    LOG_WARN("SpellCategories.dbc: record size {} expected {} (path={})",
+             reader.GetRecordSize(), expected, path);
+    return false;
+  }
+
+  uint32_t const n = reader.GetRecordCount();
+  outCategoriesRowIdToCategoryGroup.reserve(static_cast<size_t>(n));
+  for (uint32_t rec = 0; rec < n; ++rec) {
+    uint32_t const id = reader.ReadUInt32(rec, 0, offsets);
+    if (id == 0u)
+      continue;
+    uint32_t const category = reader.ReadUInt32(rec, 1, offsets);
+    outCategoriesRowIdToCategoryGroup.emplace(id, category);
+  }
+  LOG_DEBUG("SpellCategories.dbc: {} rows from {}.",
+            outCategoriesRowIdToCategoryGroup.size(), path);
+  return !outCategoriesRowIdToCategoryGroup.empty();
+}
+
 } // namespace
 
 bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
                               std::string const &spellRangePath,
                               std::string const &spellCooldownsPath,
-                              std::string const &spellPowerPath) {
+                              std::string const &spellPowerPath,
+                              std::string const &spellCategoriesPath) {
   bool const ct = LoadCastTimes(spellCastTimesPath, m_castBaseMs);
   bool const rg = LoadSpellRange(spellRangePath, m_rangeMaxYards);
   bool cd = false;
@@ -179,7 +222,10 @@ bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
   }
   m_spellPowerManaCost.clear();
   bool const sp = LoadSpellPower(spellPowerPath, m_spellPowerManaCost);
-  return ct || rg || cd || sp;
+  m_spellCategoryGroupByCategoriesRowId.clear();
+  bool const sc =
+      LoadSpellCategories(spellCategoriesPath, m_spellCategoryGroupByCategoriesRowId);
+  return ct || rg || cd || sp || sc;
 }
 
 uint32 SpellCastTablesDbc::GetCastTimeMs(uint32 castingTimeIndex) const {
@@ -228,6 +274,16 @@ uint32 SpellCastTablesDbc::GetSpellPowerManaCost(uint32 spellPowerId) const {
     return 0u;
   auto it = m_spellPowerManaCost.find(spellPowerId);
   if (it == m_spellPowerManaCost.end())
+    return 0u;
+  return it->second;
+}
+
+uint32 SpellCastTablesDbc::GetSpellCategoryGroupForCategoriesId(
+    uint32 categoriesId) const {
+  if (categoriesId == 0u)
+    return 0u;
+  auto it = m_spellCategoryGroupByCategoriesRowId.find(categoriesId);
+  if (it == m_spellCategoryGroupByCategoriesRowId.end())
     return 0u;
   return it->second;
 }

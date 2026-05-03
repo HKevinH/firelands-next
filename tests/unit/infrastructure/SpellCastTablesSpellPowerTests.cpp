@@ -55,7 +55,7 @@ TEST(SpellCastTablesDbcSpellPowerTests, GetSpellPowerManaCostFromMinimalDbc) {
   }
 
   SpellCastTablesDbc tables;
-  ASSERT_TRUE(tables.Load("", "", "", tmp.string()));
+  ASSERT_TRUE(tables.Load("", "", "", tmp.string(), ""));
 
   EXPECT_EQ(tables.GetSpellPowerManaCost(0u), 0u);
   EXPECT_EQ(tables.GetSpellPowerManaCost(9001u), 4242u);

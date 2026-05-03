@@ -11,6 +11,7 @@
 namespace Firelands {
 
 class WorldSession;
+class Creature;
 
 class Map {
 public:
@@ -37,6 +38,9 @@ public:
 
   /// Returns the player on this map, or nullptr if missing or not a player.
   std::shared_ptr<Player> TryGetPlayer(uint64 guid);
+
+  /// Returns the creature on this map, or nullptr if missing or not a creature.
+  std::shared_ptr<Creature> TryGetCreature(uint64 guid);
 
 private:
   struct GridCoord {

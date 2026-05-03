@@ -1,5 +1,6 @@
 #include <application/spell/SpellManager.h>
 
+#include <application/spell/SpellHitEffects.h>
 #include <application/ports/IMapCollisionQueries.h>
 #include <shared/game/SpellAttributes.h>
 
@@ -34,6 +35,8 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   out->directHealthDelta = 0;
   out->power1Delta = 0;
   out->spellCooldownDurationMs = 0;
+  out->spellCategoryCooldownGroup = 0;
+  out->spellCategoryCooldownDurationMs = 0;
 
   uint32 const spellId = static_cast<uint32>(req.client.spellId);
   if (!IsSpellKnown(spellId, req.knownSpells)) {
@@ -64,9 +67,35 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
     return;
   }
 
+  uint32 cooldownCategoryRecoveryMs = 0;
+  uint32 cooldownRecoveryMs = 0;
+  uint32 cooldownGcdMs = 0;
+  if (def && m_spellCastTables) {
+    m_spellCastTables->GetCooldownTiming(def->cooldownsId, &cooldownCategoryRecoveryMs,
+                                         &cooldownRecoveryMs, &cooldownGcdMs);
+  }
+
   if (def && req.spellCooldownUntilBySpellId != nullptr) {
     auto const it = req.spellCooldownUntilBySpellId->find(spellId);
     if (it != req.spellCooldownUntilBySpellId->end() && req.now < it->second) {
+      SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                       req.client.castId, req.client.spellId,
+                                       SpellCastWire::SPELL_FAILED_NOT_READY);
+      out->kind = SpellCastOutcome::Kind::SpellFailure;
+      return;
+    }
+  }
+
+  uint32 categoryGroup = 0;
+  if (def && m_spellCastTables)
+    categoryGroup = m_spellCastTables->GetSpellCategoryGroupForCategoriesId(
+        def->categoriesId);
+  if (def && req.spellCategoryCooldownUntilByGroup != nullptr &&
+      cooldownCategoryRecoveryMs > 0u && categoryGroup > 0u) {
+    auto const cit =
+        req.spellCategoryCooldownUntilByGroup->find(categoryGroup);
+    if (cit != req.spellCategoryCooldownUntilByGroup->end() &&
+        req.now < cit->second) {
       SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
                                        req.client.castId, req.client.spellId,
                                        SpellCastWire::SPELL_FAILED_NOT_READY);
@@ -136,29 +165,20 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
                                                     : req.casterGuid;
   }
 
-  uint64 hitGuid = req.casterGuid;
-  if ((req.client.targetFlags & SpellCastWire::ClientTargetPrimaryGuidMask) != 0 &&
-      req.client.unitTargetGuid != 0)
-    hitGuid = req.client.unitTargetGuid;
+  uint64 const hitGuid = SpellHitEffects::ResolvePrimarySpellHitUnitGuid(
+      req.client.targetFlags, req.casterGuid, req.client.unitTargetGuid);
 
-  if (def) {
-    if (def->directHealthEffectBasePoints != 0) {
-      out->hasDirectHealthEffect = true;
-      out->directHealthTargetGuid = hitGuid;
-      out->directHealthDelta = def->directHealthEffectBasePoints;
-    }
+  SpellHitEffects::ApplyImmediateHealthFromDefinition(
+      def.has_value() ? &*def : nullptr, hitGuid, out);
+
+  if (cooldownRecoveryMs > 0u)
+    out->spellCooldownDurationMs = cooldownRecoveryMs;
+  if (cooldownCategoryRecoveryMs > 0u && categoryGroup > 0u) {
+    out->spellCategoryCooldownGroup = categoryGroup;
+    out->spellCategoryCooldownDurationMs = cooldownCategoryRecoveryMs;
   }
 
-  uint32 recoveryMs = 0;
-  uint32 gcdMs = 0;
-  if (m_spellCastTables && def) {
-    uint32 catMs = 0;
-    m_spellCastTables->GetCooldownTiming(def->cooldownsId, &catMs, &recoveryMs, &gcdMs);
-    (void)catMs;
-    if (recoveryMs > 0u)
-      out->spellCooldownDurationMs = recoveryMs;
-  }
-  uint32 gcdDuration = gcdMs > 0u ? gcdMs : 1500u;
+  uint32 gcdDuration = cooldownGcdMs > 0u ? cooldownGcdMs : 1500u;
   gcdDuration = std::min(gcdDuration, 10000u);
   out->newGcdReady =
       req.now + std::chrono::milliseconds(static_cast<int64_t>(gcdDuration));

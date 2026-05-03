@@ -24,6 +24,11 @@ public:
   /// `SpellPower.dbc` `ManaCost` for row id `spellPowerId` (Spell.dbc `PowerDisplayID`); 0 if
   /// id is 0 or row missing.
   virtual uint32 GetSpellPowerManaCost(uint32 spellPowerId) const = 0;
+
+  /// `SpellCategories.dbc` `Category` field for row id `categoriesId` from `Spell.dbc`
+  /// (`CategoriesID`). Used with `SpellCooldowns.dbc` `CategoryRecoveryTime` for category
+  /// cooldown. Returns 0 if unknown or `categoriesId` is 0.
+  virtual uint32 GetSpellCategoryGroupForCategoriesId(uint32 categoriesId) const = 0;
 };
 
 } // namespace Firelands

@@ -44,6 +44,9 @@ struct SpellCastRequest {
   /// Per-caster spell cooldown end times (`spellId` → instant). Null = skip check.
   std::unordered_map<uint32, std::chrono::steady_clock::time_point> const *
       spellCooldownUntilBySpellId = nullptr;
+  /// Per-caster category cooldown (`SpellCategories.Category` group → instant). Null = skip.
+  std::unordered_map<uint32, std::chrono::steady_clock::time_point> const *
+      spellCategoryCooldownUntilByGroup = nullptr;
   /// When set with `manaCost` on the definition, `SpellManager` validates power1.
   bool hasCasterPowerSnapshot = false;
   uint32 casterPower1 = 0;
@@ -67,11 +70,14 @@ struct SpellCastOutcome {
   int32 power1Delta = 0;
   /// If non-zero, caller should set `spellCooldownUntil[spellId] = now + duration`.
   uint32 spellCooldownDurationMs = 0;
+  /// If non-zero with `spellCategoryCooldownDurationMs`, caller updates category CD map.
+  uint32 spellCategoryCooldownGroup = 0;
+  uint32 spellCategoryCooldownDurationMs = 0;
 };
 
 /// Centralizes spell cast validation and server-side spell wire output (Phase A+).
-/// Phase D MVP effects (e.g. direct health) are encoded in `SpellCastOutcome`; a future
-/// `IEffectHandler` chain can split this without changing the wire contract.
+/// Phase D hit payloads (direct health, …) are composed via `SpellHitEffects::*` into
+/// `SpellCastOutcome`; add functions there to extend behavior without bloating this class.
 /// Thread-safety: const methods only; per-session mutable state stays on `WorldSession`
 /// (`_gcdReady`, `_knownSpells`) passed in/out via `SpellCastRequest` / `SpellCastOutcome`.
 class SpellManager {

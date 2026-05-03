@@ -62,6 +62,24 @@ TEST_F(MapTests, BroadcastPacket_IncludeSelf_SendsToAll) {
     map->BroadcastPacket(1, packet, true);
 }
 
+TEST_F(MapTests, TryGetCreature_ReturnsCreature) {
+  auto map = std::make_shared<Map>(1);
+  auto creature = std::make_shared<Creature>(999u, 42u, 15688u);
+  map->AddObject(creature);
+  auto got = map->TryGetCreature(999u);
+  ASSERT_TRUE(got);
+  EXPECT_EQ(got->GetGuid(), 999u);
+  EXPECT_FALSE(map->TryGetCreature(1u));
+}
+
+TEST_F(MapTests, TryGetCreature_ReturnsNullForPlayer) {
+  auto map = std::make_shared<Map>(1);
+  auto notifier = std::make_shared<MockNotifier>();
+  auto player = std::make_shared<Player>(1u, notifier);
+  map->AddObject(player);
+  EXPECT_FALSE(map->TryGetCreature(1u));
+}
+
 TEST_F(MapTests, AddCreature_DoesNotBreakBroadcastToPlayers) {
   auto map = std::make_shared<Map>(1);
   auto notifier1 = std::make_shared<MockNotifier>();

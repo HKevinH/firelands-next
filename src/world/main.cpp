@@ -198,18 +198,20 @@ int main(int argc, char **argv) {
       if (!tables->Load(dbcBasePath + "/SpellCastTimes.dbc",
                         dbcBasePath + "/SpellRange.dbc",
                         dbcBasePath + "/SpellCooldowns.dbc",
-                        dbcBasePath + "/SpellPower.dbc")) {
+                        dbcBasePath + "/SpellPower.dbc",
+                        dbcBasePath + "/SpellCategories.dbc")) {
         LOG_WARN(
-            "SpellCastTimes.dbc / SpellRange.dbc / SpellCooldowns.dbc / SpellPower.dbc were "
-            "not all loadable from {}; some cast timing, range, GCD, or mana lookups stay at "
-            "defaults.",
+            "One or more spell DBCs were not loadable from {} (cast times, range, cooldowns, "
+            "power, categories); some lookups use defaults.",
             dbcBasePath);
       }
       spellCastTables = std::move(tables);
     }
 
-    spellEntryStore->ApplySpellPowerManaFromTables(*spellCastTables);
     spellEntryStore->MergeSpellDbcRows(worldConn);
+    spellEntryStore->MergeImmediateHealthFromSpellEffect(dbcBasePath +
+                                                          "/SpellEffect.dbc");
+    spellEntryStore->ApplySpellPowerManaFromTables(*spellCastTables);
 
     std::shared_ptr<ISpellDefinitionStore const> spellDefinitions;
     if (spellDbcOk || spellEntryStore->DefinitionCount() > 0u)

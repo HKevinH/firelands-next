@@ -16,16 +16,17 @@ struct SpellDefinition {
   uint32 powerType = 0;
   uint32 rangeIndex = 0;
   uint32 schoolMask = 0;
+  /// `Spell.dbc` → `SpellCategories.dbc` row id (TCPP `CategoriesID`).
+  uint32 categoriesId = 0;
   /// `Spell.dbc` → `SpellCooldowns.dbc` (TCPP field `CooldownsID`).
   uint32 cooldownsId = 0;
   /// `Spell.dbc` field 42 (TCPP `PowerDisplayID`): row id in `SpellPower.dbc` for base mana.
   uint32 spellPowerId = 0;
-  /// Resource1 cost: base from `SpellPower.dbc` via `spellPowerId`; optional `spell_dbc`
-  /// `MvpManaCost` overrides when non-NULL at merge.
+  /// Resource1 cost from `SpellPower.dbc` via `spellPowerId` (after merge loads ids).
   uint32 manaCost = 0;
-  /// Phase D MVP: applied to primary hit target when non-zero (negative = damage).
-  /// Populated from optional `spell_dbc.MvpDirectHealthDelta` merge when present.
-  int32 directHealthEffectBasePoints = 0;
+  /// First spell-hit immediate HP delta from `SpellEffect.dbc` (school damage / generic heal).
+  /// Negative removes HP (damage); positive restores HP (heal). Zero = none for Phase D simplification.
+  int32 immediateHealthEffectDelta = 0;
 };
 
 } // namespace Firelands

@@ -15,9 +15,13 @@ class SpellEntryDbcStore final : public ISpellDefinitionStore {
 public:
   bool Load(std::string const &path);
 
-  /// After `Load()` and before `MergeSpellDbcRows()`: sets `manaCost` from
-  /// `SpellPower.dbc` when `spellPowerId` is non-zero. SQL `MvpManaCost` (including 0)
-  /// then overrides in merge. Call after `SpellCastTablesDbc::Load`.
+  /// After `Load()` and optional `MergeSpellDbcRows()`, reads client `SpellEffect.dbc` and
+  /// fills `immediateHealthEffectDelta` for ids already in the store (lowest `EffectIndex`
+  /// among school damage / heal wins).
+  void MergeImmediateHealthFromSpellEffect(std::string const &path);
+
+  /// After `MergeImmediateHealthFromSpellEffect()` (or merge-only setups), sets `manaCost`
+  /// from `SpellPower.dbc` when `spellPowerId` is non-zero. Requires `SpellCastTablesDbc::Load`.
   void ApplySpellPowerManaFromTables(ISpellCastTables const &tables);
 
   /// After `Load()`, merges `firelands_world.spell_dbc`: rows whose `Id` is not in

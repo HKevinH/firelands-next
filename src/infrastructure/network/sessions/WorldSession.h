@@ -311,6 +311,9 @@ private:
   std::chrono::steady_clock::time_point _gcdReady{};
   /// Phase E: per-spell recovery (`SpellCooldowns.dbc` RecoveryTime) until instant.
   std::unordered_map<uint32, std::chrono::steady_clock::time_point> _spellCooldownUntil;
+  /// Phase E: shared category recovery (`SpellCooldowns` + `SpellCategories.dbc` group).
+  std::unordered_map<uint32, std::chrono::steady_clock::time_point>
+      _spellCategoryCooldownUntil;
 
   PlayerGmAppearanceForUpdates _gmAppearance{};
   bool _gmFlyEnabled = false;

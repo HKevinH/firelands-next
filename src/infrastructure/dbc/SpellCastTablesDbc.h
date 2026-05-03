@@ -6,8 +6,8 @@
 
 namespace Firelands {
 
-/// Loads `SpellCastTimes.dbc`, `SpellRange.dbc`, optional `SpellCooldowns.dbc`, and optional
-/// `SpellPower.dbc` (Cataclysm 4.3.4 / TCPP `DBCfmt.h`).
+/// Loads `SpellCastTimes.dbc`, `SpellRange.dbc`, optional `SpellCooldowns.dbc`, optional
+/// `SpellPower.dbc`, and optional `SpellCategories.dbc` (Cataclysm 4.3.4 / TCPP `DBCfmt.h`).
 class SpellCastTablesDbc final : public ISpellCastTables {
 public:
   struct CooldownRow {
@@ -18,12 +18,13 @@ public:
 
   /// Each file is optional: missing file logs a warning and that table stays empty.
   bool Load(std::string const &spellCastTimesPath, std::string const &spellRangePath,
-            std::string const &spellCooldownsPath,
-            std::string const &spellPowerPath);
+            std::string const &spellCooldownsPath, std::string const &spellPowerPath,
+            std::string const &spellCategoriesPath);
 
   bool HasCastTimes() const { return !m_castBaseMs.empty(); }
   bool HasRanges() const { return !m_rangeMaxYards.empty(); }
   bool HasCooldowns() const { return !m_cooldowns.empty(); }
+  bool HasSpellCategories() const { return !m_spellCategoryGroupByCategoriesRowId.empty(); }
 
   uint32 GetCastTimeMs(uint32 castingTimeIndex) const override;
   float GetHostileRangeMaxYards(uint32 rangeIndex) const override;
@@ -32,11 +33,15 @@ public:
 
   uint32 GetSpellPowerManaCost(uint32 spellPowerId) const override;
 
+  uint32 GetSpellCategoryGroupForCategoriesId(uint32 categoriesId) const override;
+
 private:
   std::unordered_map<uint32, int32> m_castBaseMs;
   std::unordered_map<uint32, float> m_rangeMaxYards;
   std::unordered_map<uint32, CooldownRow> m_cooldowns;
   std::unordered_map<uint32, uint32> m_spellPowerManaCost;
+  /// `SpellCategories.dbc` row id → `Category` field (shared cooldown group key).
+  std::unordered_map<uint32, uint32> m_spellCategoryGroupByCategoriesRowId;
 };
 
 } // namespace Firelands

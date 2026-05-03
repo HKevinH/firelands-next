@@ -63,6 +63,10 @@ public:
 
   uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
 
+  uint32 GetSpellCategoryGroupForCategoriesId(uint32 /*categoriesId*/) const override {
+    return 0u;
+  }
+
 private:
   uint32 m_castTimeMs;
   uint32 m_respondForIndex;
@@ -128,6 +132,10 @@ public:
 
   uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
 
+  uint32 GetSpellCategoryGroupForCategoriesId(uint32 /*categoriesId*/) const override {
+    return 0u;
+  }
+
 private:
   float m_maxYards;
   uint32 m_rangeIndex;
@@ -144,7 +152,7 @@ public:
     d.id = spellId;
     d.castingTimeIndex = 1;
     d.rangeIndex = 0;
-    d.directHealthEffectBasePoints = m_healthDelta;
+    d.immediateHealthEffectDelta = m_healthDelta;
     return d;
   }
 
@@ -173,10 +181,66 @@ public:
 
   uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
 
+  uint32 GetSpellCategoryGroupForCategoriesId(uint32 /*categoriesId*/) const override {
+    return 0u;
+  }
+
 private:
   uint32 m_start;
   uint32 m_recovery;
   uint32 m_match;
+};
+
+class CooldownTablesWithCategoryRecovery final : public ISpellCastTables {
+public:
+  CooldownTablesWithCategoryRecovery(uint32 categoryRecoveryMs, uint32 matchCooldownsId)
+      : m_catMs(categoryRecoveryMs), m_match(matchCooldownsId) {}
+
+  uint32 GetCastTimeMs(uint32 /*castingTimeIndex*/) const override { return 0u; }
+
+  float GetHostileRangeMaxYards(uint32 /*rangeIndex*/) const override { return 0.f; }
+
+  void GetCooldownTiming(uint32 cooldownsId, uint32 *categoryRecoveryMs,
+                         uint32 *recoveryMs, uint32 *startRecoveryMs) const override {
+    if (categoryRecoveryMs)
+      *categoryRecoveryMs =
+          (cooldownsId == m_match) ? m_catMs : 0u;
+    if (recoveryMs)
+      *recoveryMs = 0;
+    if (startRecoveryMs)
+      *startRecoveryMs = 0;
+  }
+
+  uint32 GetSpellPowerManaCost(uint32 /*spellPowerId*/) const override { return 0u; }
+
+  uint32 GetSpellCategoryGroupForCategoriesId(uint32 categoriesId) const override {
+    return categoriesId == 100u ? 7u : 0u;
+  }
+
+private:
+  uint32 m_catMs;
+  uint32 m_match;
+};
+
+class SpellDefWithCategoriesAndCooldownsId final : public ISpellDefinitionStore {
+public:
+  SpellDefWithCategoriesAndCooldownsId(uint32 categoriesId, uint32 cooldownsId)
+      : m_categoriesId(categoriesId), m_cooldownsId(cooldownsId) {}
+
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.castingTimeIndex = 1;
+    d.rangeIndex = 0;
+    d.categoriesId = m_categoriesId;
+    d.cooldownsId = m_cooldownsId;
+    return d;
+  }
+
+private:
+  uint32 m_categoriesId;
+  uint32 m_cooldownsId;
 };
 
 class SpellDefWithCooldownsId final : public ISpellDefinitionStore {
@@ -521,6 +585,35 @@ TEST(SpellManagerTests, PerSpellCooldownActive_ReturnsNotReady) {
   ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
   EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
             static_cast<uint8>(SpellCastWire::SPELL_FAILED_NOT_READY));
+}
+
+TEST(SpellManagerTests, CategoryCooldownActive_ReturnsNotReady) {
+  auto defs = std::make_shared<SpellDefWithCategoriesAndCooldownsId>(100u, 42u);
+  auto tables = std::make_shared<CooldownTablesWithCategoryRecovery>(8000u, 42u);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {200};
+  SpellCastRequest req = MakeRequest(0x10ULL, 200, &known);
+  std::unordered_map<uint32, std::chrono::steady_clock::time_point> catCd;
+  catCd[7u] = req.now + std::chrono::hours(1);
+  req.spellCategoryCooldownUntilByGroup = &catCd;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_NOT_READY));
+}
+
+TEST(SpellManagerTests, CategoryCooldownOnSuccess_FillsOutcome) {
+  auto defs = std::make_shared<SpellDefWithCategoriesAndCooldownsId>(100u, 42u);
+  auto tables = std::make_shared<CooldownTablesWithCategoryRecovery>(5000u, 42u);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {200};
+  SpellCastRequest req = MakeRequest(0x10ULL, 200, &known);
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  EXPECT_EQ(out.spellCategoryCooldownGroup, 7u);
+  EXPECT_EQ(out.spellCategoryCooldownDurationMs, 5000u);
 }
 
 TEST(SpellManagerTests, DirectHealthEffect_FilledOnSuccess) {
