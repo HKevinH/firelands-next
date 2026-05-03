@@ -4,6 +4,7 @@
 #include <application/services/OnlineCharacterSessionRegistry.h>
 #include <application/services/PlayerCreateInfoService.h>
 #include <application/services/WorldService.h>
+#include <application/spell/SpellManager.h>
 #include <chrono>
 #include <conncpp.hpp>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
@@ -200,15 +201,17 @@ int main(int argc, char **argv) {
     auto itemDbHotfix = std::make_shared<ItemDbHotfixStore>();
     itemDbHotfix->load(dbcBasePath);
 
+    auto spellManager = std::make_shared<SpellManager>();
+
     auto sessionFactory = [authService, charService, commandService,
                            accountDataRepo, languagesDbc, spellDbc, realmRepo,
-                           onlineCharRegistry, gmTicketService,
-                           itemDbHotfix](boost::asio::ip::tcp::socket socket) {
+                           onlineCharRegistry, gmTicketService, itemDbHotfix,
+                           spellManager](boost::asio::ip::tcp::socket socket) {
       std::make_shared<WorldSession>(std::move(socket), authService, charService,
                                      commandService, accountDataRepo,
                                      languagesDbc, spellDbc, realmRepo,
                                      onlineCharRegistry, gmTicketService,
-                                     itemDbHotfix)
+                                     itemDbHotfix, spellManager)
           ->Start();
     };
 

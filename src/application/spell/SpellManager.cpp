@@ -1,0 +1,76 @@
+#include <application/spell/SpellManager.h>
+
+#include <algorithm>
+
+namespace Firelands {
+
+bool SpellManager::IsSpellKnown(uint32 spellId,
+                                std::vector<uint32> const *knownSpells) {
+  if (!knownSpells || spellId == 0u)
+    return false;
+  // Hot path: linear scan on a small list (~100–200). For higher load, replace
+  // `_knownSpells` storage with a sorted vector + binary_search or a flat_hash_set.
+  auto const &v = *knownSpells;
+  return std::find(v.begin(), v.end(), spellId) != v.end();
+}
+
+void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
+                                      SpellCastOutcome *out) const {
+  if (!out)
+    return;
+  out->kind = SpellCastOutcome::Kind::None;
+
+  uint32 const spellId = static_cast<uint32>(req.client.spellId);
+  if (!IsSpellKnown(spellId, req.knownSpells)) {
+    SpellCastWire::BuildSpellFailure(
+        out->failurePacket, req.casterGuid, req.client.castId, req.client.spellId,
+        SpellCastWire::SPELL_FAILED_SPELL_UNAVAILABLE);
+    out->kind = SpellCastOutcome::Kind::SpellFailure;
+    return;
+  }
+
+  if (req.now < req.gcdReady) {
+    SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                     req.client.castId, req.client.spellId,
+                                     SpellCastWire::SPELL_FAILED_NOT_READY);
+    out->kind = SpellCastOutcome::Kind::SpellFailure;
+    return;
+  }
+
+  uint32 targetFlags = req.client.targetFlags;
+  uint64 targetUnitGuid = req.casterGuid;
+  if ((req.client.targetFlags & SpellCastWire::ClientTargetPrimaryGuidMask) == 0) {
+    targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+    targetUnitGuid = req.casterGuid;
+  } else {
+    targetUnitGuid = req.client.unitTargetGuid != 0 ? req.client.unitTargetGuid
+                                                    : req.casterGuid;
+  }
+
+  uint64 hitGuid = req.casterGuid;
+  if ((req.client.targetFlags & SpellCastWire::ClientTargetPrimaryGuidMask) != 0 &&
+      req.client.unitTargetGuid != 0)
+    hitGuid = req.client.unitTargetGuid;
+
+  uint32 const castFlagsStart = SpellCastWire::CAST_FLAG_HAS_TRAJECTORY;
+  uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
+  uint32 const castTimeStart = 0;
+  uint32 const castTimeGo = static_cast<uint32>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          req.now.time_since_epoch())
+          .count());
+
+  SpellCastWire::BuildSpellStart(out->spellStart, req.casterGuid, req.client.castId,
+                                 spellId, castFlagsStart, 0, castTimeStart, targetFlags,
+                                 targetUnitGuid);
+
+  uint64 const hitTargets[1] = {hitGuid};
+  SpellCastWire::BuildSpellGo(out->spellGo, req.casterGuid, req.client.castId, spellId,
+                              castFlagsGo, 0, castTimeGo, hitTargets, 1, targetFlags,
+                              targetUnitGuid);
+
+  out->newGcdReady = req.now + std::chrono::milliseconds(1500);
+  out->kind = SpellCastOutcome::Kind::SpellStartAndGo;
+}
+
+} // namespace Firelands

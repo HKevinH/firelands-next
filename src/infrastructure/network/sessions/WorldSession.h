@@ -7,6 +7,7 @@
 #include <application/ports/IMapNotifier.h>
 #include <application/services/AuthService.h>
 #include <application/services/CharacterService.h>
+#include <application/spell/SpellManager.h>
 #include <boost/asio.hpp>
 #include <deque>
 #include <memory>
@@ -63,7 +64,8 @@ public:
       std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry =
           nullptr,
       std::shared_ptr<GmTicketService> gmTicketService = nullptr,
-      std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix = nullptr);
+      std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix = nullptr,
+      std::shared_ptr<SpellManager> spellManager = nullptr);
 
   ~WorldSession();
 
@@ -257,6 +259,7 @@ private:
   std::shared_ptr<OnlineCharacterSessionRegistry> _onlineCharRegistry;
   std::shared_ptr<GmTicketService> _gmTicketService;
   std::shared_ptr<ItemDbHotfixStore const> _itemDbHotfix;
+  std::shared_ptr<SpellManager> _spellManager;
   /// Filled when the character is registered for console targeting; empty at
   /// character select / disconnected.
   std::string _activeCharacterName;

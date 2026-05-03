@@ -1,4 +1,5 @@
 add_library(FirelandsApplication STATIC
+    spell/SpellManager.cpp
     services/PlayerCreateInfoService.cpp
     services/RealmListService.cpp
     services/CommandService.cpp

@@ -3,6 +3,7 @@
 #include <shared/Common.h>
 #include <shared/network/WorldPacket.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -61,6 +62,12 @@ void BuildSpellStart(WorldPacket &out, uint64 casterGuid, uint8 castId, uint32 s
                      uint32 targetFlags, uint64 targetUnitGuid);
 
 /// Builds SMSG_SPELL_GO with HitInfo (self-hit) and target block.
+/// `hitTargets` / `hitCount`: no heap required when `hitCount` is small (stack array).
+void BuildSpellGo(WorldPacket &out, uint64 casterGuid, uint8 castId, uint32 spellId,
+                  uint32 castFlags, uint32 castFlagsEx, uint32 castTimeMs,
+                  uint64 const *hitTargets, size_t hitCount, uint32 targetFlags,
+                  uint64 targetUnitGuid);
+
 void BuildSpellGo(WorldPacket &out, uint64 casterGuid, uint8 castId, uint32 spellId,
                   uint32 castFlags, uint32 castFlagsEx, uint32 castTimeMs,
                   std::vector<uint64> const &hitTargets, uint32 targetFlags,

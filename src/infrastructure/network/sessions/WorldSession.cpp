@@ -115,7 +115,8 @@ WorldSession::WorldSession(
     std::shared_ptr<IRealmRepository> realmRepo,
     std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry,
     std::shared_ptr<GmTicketService> gmTicketService,
-    std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix)
+    std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix,
+    std::shared_ptr<SpellManager> spellManager)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
@@ -125,7 +126,8 @@ WorldSession::WorldSession(
       _realmRepo(std::move(realmRepo)),
       _onlineCharRegistry(std::move(onlineCharRegistry)),
       _gmTicketService(std::move(gmTicketService)),
-      _itemDbHotfix(std::move(itemDbHotfix)), _serverSeed(0),
+      _itemDbHotfix(std::move(itemDbHotfix)),
+      _spellManager(std::move(spellManager)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()) {}
 
 WorldSession::~WorldSession() {
@@ -1053,6 +1055,10 @@ void WorldSession::HandleRequestCemeteryList(WorldPacket & /*packet*/) {
 void WorldSession::HandleCastSpell(WorldPacket &packet) {
   if (_playerGuid == 0)
     return;
+  if (!_spellManager) {
+    LOG_ERROR("HandleCastSpell: SpellManager not configured");
+    return;
+  }
 
   SpellCastWire::ClientCastSpellData c;
   if (!SpellCastWire::TryReadClientCastSpell(packet, c)) {
@@ -1064,70 +1070,36 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
     return;
   }
 
-  uint32 const spellId = static_cast<uint32>(c.spellId);
-  auto const known =
-      std::find(_knownSpells.begin(), _knownSpells.end(), spellId) !=
-      _knownSpells.end();
-  if (!known) {
-    WorldPacket fail;
-    SpellCastWire::BuildSpellFailure(
-        fail, _playerGuid, c.castId, c.spellId,
-        SpellCastWire::SPELL_FAILED_SPELL_UNAVAILABLE);
-    SendPacket(fail);
-    return;
-  }
-
   auto const now = std::chrono::steady_clock::now();
-  if (now < _gcdReady) {
-    WorldPacket fail;
-    SpellCastWire::BuildSpellFailure(fail, _playerGuid, c.castId, c.spellId,
-                                     SpellCastWire::SPELL_FAILED_NOT_READY);
-    SendPacket(fail);
+  SpellCastRequest req;
+  req.casterGuid = _playerGuid;
+  req.mapId = _mapId;
+  req.client = c;
+  req.now = now;
+  req.gcdReady = _gcdReady;
+  req.knownSpells = &_knownSpells;
+
+  SpellCastOutcome out;
+  _spellManager->ProcessCastRequest(req, &out);
+
+  switch (out.kind) {
+  case SpellCastOutcome::Kind::SpellFailure:
+    SendPacket(out.failurePacket);
+    return;
+  case SpellCastOutcome::Kind::SpellStartAndGo:
+    if (auto map = WorldService::Instance().GetMap(_mapId)) {
+      map->BroadcastPacketToNearby(_playerGuid, out.spellStart, true);
+      map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
+    } else {
+      SendPacket(out.spellStart);
+      SendPacket(out.spellGo);
+    }
+    _gcdReady = out.newGcdReady;
+    return;
+  case SpellCastOutcome::Kind::None:
+  default:
     return;
   }
-
-  uint32 targetFlags = c.targetFlags;
-  uint64 targetUnitGuid = _playerGuid;
-  if ((c.targetFlags & SpellCastWire::ClientTargetPrimaryGuidMask) == 0) {
-    targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
-    targetUnitGuid = _playerGuid;
-  } else {
-    targetUnitGuid =
-        c.unitTargetGuid != 0 ? c.unitTargetGuid : _playerGuid;
-  }
-
-  uint64 hitGuid = _playerGuid;
-  if ((c.targetFlags & SpellCastWire::ClientTargetPrimaryGuidMask) != 0 &&
-      c.unitTargetGuid != 0)
-    hitGuid = c.unitTargetGuid;
-
-  uint32 const castFlagsStart = SpellCastWire::CAST_FLAG_HAS_TRAJECTORY;
-  uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
-  uint32 const castTimeStart = 0;
-  uint32 const castTimeGo = static_cast<uint32>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          now.time_since_epoch())
-          .count());
-
-  WorldPacket start;
-  SpellCastWire::BuildSpellStart(start, _playerGuid, c.castId, spellId,
-                                 castFlagsStart, 0, castTimeStart, targetFlags,
-                                 targetUnitGuid);
-
-  std::vector<uint64> hits = {hitGuid};
-  WorldPacket go;
-  SpellCastWire::BuildSpellGo(go, _playerGuid, c.castId, spellId, castFlagsGo,
-                              0, castTimeGo, hits, targetFlags, targetUnitGuid);
-
-  if (auto map = WorldService::Instance().GetMap(_mapId)) {
-    map->BroadcastPacketToNearby(_playerGuid, start, true);
-    map->BroadcastPacketToNearby(_playerGuid, go, true);
-  } else {
-    SendPacket(start);
-    SendPacket(go);
-  }
-
-  _gcdReady = now + std::chrono::milliseconds(1500);
 }
 
 void WorldSession::HandleNameQuery(WorldPacket &packet) {

@@ -1,0 +1,50 @@
+#pragma once
+
+#include <chrono>
+#include <vector>
+
+#include <shared/Common.h>
+#include <shared/network/SpellCastWire.h>
+#include <shared/network/WorldPacket.h>
+
+namespace Firelands {
+
+/// Input for a client-initiated cast after `TryReadClientCastSpell` succeeds.
+/// `knownSpells` must outlive the call (typically `WorldSession::_knownSpells`).
+struct SpellCastRequest {
+  uint64 casterGuid = 0;
+  uint32 mapId = 0;
+  SpellCastWire::ClientCastSpellData client{};
+  std::chrono::steady_clock::time_point now{};
+  std::chrono::steady_clock::time_point gcdReady{};
+  std::vector<uint32> const *knownSpells = nullptr;
+};
+
+/// Result of `SpellManager::ProcessCastRequest`: packets to send and new GCD time.
+/// Caller performs `SendPacket` / map broadcast. Hot path: avoid heap allocs here.
+struct SpellCastOutcome {
+  enum class Kind : uint8 { None, SpellFailure, SpellStartAndGo };
+  Kind kind = Kind::None;
+  WorldPacket failurePacket;
+  WorldPacket spellStart;
+  WorldPacket spellGo;
+  std::chrono::steady_clock::time_point newGcdReady{};
+};
+
+/// Centralizes spell cast validation and server-side spell wire output (Phase A).
+/// Thread-safety: const methods only; per-session mutable state stays on `WorldSession`
+/// (`_gcdReady`, `_knownSpells`) passed in/out via `SpellCastRequest` / `SpellCastOutcome`.
+class SpellManager {
+public:
+  SpellManager() = default;
+
+  /// Evaluates a cast request. On success, sets `newGcdReady` and fills start/go packets.
+  /// On failure, fills `failurePacket` only. Does not send on the wire.
+  void ProcessCastRequest(SpellCastRequest const &req,
+                          SpellCastOutcome *out) const;
+
+private:
+  static bool IsSpellKnown(uint32 spellId, std::vector<uint32> const *knownSpells);
+};
+
+} // namespace Firelands

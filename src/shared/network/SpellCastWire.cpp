@@ -32,9 +32,9 @@ static void AppendSpellTargetData(WorldPacket &data, uint32 targetFlags,
   }
 }
 
-static void AppendSpellHitInfo(WorldPacket &data,
-                                std::vector<uint64> const &hitTargets) {
-  size_t const n = std::min(hitTargets.size(), size_t(255));
+static void AppendSpellHitInfo(WorldPacket &data, uint64 const *hitTargets,
+                               size_t hitCount) {
+  size_t const n = std::min(hitCount, size_t(255));
   data.Append<uint8>(static_cast<uint8>(n));
   for (size_t i = 0; i < n; ++i)
     data.AppendPackGUID(hitTargets[i]);
@@ -46,9 +46,8 @@ static void AppendSpellCastDataCore(WorldPacket &data, uint64 casterGuid,
                                     uint64 casterUnitGuid, uint8 castId,
                                     uint32 spellId, uint32 castFlags,
                                     uint32 castFlagsEx, uint32 castTimeMs,
-                                    bool withHitInfo,
-                                    std::vector<uint64> const *hitTargets,
-                                    uint32 targetFlags,
+                                    bool withHitInfo, uint64 const *hitTargets,
+                                    size_t hitCount, uint32 targetFlags,
                                     uint64 targetUnitGuid) {
   data.AppendPackGUID(casterGuid);
   data.AppendPackGUID(casterUnitGuid);
@@ -58,9 +57,8 @@ static void AppendSpellCastDataCore(WorldPacket &data, uint64 casterGuid,
   data.Append<uint32>(castFlagsEx);
   data.Append<uint32>(castTimeMs);
 
-  if (withHitInfo && hitTargets) {
-    AppendSpellHitInfo(data, *hitTargets);
-  }
+  if (withHitInfo && hitTargets != nullptr && hitCount != 0u)
+    AppendSpellHitInfo(data, hitTargets, hitCount);
 
   AppendSpellTargetData(data, targetFlags, targetUnitGuid);
 }
@@ -156,18 +154,26 @@ void BuildSpellStart(WorldPacket &out, uint64 casterGuid, uint8 castId,
                      uint64 targetUnitGuid) {
   out = WorldPacket(SMSG_SPELL_START, 200);
   AppendSpellCastDataCore(out, casterGuid, casterGuid, castId, spellId, castFlags,
-                           castFlagsEx, castTimeMs, false, nullptr, targetFlags,
+                           castFlagsEx, castTimeMs, false, nullptr, 0, targetFlags,
                            targetUnitGuid);
+}
+
+void BuildSpellGo(WorldPacket &out, uint64 casterGuid, uint8 castId,
+                  uint32 spellId, uint32 castFlags, uint32 castFlagsEx,
+                  uint32 castTimeMs, uint64 const *hitTargets, size_t hitCount,
+                  uint32 targetFlags, uint64 targetUnitGuid) {
+  out = WorldPacket(SMSG_SPELL_GO, 200);
+  AppendSpellCastDataCore(out, casterGuid, casterGuid, castId, spellId, castFlags,
+                           castFlagsEx, castTimeMs, true, hitTargets, hitCount,
+                           targetFlags, targetUnitGuid);
 }
 
 void BuildSpellGo(WorldPacket &out, uint64 casterGuid, uint8 castId,
                   uint32 spellId, uint32 castFlags, uint32 castFlagsEx,
                   uint32 castTimeMs, std::vector<uint64> const &hitTargets,
                   uint32 targetFlags, uint64 targetUnitGuid) {
-  out = WorldPacket(SMSG_SPELL_GO, 200);
-  AppendSpellCastDataCore(out, casterGuid, casterGuid, castId, spellId, castFlags,
-                           castFlagsEx, castTimeMs, true, &hitTargets, targetFlags,
-                           targetUnitGuid);
+  BuildSpellGo(out, casterGuid, castId, spellId, castFlags, castFlagsEx, castTimeMs,
+               hitTargets.data(), hitTargets.size(), targetFlags, targetUnitGuid);
 }
 
 void BuildSpellFailure(WorldPacket &out, uint64 casterUnitGuid, uint8 castId,

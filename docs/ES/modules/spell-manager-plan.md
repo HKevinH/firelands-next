@@ -69,6 +69,8 @@ Estas reglas deben aplicarse **desde la Fase A**, no al final.
 
 ### Fase A — Esqueleto y delegación
 
+**Estado:** implementado (`SpellManager`, `WorldSession` delega, tests en `SpellManagerTests.cpp`). `BuildSpellGo` admite puntero + recuento para evitar `std::vector` en el hot path.
+
 1. Crear `SpellManager` con API clara, p. ej. `TryCast(context, request, output)`.
 2. Mover desde `WorldSession::HandleCastSpell`: known spell, GCD fijo actual, generación de `SPELL_START` / `SPELL_GO` / `SPELL_FAILURE` vía `SpellCastWire`.
 3. Tests unitarios con dobles: known/unknown, GCD, éxito.
