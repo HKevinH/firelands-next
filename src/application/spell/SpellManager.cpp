@@ -1,5 +1,7 @@
 #include <application/spell/SpellManager.h>
 
+#include <application/ports/IMapCollisionQueries.h>
+
 #include <algorithm>
 #include <cmath>
 
@@ -71,6 +73,22 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
           return;
         }
       }
+    }
+  }
+
+  if (!req.skipLineOfSight && req.collisionQueries != nullptr &&
+      req.collisionQueries->IsNavMeshDataAvailable(req.mapId) &&
+      req.hasCasterWorldPosition && req.hasTargetWorldPosition &&
+      req.client.unitTargetGuid != 0u &&
+      req.client.unitTargetGuid != req.casterGuid) {
+    if (!req.collisionQueries->LineOfSight(
+            req.mapId, req.casterX, req.casterY, req.casterZ, req.targetX,
+            req.targetY, req.targetZ)) {
+      SpellCastWire::BuildSpellFailure(
+          out->failurePacket, req.casterGuid, req.client.castId, req.client.spellId,
+          SpellCastWire::SPELL_FAILED_LINE_OF_SIGHT);
+      out->kind = SpellCastOutcome::Kind::SpellFailure;
+      return;
     }
   }
 

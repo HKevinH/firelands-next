@@ -12,6 +12,8 @@
 
 namespace Firelands {
 
+class IMapCollisionQueries;
+
 /// Input for a client-initiated cast after `TryReadClientCastSpell` succeeds.
 /// `knownSpells` must outlive the call (typically `WorldSession::_knownSpells`).
 struct SpellCastRequest {
@@ -32,6 +34,11 @@ struct SpellCastRequest {
   float targetX = 0.f;
   float targetY = 0.f;
   float targetZ = 0.f;
+  /// When non-null and `!skipLineOfSight`, used after range checks for hostile unit targets.
+  /// Callers must keep the underlying service alive for the duration of `ProcessCastRequest`.
+  IMapCollisionQueries const *collisionQueries = nullptr;
+  /// Bypass LoS (unit tests, GM, or while tuning). Does not affect range checks.
+  bool skipLineOfSight = false;
 };
 
 /// Result of `SpellManager::ProcessCastRequest`: packets to send and new GCD time.

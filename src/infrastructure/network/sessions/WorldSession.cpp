@@ -1103,6 +1103,11 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
     }
   }
 
+  std::shared_ptr<IMapCollisionQueries> collisionHeld =
+      WorldService::Instance().GetCollisionQueries();
+  if (collisionHeld)
+    req.collisionQueries = collisionHeld.get();
+
   SpellCastOutcome out;
   _spellManager->ProcessCastRequest(req, &out);
 

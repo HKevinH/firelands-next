@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <application/ports/IMapCollisionQueries.h>
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellCastTables.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
@@ -83,6 +84,21 @@ public:
 private:
   float m_maxYards;
   uint32 m_rangeIndex;
+};
+
+class MockCollisionLineOfSight final : public IMapCollisionQueries {
+public:
+  explicit MockCollisionLineOfSight(bool lineOpen) : m_lineOpen(lineOpen) {}
+
+  bool IsNavMeshDataAvailable(uint32_t /*mapId*/) const override { return true; }
+
+  bool LineOfSight(uint32_t /*mapId*/, float /*x0*/, float /*y0*/, float /*z0*/,
+                   float /*x1*/, float /*y1*/, float /*z1*/) const override {
+    return m_lineOpen;
+  }
+
+private:
+  bool m_lineOpen;
 };
 
 /// Reads `castTimeMs` from `SMSG_SPELL_START` built by `SpellCastWire::BuildSpellStart`
@@ -225,6 +241,85 @@ TEST(SpellManagerTests, RangeWithinMax_ReturnsStartAndGo) {
   req.targetX = 10.f;
   req.targetY = 0.f;
   req.targetZ = 0.f;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
+TEST(SpellManagerTests, LineOfSightBlocked_ReturnsLineOfSightFailure) {
+  uint32 constexpr kRi = 11;
+  auto defs = std::make_shared<SpellDefinitionWithRange>(kRi);
+  auto tables = std::make_shared<MockHostileRangeTables>(40.f, kRi);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = 0x20ULL;
+  req.hasCasterWorldPosition = true;
+  req.casterX = 0.f;
+  req.casterY = 0.f;
+  req.casterZ = 0.f;
+  req.hasTargetWorldPosition = true;
+  req.targetX = 10.f;
+  req.targetY = 0.f;
+  req.targetZ = 0.f;
+  static MockCollisionLineOfSight const kBlocked(false);
+  req.collisionQueries = &kBlocked;
+
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_LINE_OF_SIGHT));
+}
+
+TEST(SpellManagerTests, LineOfSightSkipFlag_IgnoresBlockedLos) {
+  uint32 constexpr kRi = 11;
+  auto defs = std::make_shared<SpellDefinitionWithRange>(kRi);
+  auto tables = std::make_shared<MockHostileRangeTables>(40.f, kRi);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = 0x20ULL;
+  req.hasCasterWorldPosition = true;
+  req.casterX = 0.f;
+  req.casterY = 0.f;
+  req.casterZ = 0.f;
+  req.hasTargetWorldPosition = true;
+  req.targetX = 10.f;
+  req.targetY = 0.f;
+  req.targetZ = 0.f;
+  req.skipLineOfSight = true;
+  static MockCollisionLineOfSight const kBlocked(false);
+  req.collisionQueries = &kBlocked;
+
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
+TEST(SpellManagerTests, LineOfSightNotCheckedForSelfTarget) {
+  uint32 constexpr kRi = 11;
+  auto defs = std::make_shared<SpellDefinitionWithRange>(kRi);
+  auto tables = std::make_shared<MockHostileRangeTables>(40.f, kRi);
+  SpellManager mgr(defs, tables);
+  uint64 constexpr kGuid = 0x10ULL;
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(kGuid, 100, &known);
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = kGuid;
+  req.hasCasterWorldPosition = true;
+  req.casterX = 0.f;
+  req.casterY = 0.f;
+  req.casterZ = 0.f;
+  req.hasTargetWorldPosition = true;
+  req.targetX = 0.f;
+  req.targetY = 0.f;
+  req.targetZ = 0.f;
+  static MockCollisionLineOfSight const kBlocked(false);
+  req.collisionQueries = &kBlocked;
+
   SpellCastOutcome out;
   mgr.ProcessCastRequest(req, &out);
   ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
