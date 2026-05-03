@@ -82,7 +82,7 @@ All names are registered **without** the leading dot in `CommandService`’s con
 | `visible` | `CommandGmTools` | BOTH | same | `on` = visible; `off` = `UNIT_FLAG_INVISIBLE` for others. |
 | `fly` | `CommandGmTools` | BOTH | same | Toggles can-fly packets to the client. |
 | `speed` | `CommandGmTools` | BOTH | same | Numeric speed or `reset` (default 7); clamped in `WorldSession::SetGmRunSpeed`. |
-| `online`, `who` | `ManagePlayers` | BOTH | same | Lists registry keys (sorted). |
+| `online` | `ManagePlayers` | BOTH | same | Lists registry keys (sorted). |
 | `announce` | `ManagePlayers` | BOTH | same | System chat line + `SMSG_NOTIFICATION` via registry broadcast. |
 | `kick` | `ManagePlayers` | BOTH | same | `.kick Name [reason…]`; uses `RequestDisconnect`. |
 | `goto`, `appear` | `ManagePlayers` | BOTH | same | In-game: teleport self to target. Console: `.goto Who Target` / `.appear …`. |

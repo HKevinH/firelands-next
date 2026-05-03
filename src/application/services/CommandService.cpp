@@ -19,6 +19,7 @@
 #include <iterator>
 #include <limits>
 #include <sstream>
+#include <string_view>
 
 namespace Firelands {
 
@@ -307,10 +308,6 @@ CommandService::CommandService(
                  ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                  ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
-      "who", {[this](auto s, auto a, auto o) { return HandleOnline(s, a, o); },
-              ToMask(Permission::ManagePlayers), CommandAvailability::Both,
-              ConsoleArgLayout::SameAsInGame});
-  RegisterCommand(
       "announce", {[this](auto s, auto a, auto o) { return HandleAnnounce(s, a, o); },
                    ToMask(Permission::ManagePlayers), CommandAvailability::Both,
                    ConsoleArgLayout::SameAsInGame});
@@ -401,7 +398,12 @@ bool CommandService::ExecuteCommand(std::shared_ptr<ICommandSession> session,
     bool const moderatorEmail =
         AsciiEqualsLower(firstToken, "email") &&
         HasAtLeast(acc, AccessLevel::Moderator);
-    if (!HasAtLeast(acc, AccessLevel::GameMaster) && !moderatorEmail) {
+    bool const moderatorHelp =
+        HasAtLeast(acc, AccessLevel::Moderator) &&
+        (AsciiEqualsLower(firstToken, "help") ||
+         AsciiEqualsLower(firstToken, "commands"));
+    if (!HasAtLeast(acc, AccessLevel::GameMaster) && !moderatorEmail &&
+        !moderatorHelp) {
       return true;
     }
   }
@@ -522,144 +524,262 @@ bool CommandService::HandleTele(std::shared_ptr<ICommandSession> session,
   }
 }
 
+namespace {
+
+enum class HelpChunkAudience : uint8_t { Both, Game, Console };
+
+struct StaffHelpChunk {
+  HelpChunkAudience audience;
+  PermissionMask required;
+  char const *wow;
+  char const *plain;
+};
+
+static void EmitConsoleLinesFromPlain(std::shared_ptr<ICommandSession> session,
+                                      char const *plain) {
+  std::string_view v{plain};
+  while (!v.empty()) {
+    size_t const pos = v.find('\n');
+    if (pos == std::string_view::npos) {
+      session->SendNotification(std::string(v));
+      break;
+    }
+    session->SendNotification(std::string(v.substr(0, pos)));
+    v.remove_prefix(pos + 1);
+  }
+}
+
+static bool HelpChunkVisible(HelpChunkAudience aud, PrivilegeOrigin origin) {
+  if (origin == PrivilegeOrigin::GameClient)
+    return aud != HelpChunkAudience::Console;
+  return aud != HelpChunkAudience::Game;
+}
+
+static constexpr StaffHelpChunk kStaffHelpChunks[] = {
+    {HelpChunkAudience::Both, 0,
+     "|cffFCE566=== Firelands - staff command help ===|r\n"
+     "|cffAAAAAAEvery command starts with|r |cffffffff.|r\n"
+     "|cffAAAAAAOnly commands you may use are listed|r |cff888888(privileges and "
+     "where the command may run).|r\n"
+     "|cffAAAAAAPlayers receive no response from staff dot-commands.|r",
+     R"H0(================================================================================
+Firelands - staff command reference
+================================================================================
+
+Every command starts with a dot (.). This list omits in-game-only commands and
+is filtered to your effective privileges on the server console.
+
+)H0"},
+    {HelpChunkAudience::Both, 0,
+     "|cffFFD200· Help|r\n"
+     "|cffCCCCCC.help|r |cff888888—|r Show this filtered guide.  |cff666666e.g.|r "
+     "|cffffffff.help|r\n"
+     "|cffCCCCCC.commands|r |cff888888—|r Same as .help.  |cff666666e.g.|r "
+     "|cffffffff.commands|r",
+     R"H1(--------------------------------------------------------------------------------
+Help
+--------------------------------------------------------------------------------
+
+  .help   .commands
+      Show this filtered guide.
+)H1"},
+    {HelpChunkAudience::Game, ToMask(Permission::CommandMailbox),
+     "|cffFFD200· Mailbox|r\n"
+     "|cffCCCCCC.email|r |cff888888—|r Open mailbox UI without a mailbox NPC.  "
+     "|cff666666e.g.|r |cffffffff.email|r",
+     R"H2(--------------------------------------------------------------------------------
+Mailbox  (Moderator+ in-game)
+--------------------------------------------------------------------------------
+
+  .email
+      Open mailbox UI without a nearby mailbox NPC.
+)H2"},
+    {HelpChunkAudience::Both, ToMask(Permission::CommandGps),
+     "|cffFFD200· Position|r\n"
+     "|cffCCCCCC.gps|r |cff888888—|r Print X, Y, Z, facing.  |cff666666e.g.|r "
+     "|cffffffff.gps|r\n"
+     "|cff666666Console (online character first):|r |cffffffff.gps Annabell|r",
+     R"H3(--------------------------------------------------------------------------------
+Position
+--------------------------------------------------------------------------------
+
+  .gps   [.gps <OnlineCharName>]
+      Print X, Y, Z, and facing. From console, prefix an online character name.
+)H3"},
+    {HelpChunkAudience::Both, ToMask(Permission::CommandTeleport),
+     "|cffFFD200· Teleport|r\n"
+     "|cffCCCCCC.tele|r |cff888888—|r Teleport to coordinates.  "
+     "|cff666666In-game:|r |cffffffff.tele -8759 544 97|r |cff666666(map optional)|r\n"
+     "|cff666666With map id:|r |cffffffff.tele 100 -50 25 571|r\n"
+     "|cff666666Console:|r |cffffffff.tele Annabell -8759 544 97|r  |cff666666or|r  "
+     "|cffffffff.tele Annabell -8759 544 97 0|r",
+     R"H4(--------------------------------------------------------------------------------
+Teleport
+--------------------------------------------------------------------------------
+
+  .tele <x> <y> <z> [mapId]   (in-game; current map if map id omitted)
+  .tele <CharName> <x> <y> <z> [mapId]   (console; online character first)
+)H4"},
+    {HelpChunkAudience::Both, ToMask(Permission::ManagePlayers),
+     "|cffFFD200· Online players|r\n"
+     "|cffCCCCCC.online|r |cff888888/|r |cffCCCCCC.who|r |cff888888—|r Online totals "
+     "by faction.  |cff666666e.g.|r |cffffffff.online|r\n"
+     "|cffCCCCCC.announce|r |cff888888—|r Server-wide system message.  "
+     "|cff666666e.g.|r |cffffffff.announce Welcome|r\n"
+     "|cffCCCCCC.kick|r |cff888888—|r Disconnect an online character.  "
+     "|cff666666e.g.|r |cffffffff.kick BadActor exploiting|r\n"
+     "|cffCCCCCC.goto|r |cff888888/|r |cffCCCCCC.appear|r |cff888888—|r Teleport to "
+     "player.  |cff666666Console:|r |cffffffff.goto Staff Target|r\n"
+     "|cffCCCCCC.summon|r |cff888888—|r Bring player to anchor.  "
+     "|cff666666Console:|r |cffffffff.summon Victim Anchor|r",
+     R"H5(--------------------------------------------------------------------------------
+Online players
+--------------------------------------------------------------------------------
+
+  .online   .who
+  .announce <message>
+  .kick <CharName> [reason]
+  .goto / .appear   (console: .goto <StaffChar> <TargetChar>)
+  .summon   (console: .summon <VictimChar> <AnchorChar>)
+)H5"},
+    {HelpChunkAudience::Game, ToMask(Permission::ManageGmTickets),
+     "|cffFFD200· GM tickets|r |cff666666(in-game only)|r\n"
+     "|cffCCCCCC.ticket queue|r |cff888888—|r Unassigned queue.  "
+     "|cff666666e.g.|r |cffffffff.ticket queue|r\n"
+     "|cffCCCCCC.ticket mine|r |cff888888—|r Assigned to you.  "
+     "|cff666666e.g.|r |cffffffff.ticket mine|r\n"
+     "|cffCCCCCC.ticket take|r |cff888888—|r |cff666666e.g.|r |cffffffff.ticket take "
+     "1|r\n"
+     "|cffCCCCCC.ticket reply|r |cff888888—|r |cff666666e.g.|r "
+     "|cffffffff.ticket reply 1 Thanks.|r\n"
+     "|cffCCCCCC.ticket close|r |cff888888—|r |cff666666e.g.|r "
+     "|cffffffff.ticket close 1|r",
+     nullptr},
+    {HelpChunkAudience::Both, ToMask(Permission::CommandGameplay),
+     "|cffFFD200· Gameplay (GM)|r\n"
+     "|cffCCCCCC.learn|r |cff888888—|r Learn spell by id.  "
+     "|cff666666Console:|r |cffffffff.learn CharName 475|r\n"
+     "|cffCCCCCC.money|r |cff888888—|r Add/remove copper (signed).  "
+     "|cff666666Console:|r |cffffffff.money CharName 50000|r\n"
+     "|cffCCCCCC.level|r |cff888888—|r Set level 1-85.  "
+     "|cff666666Console:|r |cffffffff.level Char 60|r\n"
+     "|cffAAAAAAItems:|r |cffCCCCCC.additem|r |cff888888/|r |cffCCCCCC.delitem|r  "
+     "|cffAAAAAAsee next block.|r",
+     R"H6(--------------------------------------------------------------------------------
+Gameplay  (GM)
+--------------------------------------------------------------------------------
+
+  .learn <spellId>              (console: .learn <CharName> <spellId>)
+  .money <copper delta>         (console: .money <CharName> <copper>)
+  .level <1-85>                 (console: .level <CharName> <level>)
+  .additem / .delitem           (see Items below)
+)H6"},
+    {HelpChunkAudience::Both, ToMask(Permission::CommandGameplay),
+     "|cffFFD200· Items (GM)|r\n"
+     "|cff666666In-game:|r numeric first arg with target selected sends item to "
+     "target (|cffffffff.additem 6948 1|r). Name first: "
+     "|cffffffff.additem Annabell 6948 5|r\n"
+     "|cff666666Console:|r name first: |cffffffff.additem Annabell 6948 1|r\n"
+     "|cffAAAAAAFull main backpack|r |cff666666(slots 23-38)|r |cffAAAAAAstores to|r "
+     "|cffCCCCCCmail|r|cffAAAAAA; use|r |cffCCCCCC.email|r |cffAAAAAAin-game.|r\n"
+     "|cffCCCCCC.delitem|r |cff888888—|r Same targeting; main backpack only.",
+     R"H7(--------------------------------------------------------------------------------
+Items  (GM)
+--------------------------------------------------------------------------------
+
+  In-game: first arg all digits -> item entry to selected target (.additem 6948 1).
+      Otherwise first token is an online character name (.additem Annabell 6948 5).
+
+  Console: character name first: .additem Annabell 6948 1
+
+  Full main backpack (slots 23-38) -> DB mail; use .email in-game to open mailbox.
+
+  .delitem   same targeting; main backpack only (not equipped).
+)H7"},
+    {HelpChunkAudience::Both, ToMask(Permission::CommandGmTools),
+     "|cffFFD200· Tags & movement|r\n"
+     "|cffCCCCCC.gm on|r |cff888888/|r |cffCCCCCC.gm off|r  "
+     "|cffCCCCCC.dnd on|r|cff888888/|r|cffCCCCCC.dnd off|r  "
+     "|cffCCCCCC.dev on|r|cff888888/|r|cffCCCCCC.dev off|r\n"
+     "|cffCCCCCC.visible on|r |cff888888/|r |cffCCCCCC.visible off|r  "
+     "|cffCCCCCC.fly on|r|cff888888/|r|cffCCCCCC.fly off|r  "
+     "|cffCCCCCC.speed|r |cff888888—|r run/flight speed or |cffffffff.speed reset|r",
+     R"H8(--------------------------------------------------------------------------------
+Tags & movement
+--------------------------------------------------------------------------------
+
+  .gm on | off    .dnd on | off    .dev on | off    .visible on | off
+  .fly on | off   .speed <n> | .speed reset
+)H8"},
+    {HelpChunkAudience::Both, ToMask(Permission::ServerControl),
+     "|cffFFD200· NPC & server|r |cff666666(Administrator)|r\n"
+     "|cffCCCCCC.npc search|r |cff888888—|r |cff666666Console:|r "
+     "|cffffffff.npc Char search wolf|r\n"
+     "|cffCCCCCC.npc add|r |cff888888—|r |cff666666e.g.|r |cffffffff.npc add 2575|r\n"
+     "|cffCCCCCC.npc del|r |cff888888—|r |cff666666Console:|r "
+     "|cffffffff.npc CharName del <guid>|r\n"
+     "|cffCCCCCC.server restart|r |cff888888—|r Delay |cffffffff30s|r / "
+     "|cffffffff5m|r|cff666666; last 10s countdown lines.|r",
+     R"H9(--------------------------------------------------------------------------------
+NPC & server  (Administrator)
+--------------------------------------------------------------------------------
+
+  .npc search <fragment>   (console: .npc <CharName> search <fragment>)
+  .npc add <entry> [displayId]
+  .npc del   (in-game: select NPC; console: .npc <CharName> del <guid>)
+
+  .server restart <delay>   e.g. 30s, 5m
+)H9"},
+    {HelpChunkAudience::Console, ToMask(Permission::ManageAccounts),
+     "|cffFFD200· Auth DB|r |cff666666(console only)|r\n"
+     "|cffCCCCCC.account create|r ... |cffCCCCCC.account delete|r ... "
+     "|cffCCCCCC.account setaccess|r ... |cffCCCCCC.ban|r |cff888888/|r "
+     "|cffCCCCCC.unban|r",
+     R"HA(--------------------------------------------------------------------------------
+Auth database  (console only)
+--------------------------------------------------------------------------------
+
+  .account create <user> <pass> [email] [expansion 0-3] [access 0-3]
+  .account delete <username>
+  .account setaccess <username> <0-3>
+  .ban <account>   .unban <account>
+)HA"},
+    {HelpChunkAudience::Console, 0,
+     "|cffAAAAAAShutdown:|r |cffffffffquit|r |cff888888or|r |cffffffffexit|r "
+     "|cffAAAAAA(no dot)|r  |cff666666or|r |cffffffff.quit|r |cff666666/|r "
+     "|cffffffff.exit|r",
+     R"HB(--------------------------------------------------------------------------------
+Shut down this world process
+--------------------------------------------------------------------------------
+
+  quit   exit   (no leading dot)   or   .quit   .exit
+)HB"},
+};
+
+static void EmitFilteredStaffHelp(std::shared_ptr<ICommandSession> session,
+                                   PrivilegeOrigin origin) {
+  AccessLevel const acc = session->GetAccountAccessLevel();
+  for (StaffHelpChunk const &ch : kStaffHelpChunks) {
+    if (!HelpChunkVisible(ch.audience, origin))
+      continue;
+    if (ch.required != 0 &&
+        !HasPermission(acc, origin, ch.required))
+      continue;
+    if (origin == PrivilegeOrigin::GameClient) {
+      if (ch.wow)
+        session->SendNotification(std::string(ch.wow));
+    } else if (ch.plain) {
+      EmitConsoleLinesFromPlain(session, ch.plain);
+    }
+  }
+}
+
+} // namespace
+
 bool CommandService::HandleHelp(std::shared_ptr<ICommandSession> session,
                                 const std::vector<std::string> &,
                                 PrivilegeOrigin origin) {
-  auto notifyHelp = [&](char const *wowStyledText) {
-    std::string msg(wowStyledText);
-    if (origin == PrivilegeOrigin::ServerConsole)
-      msg = StripWowChatColorTokens(msg);
-    session->SendNotification(std::move(msg));
-  };
-
-  // WoW 4.3.4: |cAARRGGBBtext|r in system messages for readability.
-  notifyHelp(
-      "|cffFCE566=== Firelands — staff command help ===|r\n"
-      "|cffAAAAAAEvery command starts with|r |cffffffff.|r\n"
-      "|cffAAAAAAIn-game,|r |cffffcc00Moderator+|r |cffAAAAAAcan use|r "
-      "|cffCCCCCC.email|r|cffAAAAAA; full command set from|r |cffffcc00Game Master "
-      "(2+)|r|cffAAAAAA. Players see no response.|r");
-
-  notifyHelp(
-      "|cffFFD200· Help & position|r\n"
-      "|cffCCCCCC.help|r |cff888888—|r Show this guide.  |cff666666e.g.|r "
-      "|cffffffff.help|r\n"
-      "|cffCCCCCC.commands|r |cff888888—|r Same as .help.  |cff666666e.g.|r "
-      "|cffffffff.commands|r\n"
-      "|cffCCCCCC.email|r |cff888888—|r |cffAAAAAA(Moderator+)|r Open mailbox UI "
-      "without a mailbox NPC.  |cff666666e.g.|r |cffffffff.email|r\n"
-      "|cffCCCCCC.gps|r |cff888888—|r Print your X, Y, Z, facing.  "
-      "|cff666666e.g.|r |cffffffff.gps|r\n"
-      "|cffCCCCCC.tele|r |cff888888—|r Teleport to coordinates.  "
-      "|cff666666In-game:|r |cffffffff.tele -8759 544 97|r |cff666666(current "
-      "map if map id omitted).|r\n"
-      "|cff666666With map id:|r |cffffffff.tele 100 -50 25 571|r\n"
-      "|cff666666World console (target online character first):|r\n"
-      "|cffffffff.tele Annabell -8759 544 97|r  |cff666666or|r  "
-      "|cffffffff.tele Annabell -8759 544 97 0|r\n"
-      "|cff666666Console GPS on another player:|r |cffffffff.gps Annabell|r\n"
-      "|cffCCCCCC.online|r |cff888888/|r |cffCCCCCC.who|r |cff888888—|r List "
-      "online character names.  |cff666666e.g.|r |cffffffff.online|r\n"
-      "|cffCCCCCC.announce|r |cff888888—|r Server-wide system message.  "
-      "|cff666666e.g.|r |cffffffff.announce Welcome everyone|r\n"
-      "|cffCCCCCC.kick|r |cff888888—|r Disconnect an online character.  "
-      "|cff666666e.g.|r |cffffffff.kick BadActor exploiting|r\n"
-      "|cffCCCCCC.goto|r |cff888888/|r |cffCCCCCC.appear|r |cff888888—|r "
-      "Teleport to an online player.  |cff666666Console:|r "
-      "|cffffffff.goto StaffName TargetName|r\n"
-      "|cffCCCCCC.summon|r |cff888888—|r Bring an online player to you.  "
-      "|cff666666Console:|r |cffffffff.summon VictimName AnchorName|r\n"
-      "|cffFFD200· GM tickets|r |cff666666(in-game only)|r\n"
-      "|cffCCCCCC.ticket queue|r |cff888888—|r Unassigned queue.  "
-      "|cff666666e.g.|r |cffffffff.ticket queue|r\n"
-      "|cffCCCCCC.ticket mine|r |cff888888—|r Assigned to you.  "
-      "|cff666666e.g.|r |cffffffff.ticket mine|r\n"
-      "|cffCCCCCC.ticket take|r |cff888888—|r |cff666666e.g.|r "
-      "|cffffffff.ticket take 1|r\n"
-      "|cffCCCCCC.ticket reply|r |cff888888—|r |cff666666e.g.|r "
-      "|cffffffff.ticket reply 1 Thanks for waiting.|r\n"
-      "|cffCCCCCC.ticket close|r |cff888888—|r Staff-close.  "
-      "|cff666666e.g.|r |cffffffff.ticket close 1|r\n"
-      "|cffFFD200· Gameplay (GM)|r\n"
-      "|cffCCCCCC.learn|r |cff888888—|r Learn spell by id (persists).  "
-      "|cff666666Console:|r |cffffffff.learn CharName 475|r\n"
-      "|cffCCCCCC.money|r |cff888888—|r Add/remove copper (signed).  "
-      "|cff666666Console:|r |cffffffff.money CharName 50000|r\n"
-      "|cffCCCCCC.level|r |cff888888—|r Set level 1–85.  "
-      "|cff666666Console:|r |cffffffff.level Char 60|r");
-
-  notifyHelp(
-      "|cffFFD200· Items (GM)|r |cffAAAAAA—|r |cffCCCCCC.additem|r |cff888888/|r "
-      "|cffCCCCCC.delitem|r\n"
-      "|cffAAAAAAWho receives the command:|r |cff666666In-game:|r select another "
-      "player (target) and use a |cffffffffnumeric|r first argument → item goes to "
-      "that player (|cffffffff.additem 6948 1|r). If the first token is |cffffffffnot|r "
-      "all digits, it is an |cffffffffonline character name|r: "
-      "|cffffffff.additem Annabell 6948 5|r\n"
-      "|cff666666World console:|r character name always first: "
-      "|cffffffff.additem Annabell 6948 1|r\n"
-      "|cffAAAAAAFull main backpack|r |cff666666(slots 23–38)|r |cffAAAAAA→|r "
-      "item is stored in |cffCCCCCCmail|r |cffAAAAAA(DB); use|r |cffCCCCCC.email|r "
-      "|cffAAAAAAto open the mailbox and review.|r\n"
-      "|cffCCCCCC.delitem|r |cff888888—|r Same targeting as |cffCCCCCC.additem|r; "
-      "removes up to |cffffffffcount|r from the |cff666666main backpack only|r "
-      "(not equipped).  |cff666666e.g.|r |cffffffff.delitem 6948|r |cff666666or|r "
-      "|cffffffff.delitem Annabell 6948 10|r |cff666666or|r "
-      "|cffffffff.delitem 6948 1|r |cff666666with target selected.|r");
-
-  notifyHelp(
-      "|cffFFD200· Tags & visibility|r\n"
-      "|cffCCCCCC.gm on|r |cff888888/|r |cffCCCCCC.gm off|r |cff888888—|r GM chat "
-      "tag & object flag.  |cff666666e.g.|r |cffffffff.gm on|r\n"
-      "|cffCCCCCC.dnd on|r |cff888888/|r |cffCCCCCC.dnd off|r |cff888888—|r Do "
-      "Not Disturb tag.  |cff666666e.g.|r |cffffffff.dnd on|r\n"
-      "|cffCCCCCC.dev on|r |cff888888/|r |cffCCCCCC.dev off|r |cff888888—|r "
-      "Developer tag.  |cff666666e.g.|r |cffffffff.dev on|r\n"
-      "|cffCCCCCC.visible on|r |cff888888/|r |cffCCCCCC.visible off|r "
-      "|cff888888—|r |cffAAAAAAon|r = others see you; |cffAAAAAAoff|r = hidden.  "
-      "|cff666666e.g.|r |cffffffff.visible off|r");
-
-  notifyHelp(
-      "|cffFFD200· Movement|r\n"
-      "|cffCCCCCC.fly on|r |cff888888/|r |cffCCCCCC.fly off|r |cff888888—|r "
-      "Toggle flight (client).  |cff666666e.g.|r |cffffffff.fly on|r\n"
-      "|cffCCCCCC.speed|r |cff888888—|r Set run and flight speed (default 7, "
-      "clamped ~0.5–50).  |cff666666e.g.|r |cffffffff.speed 12|r  |cff666666or|r  "
-      "|cffffffff.speed reset|r");
-
-  notifyHelp(
-      "|cffFFD200· NPC spawn (Administrator)|r\n"
-      "|cffCCCCCC.npc search|r |cff888888—|r Search creature_template by name; results "
-      "print as colored lines in |cffffffffsystem chat|r. "
-      "|cffffffff.npc search <fragment>|r  "
-      "|cff666666Console:|r |cffffffff.npc Char search wolf|r\n"
-      "|cffCCCCCC.npc add|r |cff888888—|r Spawn creature template entry at your "
-      "coordinates and facing. Optional display id (until creature_template is wired).  "
-      "|cff666666e.g.|r |cffffffff.npc add 2575|r |cff666666or|r "
-      "|cffffffff.npc add 2575 15688|r\n"
-      "|cffCCCCCC.npc del|r |cff888888—|r Remove targeted creature (select NPC "
-      "first).  |cff666666Console:|r |cffffffff.npc CharName del <guid>|r\n"
-      "|cffFFD200· World console only|r\n"
-      "|cffAAAAAA(Type these in the world server terminal, not in-game chat.)|r\n"
-      "|cffCCCCCC.account create|r |cff888888—|r Create an auth DB account.  "
-      "|cff666666e.g.|r\n"
-      "|cffffffff.account create PlayerOne MyPass mail@x.com 3 2|r\n"
-      "|cff666666(expansion 0–3, access 0=player … 3=admin; optional.)|r\n"
-      "|cffCCCCCC.account delete|r |cff888888—|r Remove an auth account "
-      "(destructive).  |cff666666e.g.|r |cffffffff.account delete PLAYERONE|r\n"
-      "|cffCCCCCC.account setaccess|r |cff888888—|r Change stored GM tier; "
-      "re-login to apply.  |cff666666e.g.|r\n"
-      "|cffffffff.account setaccess PLAYERONE 2|r\n"
-      "|cffCCCCCC.ban|r |cff888888/|r |cffCCCCCC.unban|r |cff888888—|r Lock or "
-      "unlock auth login for an account.  |cff666666e.g.|r |cffffffff.ban "
-      "PLAYERONE|r\n"
-      "|cffCCCCCC.server restart|r |cff888888—|r Scheduled shutdown/restart "
-      "after a delay (|cffffffff30s|r, |cffffffff5m|r, ...). Last 10 seconds: "
-      "one |cffFFCC00[Server]|r countdown line per second.  "
-      "|cff666666Administrator (or world console).|r\n"
-      "|cffAAAAAAShutdown the world process:|r |cffffffffquit|r |cff888888or|r "
-      "|cffffffffexit|r |cffAAAAAA(no leading dot).|r");
-
+  EmitFilteredStaffHelp(std::move(session), origin);
   return true;
 }
 
@@ -932,25 +1052,49 @@ bool CommandService::HandleOnline(std::shared_ptr<ICommandSession> session,
                                     const std::vector<std::string> &args,
                                     PrivilegeOrigin origin) {
   (void)args;
-  (void)origin;
   if (!_onlineCharacters) {
     session->SendNotification("Online registry is not configured.");
     return true;
   }
-  std::vector<std::string> names = _onlineCharacters->ListOnlineCharacterNames();
-  if (names.empty()) {
-    session->SendNotification("No characters currently listed online.");
+  OnlineFactionCounts const counts = _onlineCharacters->CountOnlineByFactionSide();
+  size_t const n = counts.alliance + counts.horde + counts.unknown;
+
+  auto sendLine = [&](std::string msg) {
+    if (origin == PrivilegeOrigin::ServerConsole)
+      msg = StripWowChatColorTokens(msg);
+    session->SendNotification(std::move(msg));
+  };
+
+  std::string const rule =
+      "|cff555555------------------------------------------------|r\n";
+
+  if (n == 0) {
+    sendLine("|cffFFD200· Online players|r\n" + rule +
+             "|cffAAAAAATotal connected|r |cff888888·|r |cffffcc000|r\n"
+             "|cff666666No characters are logged in right now.|r");
     return true;
   }
-  std::string body = JoinArgs(names.begin(), names.end());
-  std::string full =
-      "|cffCCCCCCOnline (" + std::to_string(names.size()) + "):|r " + body;
-  constexpr size_t kMax = 450;
-  if (full.size() > kMax) {
-    full.resize(kMax - 3);
-    full += "...";
+
+  std::string msg;
+  msg.reserve(384);
+  msg += "|cffFFD200· Online players|r\n";
+  msg += rule;
+  msg += "|cffAAAAAATotal connected|r |cff888888·|r |cffffcc00";
+  msg += std::to_string(n);
+  msg += "|r\n";
+  msg += "|cff3399FFAlliance|r |cff888888·|r |cffffcc00";
+  msg += std::to_string(counts.alliance);
+  msg += "|r\n";
+  msg += "|cffCC3333Horde|r |cff888888·|r |cffffcc00";
+  msg += std::to_string(counts.horde);
+  msg += "|r";
+  if (counts.unknown != 0) {
+    msg += "\n|cffAAAAAAUnknown faction|r |cff888888·|r |cffffcc00";
+    msg += std::to_string(counts.unknown);
+    msg += "|r";
   }
-  session->SendNotification(full);
+
+  sendLine(std::move(msg));
   return true;
 }
 

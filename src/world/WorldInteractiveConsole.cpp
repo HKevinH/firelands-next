@@ -26,7 +26,9 @@ class ServerConsoleCommandSession final : public ICommandSession {
 
 public:
   void SendNotification(const std::string &message) override {
-    LOG_DEBUG("[console] {}", message);
+    // INFO so output appears in the default console/TUI log pane (debug is often
+    // filtered) and matches user expectations for REPL feedback.
+    LOG_INFO("[console] {}", message);
   }
 
   const MovementInfo &GetPosition() const override { return _position; }

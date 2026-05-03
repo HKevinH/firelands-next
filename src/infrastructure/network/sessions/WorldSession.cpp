@@ -966,7 +966,8 @@ void WorldSession::LoginFinalizeWorldEntry(uint64 guid) {
       _onlineCharRegistry->Register(
           _activeCharacterName, guid,
           std::weak_ptr<ICommandSession>(
-              std::static_pointer_cast<ICommandSession>(shared_from_this())));
+              std::static_pointer_cast<ICommandSession>(shared_from_this())),
+          FactionSideFromPlayableRace(ch->GetRace()));
     }
   }
 

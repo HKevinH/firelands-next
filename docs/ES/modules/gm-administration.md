@@ -82,7 +82,7 @@ Los nombres se registran **sin** el punto inicial en el constructor de `CommandS
 | `visible` | `CommandGmTools` | BOTH | igual | `on` = visible; `off` = `UNIT_FLAG_INVISIBLE` para los demás. |
 | `fly` | `CommandGmTools` | BOTH | igual | Activa/desactiva paquetes “can fly” hacia el cliente. |
 | `speed` | `CommandGmTools` | BOTH | igual | Velocidad numérica o `reset` (7 por defecto); acotado en `SetGmRunSpeed`. |
-| `online`, `who` | `ManagePlayers` | BOTH | igual | Lista claves del registro (ordenadas). |
+| `online` | `ManagePlayers` | BOTH | igual | Lista claves del registro (ordenadas). |
 | `announce` | `ManagePlayers` | BOTH | igual | Línea de sistema + `SMSG_NOTIFICATION` vía broadcast del registro. |
 | `kick` | `ManagePlayers` | BOTH | igual | `.kick Nombre [motivo…]`; usa `RequestDisconnect`. |
 | `goto`, `appear` | `ManagePlayers` | BOTH | igual | En juego: te teletransporta al objetivo. Consola: `.goto Quién Objetivo`. |

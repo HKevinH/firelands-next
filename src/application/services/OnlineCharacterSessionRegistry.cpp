@@ -18,14 +18,16 @@ std::string OnlineCharacterSessionRegistry::NormalizeName(std::string const &nam
 
 void OnlineCharacterSessionRegistry::Register(std::string const &characterName,
                                               uint64_t objectGuid,
-                                              std::weak_ptr<ICommandSession> session) {
+                                              std::weak_ptr<ICommandSession> session,
+                                              PlayableFactionSide factionSide) {
   std::string const key = NormalizeName(characterName);
   if (key.empty())
     return;
+  OnlineEntry const entry{session, factionSide};
   std::lock_guard<std::mutex> lock(_mutex);
-  _byName[key] = session;
+  _byName[key] = entry;
   if (objectGuid != 0)
-    _byObjectGuid[objectGuid] = session;
+    _byObjectGuid[objectGuid] = entry;
 }
 
 void OnlineCharacterSessionRegistry::Unregister(std::string const &characterName,
@@ -38,7 +40,7 @@ void OnlineCharacterSessionRegistry::Unregister(std::string const &characterName
   if (!key.empty()) {
     auto it = _byName.find(key);
     if (it != _byName.end()) {
-      if (auto locked = it->second.lock()) {
+      if (auto locked = it->second.session.lock()) {
         if (locked.get() == self)
           _byName.erase(it);
       } else {
@@ -49,7 +51,7 @@ void OnlineCharacterSessionRegistry::Unregister(std::string const &characterName
   if (objectGuid != 0) {
     auto git = _byObjectGuid.find(objectGuid);
     if (git != _byObjectGuid.end()) {
-      if (auto locked = git->second.lock()) {
+      if (auto locked = git->second.session.lock()) {
         if (locked.get() == self)
           _byObjectGuid.erase(git);
       } else {
@@ -68,7 +70,7 @@ OnlineCharacterSessionRegistry::TryResolve(std::string const &characterName) con
   auto it = _byName.find(key);
   if (it == _byName.end())
     return nullptr;
-  return it->second.lock();
+  return it->second.session.lock();
 }
 
 std::shared_ptr<ICommandSession>
@@ -79,7 +81,7 @@ OnlineCharacterSessionRegistry::TryResolveByObjectGuid(uint64_t objectGuid) cons
   auto it = _byObjectGuid.find(objectGuid);
   if (it == _byObjectGuid.end())
     return nullptr;
-  return it->second.lock();
+  return it->second.session.lock();
 }
 
 std::vector<std::string>
@@ -89,12 +91,34 @@ OnlineCharacterSessionRegistry::ListOnlineCharacterNames() const {
     std::lock_guard<std::mutex> lock(_mutex);
     names.reserve(_byName.size());
     for (auto const &kv : _byName) {
-      if (kv.second.lock())
+      if (kv.second.session.lock())
         names.push_back(kv.first);
     }
   }
   std::sort(names.begin(), names.end());
   return names;
+}
+
+OnlineFactionCounts OnlineCharacterSessionRegistry::CountOnlineByFactionSide() const {
+  OnlineFactionCounts out{};
+  std::lock_guard<std::mutex> lock(_mutex);
+  for (auto const &kv : _byName) {
+    auto s = kv.second.session.lock();
+    if (!s)
+      continue;
+    switch (kv.second.factionSide) {
+    case PlayableFactionSide::Alliance:
+      ++out.alliance;
+      break;
+    case PlayableFactionSide::Horde:
+      ++out.horde;
+      break;
+    default:
+      ++out.unknown;
+      break;
+    }
+  }
+  return out;
 }
 
 void OnlineCharacterSessionRegistry::BroadcastSystemNotification(
@@ -104,7 +128,7 @@ void OnlineCharacterSessionRegistry::BroadcastSystemNotification(
     std::lock_guard<std::mutex> lock(_mutex);
     sessions.reserve(_byName.size());
     for (auto const &kv : _byName) {
-      if (auto s = kv.second.lock())
+      if (auto s = kv.second.session.lock())
         sessions.push_back(std::move(s));
     }
   }
@@ -119,7 +143,7 @@ void OnlineCharacterSessionRegistry::BroadcastAnnouncement(
     std::lock_guard<std::mutex> lock(_mutex);
     sessions.reserve(_byName.size());
     for (auto const &kv : _byName) {
-      if (auto s = kv.second.lock())
+      if (auto s = kv.second.session.lock())
         sessions.push_back(std::move(s));
     }
   }
