@@ -79,7 +79,7 @@ Estas reglas deben aplicarse **desde la Fase A**, no al final.
 
 ### Fase B — Definición de hechizo en memoria
 
-**Estado (parcial):** puerto `ISpellDefinitionStore`, modelo `SpellDefinition`, adaptador `SpellEntryDbcStore` que carga `Spell.dbc` con `SpellEntryfmt` TCPP, valida `fieldCount` + `recordSize`, mapa `unordered_map` O(1). Tras el DBC, `MergeSpellDbcRows(world)` aplica `firelands_world.spell_dbc`: hechizos solo en SQL = fila completa; si ya están en DBC solo se pisa `powerType` cuando la columna no es NULL. Integrado en login/GM/`SpellManager`. **Pendiente:** overrides más amplios (otros campos con NULL = heredar DBC), más campos en `SpellDefinition`, tuning `SpellCastTimes`/`SpellRange`.
+**Estado (parcial):** puerto `ISpellDefinitionStore`, modelo `SpellDefinition`, adaptador `SpellEntryDbcStore` que carga `Spell.dbc` con `SpellEntryfmt` TCPP, valida `fieldCount` + `recordSize`, mapa `unordered_map` O(1). Tras el DBC, `MergeSpellDbcRows(world)` aplica `firelands_world.spell_dbc`: hechizos solo en SQL = fila base + `Ov*`; en hechizos ya en DBC, `PowerType` y columnas `Ov*` no nulas pisan solo esos campos (NULL = heredar DBC). Sin columnas `Ov*` (BD antigua) el merge hace fallback. Integrado en login/GM/`SpellManager`. **Pendiente:** más campos en `SpellDefinition`, validación de rango en mundo, tuning avanzado.
 
 1. Puerto `ISpellDefinitionStore` + `SpellDefinition` compacto.
 2. Loader infra: DBC (y opcionalmente merge con `spell_dbc` / `spelleffect_dbc` al arranque).

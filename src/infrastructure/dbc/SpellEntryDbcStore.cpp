@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <memory>
 #include <string_view>
+#include <unordered_map>
 
 namespace Firelands {
 
@@ -29,7 +30,7 @@ static size_t LastFieldSizeBytes(char lastFmt) {
 }
 
 static bool ExpectedLayout(DbcReader const &reader,
-                             std::vector<uint32_t> const &offsets) {
+                           std::vector<uint32_t> const &offsets) {
   if (offsets.size() != reader.GetFieldCount())
     return false;
   if (offsets.empty())
@@ -38,6 +39,74 @@ static bool ExpectedLayout(DbcReader const &reader,
   size_t const expected =
       static_cast<size_t>(offsets.back()) + LastFieldSizeBytes(last);
   return expected == static_cast<size_t>(reader.GetRecordSize());
+}
+
+static char const* const kSpellDbcMergeQueryFull =
+    "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
+    "`SchoolMask`, `PowerType`, `OvAttributes`, `OvCastingTimeIndex`, `OvDurationIndex`, "
+    "`OvRangeIndex`, `OvSchoolMask` FROM `firelands_world`.`spell_dbc`";
+
+static char const* const kSpellDbcMergeQueryLegacy =
+    "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
+    "`SchoolMask`, `PowerType` FROM `firelands_world`.`spell_dbc`";
+
+static void ApplySpellDbcMergeRow(sql::ResultSet& rs, bool hasOvColumns,
+                                  std::unordered_map<uint32, SpellDefinition>& byId) {
+  uint32 const id = static_cast<uint32>(rs.getUInt("Id"));
+  if (id == 0u)
+    return;
+
+  uint32 const attributes = static_cast<uint32>(rs.getUInt("Attributes"));
+  uint32 const castingTimeIndex =
+      static_cast<uint32>(rs.getUInt("CastingTimeIndex"));
+  uint32 const durationIndex = static_cast<uint32>(rs.getUInt("DurationIndex"));
+  uint32 const rangeIndex = static_cast<uint32>(rs.getUInt("RangeIndex"));
+  uint32 const schoolMask = static_cast<uint32>(rs.getUInt("SchoolMask"));
+  bool const hasPowerOverride = !rs.isNull("PowerType");
+  uint32 const powerOverride =
+      hasPowerOverride ? static_cast<uint32>(rs.getUInt("PowerType")) : 0u;
+
+  auto it = byId.find(id);
+  if (it != byId.end()) {
+    SpellDefinition& d = it->second;
+    if (hasPowerOverride)
+      d.powerType = powerOverride;
+    if (hasOvColumns) {
+      if (!rs.isNull("OvAttributes"))
+        d.attributes = static_cast<uint32>(rs.getUInt("OvAttributes"));
+      if (!rs.isNull("OvCastingTimeIndex"))
+        d.castingTimeIndex = static_cast<uint32>(rs.getUInt("OvCastingTimeIndex"));
+      if (!rs.isNull("OvDurationIndex"))
+        d.durationIndex = static_cast<uint32>(rs.getUInt("OvDurationIndex"));
+      if (!rs.isNull("OvRangeIndex"))
+        d.rangeIndex = static_cast<uint32>(rs.getUInt("OvRangeIndex"));
+      if (!rs.isNull("OvSchoolMask"))
+        d.schoolMask = static_cast<uint32>(rs.getUInt("OvSchoolMask"));
+    }
+    return;
+  }
+
+  SpellDefinition d{};
+  d.id = id;
+  d.attributes = attributes;
+  d.castingTimeIndex = castingTimeIndex;
+  d.durationIndex = durationIndex;
+  d.rangeIndex = rangeIndex;
+  d.schoolMask = schoolMask;
+  d.powerType = hasPowerOverride ? powerOverride : 0u;
+  if (hasOvColumns) {
+    if (!rs.isNull("OvAttributes"))
+      d.attributes = static_cast<uint32>(rs.getUInt("OvAttributes"));
+    if (!rs.isNull("OvCastingTimeIndex"))
+      d.castingTimeIndex = static_cast<uint32>(rs.getUInt("OvCastingTimeIndex"));
+    if (!rs.isNull("OvDurationIndex"))
+      d.durationIndex = static_cast<uint32>(rs.getUInt("OvDurationIndex"));
+    if (!rs.isNull("OvRangeIndex"))
+      d.rangeIndex = static_cast<uint32>(rs.getUInt("OvRangeIndex"));
+    if (!rs.isNull("OvSchoolMask"))
+      d.schoolMask = static_cast<uint32>(rs.getUInt("OvSchoolMask"));
+  }
+  byId.emplace(id, d);
 }
 
 } // namespace
@@ -90,46 +159,29 @@ void SpellEntryDbcStore::MergeSpellDbcRows(std::shared_ptr<sql::Connection> worl
     return;
   try {
     std::unique_ptr<sql::Statement> st(worldConn->createStatement());
-    std::unique_ptr<sql::ResultSet> rs(st->executeQuery(
-        "SELECT `Id`, `Attributes`, `CastingTimeIndex`, `DurationIndex`, `RangeIndex`, "
-        "`SchoolMask`, `PowerType` FROM `firelands_world`.`spell_dbc`"));
+    std::unique_ptr<sql::ResultSet> rs;
+    bool hasOvColumns = true;
+    try {
+      rs.reset(st->executeQuery(kSpellDbcMergeQueryFull));
+    } catch (sql::SQLException& e) {
+      if (e.getErrorCode() != 1054) {
+        throw;
+      }
+      hasOvColumns = false;
+      LOG_DEBUG(
+          "spell_dbc: Ov* columns missing (apply migration 18); merge uses PowerType "
+          "and full-row custom spells only.");
+      rs.reset(st->executeQuery(kSpellDbcMergeQueryLegacy));
+    }
+
     size_t merged = 0;
     while (rs->next()) {
-      uint32 const id = static_cast<uint32_t>(rs->getUInt("Id"));
-      if (id == 0u)
-        continue;
-
-      uint32 const attributes = static_cast<uint32_t>(rs->getUInt("Attributes"));
-      uint32 const castingTimeIndex =
-          static_cast<uint32_t>(rs->getUInt("CastingTimeIndex"));
-      uint32 const durationIndex =
-          static_cast<uint32_t>(rs->getUInt("DurationIndex"));
-      uint32 const rangeIndex = static_cast<uint32_t>(rs->getUInt("RangeIndex"));
-      uint32 const schoolMask = static_cast<uint32_t>(rs->getUInt("SchoolMask"));
-      bool const hasPowerOverride = !rs->isNull("PowerType");
-      uint32 const powerOverride =
-          hasPowerOverride ? static_cast<uint32_t>(rs->getUInt("PowerType")) : 0u;
-
-      auto it = m_byId.find(id);
-      if (it != m_byId.end()) {
-        if (hasPowerOverride)
-          it->second.powerType = powerOverride;
-      } else {
-        SpellDefinition d{};
-        d.id = id;
-        d.attributes = attributes;
-        d.castingTimeIndex = castingTimeIndex;
-        d.durationIndex = durationIndex;
-        d.rangeIndex = rangeIndex;
-        d.schoolMask = schoolMask;
-        d.powerType = hasPowerOverride ? powerOverride : 0u;
-        m_byId.emplace(id, d);
-      }
+      ApplySpellDbcMergeRow(*rs, hasOvColumns, m_byId);
       ++merged;
     }
     if (merged > 0u)
       LOG_INFO("Merged {} `spell_dbc` row(s) over Spell.dbc (world DB).", merged);
-  } catch (sql::SQLException &e) {
+  } catch (sql::SQLException& e) {
     if (e.getErrorCode() == 1146) {
       LOG_WARN(
           "`firelands_world.spell_dbc` missing (apply world migrations); using DBC "

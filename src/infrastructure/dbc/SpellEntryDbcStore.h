@@ -14,8 +14,10 @@ public:
   bool Load(std::string const &path);
 
   /// After `Load()`, merges `firelands_world.spell_dbc`: rows whose `Id` is not in
-  /// DBC become full definitions (custom spells). Existing DBC ids only get
-  /// `powerType` overridden when `PowerType` is non-NULL. Missing table → warn.
+  /// DBC become full definitions (custom spells). For ids already in DBC: `PowerType`
+  /// overrides when non-NULL; `OvAttributes` / `OvCastingTimeIndex` / `OvDurationIndex` /
+  /// `OvRangeIndex` / `OvSchoolMask` override when non-NULL (NULL keeps DBC). If `Ov*`
+  /// columns are missing (error 1054), falls back to legacy merge. Missing table → warn.
   void MergeSpellDbcRows(std::shared_ptr<sql::Connection> worldConn);
 
   bool IsLoaded() const { return m_loaded; }

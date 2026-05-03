@@ -368,6 +368,11 @@ CREATE TABLE IF NOT EXISTS `spell_dbc` (
   `SpellLevelsId` int unsigned NOT NULL DEFAULT 0,
   `SpellTargetRestrictionsId` int unsigned NOT NULL DEFAULT 0,
   `PowerType` int unsigned DEFAULT NULL COMMENT 'Optional power type override, NULL uses DBC',
+  `OvAttributes` int unsigned DEFAULT NULL COMMENT 'Override SpellDefinition.attributes, NULL keeps DBC',
+  `OvCastingTimeIndex` int unsigned DEFAULT NULL COMMENT 'Override castingTimeIndex, NULL keeps DBC',
+  `OvDurationIndex` int unsigned DEFAULT NULL COMMENT 'Override durationIndex, NULL keeps DBC',
+  `OvRangeIndex` int unsigned DEFAULT NULL COMMENT 'Override rangeIndex, NULL keeps DBC',
+  `OvSchoolMask` int unsigned DEFAULT NULL COMMENT 'Override schoolMask, NULL keeps DBC',
   `SpellName` varchar(128) NOT NULL,
   PRIMARY KEY (`Id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom spell.dbc entries';
@@ -559,7 +564,8 @@ CREATE TABLE IF NOT EXISTS `spelleffect_dbc` (
   PRIMARY KEY (`Id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- spell_dbc PowerType: see sql/migrations/17_world_spell_dbc_merge.sql (ALTER only for DBs missing the column; not repeated here so docker init does not hit 1060 after CREATE).
+-- spell_dbc: see sql/migrations/17_world_spell_dbc_merge.sql (PowerType ALTER for old DBs) and
+-- sql/migrations/18_world_spell_dbc_ov_columns.sql (Ov* ALTER for DBs created before Ov* in CREATE).
 
 -- === z_ensure_player_classlevelstats_seed.sql (idempotent seed) ===
 INSERT IGNORE INTO `player_classlevelstats` (`class`, `level`, `str`, `agi`, `sta`, `inte`, `spi`) VALUES
