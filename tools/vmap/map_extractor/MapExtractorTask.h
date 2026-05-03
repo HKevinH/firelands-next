@@ -4,8 +4,7 @@
 // Opens the MPQ patch chain, reads Map.dbc + the three liquid DBCs, then
 // iterates every map and converts each existing ADT tile into a .map file.
 //
-// Designed to plug into the interactive extractor shell in
-// tools/extractors/ExtractorInteractive.
+// Callable from firelands-map-extractor / firelands-extractors (TUI launcher).
 
 #include "../common/VMapMagic.h"
 #include "AdtReader.h"

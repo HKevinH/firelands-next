@@ -11,30 +11,25 @@ Las herramientas leen un folder retail de **Cataclysm** `World of Warcraft/Data`
 
 | Target | Propósito |
 |--------|-----------|
-| **`firelands-extractors`** | **Menú interactivo** (recomendado): tablas `DBFilesClient` (.dbc / .db2), maps, listar MPQs. |
-| `firelands-dbc-extractor` | Extrae `DBFilesClient\*.dbc` y `DBFilesClient\*.db2`; **sin argumentos** abre el mismo menú interactivo. |
-| `firelands-map-extractor` | Extracción de assets de mapas; **sin argumentos** abre el mismo menú. |
+| **`firelands-extractors`** | **TUI pantalla completa** (FTXUI): banner Firelands, elegir tarea (DBC/DB2, maps, listar MPQs), rutas y ejecutar; salida en consola integrada. |
+| `firelands-dbc-extractor` | Extrae `DBFilesClient\*.dbc` y `DBFilesClient\*.db2`; exige **`--data`** / **`--out`** (o **`--list-mpqs`**); **`--help`** muestra uso. |
+| `firelands-map-extractor` | Extracción de mapas; mismo contrato CLI que la herramienta DBC (**sin** menú si lo lanzas solo). |
 
 Los artefactos quedan en `${CMAKE_BINARY_DIR}/bin/`.
 
-## Modo interactivo
+## Lanzador TUI (`firelands-extractors`)
 
-Ejecuta el shell interactivo (sin flags):
+Ejecuta **sin argumentos** desde una terminal interactiva (TTY):
 
 ```bash
 ./firelands-extractors
 ```
 
-O cualquiera de los extractores sin argumentos:
+Elige la operación, completa **`Data`** de WoW y (salvo listar MPQs) la carpeta de **salida**, luego **Run**. Desplázate en la consola con **Re Pág / Av Pág** o la rueda del ratón; **Q** sale cuando no hay trabajo en curso. Sin TTY (CI / pipes), la herramienta falla con mensaje — usa los binarios dedicados más abajo.
 
-```bash
-./firelands-dbc-extractor
-./firelands-map-extractor
-```
+`firelands-extractors --help` resume el uso por scripts.
 
-Verás un menú numerado (DBC+DB2, maps, listar orden MPQ, salir). Tras elegir, ingresa el **directorio `Data`** de WoW (debe existir) y, al extraer, un **directorio de salida** (se crea si no existe). `firelands-extractors --help` imprime un resumen.
-
-## Modo no interactivo (scripts / CI)
+## Modo solo CLI (scripts / CI)
 
 Listar el orden de MPQs que usará StormLib (base + parches):
 

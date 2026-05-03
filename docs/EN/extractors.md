@@ -11,30 +11,25 @@ Tools read a retail **Cataclysm** `World of Warcraft/Data` folder (MPQ archives,
 
 | Target | Purpose |
 |--------|---------|
-| **`firelands-extractors`** | **Interactive console menu** (recommended): `DBFilesClient` tables (.dbc / .db2), maps, list MPQs, then enter paths when prompted. |
-| `firelands-dbc-extractor` | Extracts `DBFilesClient\*.dbc` and `DBFilesClient\*.db2`; **no arguments** opens the same interactive menu as above. |
-| `firelands-map-extractor` | Map asset extraction; **no arguments** opens the same interactive menu. |
+| **`firelands-extractors`** | **Fullscreen TUI launcher** (FTXUI): Firelands banner, pick task (DBC/DB2, maps, list MPQs), edit paths, run — output streams into an on-screen console. |
+| `firelands-dbc-extractor` | Extracts `DBFilesClient\*.dbc` and `DBFilesClient\*.db2`; requires **`--data`** / **`--out`** (or **`--list-mpqs`**); **`--help`** prints usage. |
+| `firelands-map-extractor` | Map asset extraction; same CLI contract as the DBC tool (**no** interactive menu when run bare). |
 
 Build artifacts land under `${CMAKE_BINARY_DIR}/bin/` (see your generator output).
 
-## Interactive mode (user-friendly)
+## TUI launcher (`firelands-extractors`)
 
-Run the dedicated shell (no flags):
+Run with **no arguments** from an interactive terminal (TTY):
 
 ```bash
 ./firelands-extractors
 ```
 
-Or run either extractor with **no arguments**:
+Choose the operation, fill **WoW `Data`** and (unless listing MPQs only) **output folder**, then **Run**. Scroll output with **PgUp/PgDn** or the mouse wheel; **Q** exits when idle. Without a TTY (CI/pipes), the tool exits with an error — use the dedicated binaries below.
 
-```bash
-./firelands-dbc-extractor
-./firelands-map-extractor
-```
+`firelands-extractors --help` summarizes scripted usage.
 
-You will see a numbered menu (DBC+DB2, maps, list MPQ order, exit). After choosing an action, enter the **WoW `Data` directory** (must exist) and, when extracting, an **output folder** (created if needed). `firelands-extractors --help` prints a short summary.
-
-## Non-interactive mode (scripts / CI)
+## CLI-only mode (scripts / CI)
 
 List the MPQ open order StormLib will use (base archive + patches):
 

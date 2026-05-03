@@ -1,4 +1,3 @@
-#include "ExtractorInteractive.h"
 #include "ExtractorTasks.h"
 
 #include <filesystem>
@@ -9,9 +8,9 @@ namespace {
 
 void PrintUsage(const char *prog) {
   std::cerr << "Usage:\n"
-            << "  " << prog << "                     (interactive menu)\n"
             << "  " << prog << " --data <WoW/Data> --out <output_dir> [options]\n"
             << "Extracts DBFilesClient\\*.dbc and DBFilesClient\\*.db2 from the MPQ chain.\n"
+            << "Interactive launcher: firelands-extractors\n"
             << "Options:\n"
             << "  --list-mpqs   Print resolved MPQ open order and exit\n";
 }
@@ -24,7 +23,8 @@ bool ArgMatch(int argc, char **argv, int i, const char *flag) {
 
 int main(int argc, char **argv) {
   if (argc == 1) {
-    return firelands::extract::RunInteractiveMenu(argv[0]);
+    PrintUsage(argv[0]);
+    return 2;
   }
 
   std::filesystem::path dataDir;

@@ -419,7 +419,7 @@ These are four functions totalling ~50 lines; implement in `tools/vmap/common/Ma
 | One binary vs three | **Three separate executables** (mirrors ref; lower memory per process; clear separation of concerns). |
 | G3D dependency | **Remove** — inline minimal math in `Mat3.h`. |
 | Boost.Filesystem | **Remove** — use `std::filesystem`. |
-| Interactive menu | Add same pattern as `firelands-extractors` to each tool's main. |
+| Interactive launcher | Prefer **`firelands-extractors`** (TUI); dedicated tools stay CLI-only (`--help` / flags). |
 
 ---
 
