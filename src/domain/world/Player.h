@@ -13,16 +13,22 @@ public:
 
   std::shared_ptr<IMapNotifier> GetNotifier() const { return m_notifier; }
 
-  /// Seeded from `Character` at world login; authoritative until logout (Phase D).
-  void InitCombatResources(uint32 health, uint32 maxHealth);
+  /// Seeded from `Character` at world login; authoritative until logout (Phase D/E).
+  void InitCombatResources(uint32 health, uint32 maxHealth, uint32 power1,
+                           uint32 maxPower1);
   uint32 GetLiveHealth() const { return m_liveHealth; }
   uint32 GetLiveMaxHealth() const { return m_liveMaxHealth; }
   void ApplyHealthDelta(int32 delta);
+  uint32 GetLivePower1() const { return m_livePower1; }
+  uint32 GetLiveMaxPower1() const { return m_liveMaxPower1; }
+  void ApplyPower1Delta(int32 delta);
 
 private:
   std::shared_ptr<IMapNotifier> m_notifier;
   uint32 m_liveHealth = 1;
   uint32 m_liveMaxHealth = 1;
+  uint32 m_livePower1 = 0;
+  uint32 m_liveMaxPower1 = 1;
 };
 
 } // namespace Firelands

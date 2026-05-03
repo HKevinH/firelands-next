@@ -4,7 +4,6 @@
 #include <shared/Logger.h>
 
 #include <algorithm>
-#include <cmath>
 #include <string_view>
 
 namespace Firelands {
@@ -92,10 +91,52 @@ static bool LoadSpellRange(std::string const &path,
 } // namespace
 
 bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
-                              std::string const &spellRangePath) {
+                              std::string const &spellRangePath,
+                              std::string const &spellCooldownsPath) {
   bool const ct = LoadCastTimes(spellCastTimesPath, m_castBaseMs);
   bool const rg = LoadSpellRange(spellRangePath, m_rangeMaxYards);
-  return ct || rg;
+  bool cd = false;
+  m_cooldowns.clear();
+  if (!spellCooldownsPath.empty()) {
+    constexpr std::string_view kCooldownFmt = "diii";
+    DbcReader cdReader;
+    if (cdReader.Load(spellCooldownsPath)) {
+      std::vector<uint32_t> const cdOffsets =
+          DbcBuildFieldByteOffsets(kCooldownFmt);
+      if (cdReader.VerifyFormat(kCooldownFmt)) {
+        char const lastC = kCooldownFmt[kCooldownFmt.size() - 1];
+        size_t const expectedC =
+            static_cast<size_t>(cdOffsets.back()) +
+            (((lastC == 'b') || (lastC == 'X')) ? 1u : 4u);
+        if (expectedC == static_cast<size_t>(cdReader.GetRecordSize())) {
+          uint32_t const ncd = cdReader.GetRecordCount();
+          m_cooldowns.reserve(static_cast<size_t>(ncd));
+          for (uint32_t rec = 0; rec < ncd; ++rec) {
+            uint32_t const id = cdReader.ReadUInt32(rec, 0, cdOffsets);
+            if (id == 0u)
+              continue;
+            CooldownRow row{};
+            row.categoryRecoveryMs = cdReader.ReadUInt32(rec, 1, cdOffsets);
+            row.recoveryMs = cdReader.ReadUInt32(rec, 2, cdOffsets);
+            row.startRecoveryMs = cdReader.ReadUInt32(rec, 3, cdOffsets);
+            m_cooldowns.emplace(id, row);
+          }
+          LOG_DEBUG("SpellCooldowns.dbc: {} rows from {}.", m_cooldowns.size(),
+                    spellCooldownsPath);
+          cd = !m_cooldowns.empty();
+        } else {
+          LOG_WARN("SpellCooldowns.dbc: record size {} expected {} (path={})",
+                   cdReader.GetRecordSize(), expectedC, spellCooldownsPath);
+        }
+      } else {
+        LOG_WARN("SpellCooldowns.dbc: field count mismatch (path={})",
+                 spellCooldownsPath);
+      }
+    } else {
+      LOG_WARN("SpellCooldowns.dbc not found or unreadable: {}", spellCooldownsPath);
+    }
+  }
+  return ct || rg || cd;
 }
 
 uint32 SpellCastTablesDbc::GetCastTimeMs(uint32 castingTimeIndex) const {
@@ -116,6 +157,27 @@ float SpellCastTablesDbc::GetHostileRangeMaxYards(uint32 rangeIndex) const {
   if (it == m_rangeMaxYards.end())
     return 0.0f;
   return it->second;
+}
+
+void SpellCastTablesDbc::GetCooldownTiming(uint32 cooldownsId, uint32 *categoryRecoveryMs,
+                                           uint32 *recoveryMs, uint32 *startRecoveryMs) const {
+  if (categoryRecoveryMs)
+    *categoryRecoveryMs = 0;
+  if (recoveryMs)
+    *recoveryMs = 0;
+  if (startRecoveryMs)
+    *startRecoveryMs = 0;
+  if (cooldownsId == 0u)
+    return;
+  auto it = m_cooldowns.find(cooldownsId);
+  if (it == m_cooldowns.end())
+    return;
+  if (categoryRecoveryMs)
+    *categoryRecoveryMs = it->second.categoryRecoveryMs;
+  if (recoveryMs)
+    *recoveryMs = it->second.recoveryMs;
+  if (startRecoveryMs)
+    *startRecoveryMs = it->second.startRecoveryMs;
 }
 
 } // namespace Firelands

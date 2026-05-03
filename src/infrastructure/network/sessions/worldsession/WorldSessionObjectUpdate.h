@@ -39,11 +39,15 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
     uint64 guid, Character const &character,
     GtPlayerStatGameTables const *statGameTables = nullptr,
     uint32_t nextLevelXpFromWorld = 0,
-    std::optional<std::pair<uint32, uint32>> const &healthOverride = std::nullopt);
+    std::optional<std::pair<uint32, uint32>> const &healthOverride = std::nullopt,
+    std::optional<std::pair<uint32, uint32>> const &power1Override = std::nullopt);
 
 /// `SMSG_UPDATE_OBJECT` with `UPDATETYPE_VALUES` for `UNIT_FIELD_HEALTH` / max only.
 void BuildPlayerHealthValuesUpdate(uint16 mapId, uint64 playerGuid, uint32 health,
                                    uint32 maxHealth, WorldPacket &outPacket);
+
+void BuildPlayerPower1ValuesUpdate(uint16 mapId, uint64 playerGuid, uint32 power1,
+                                   uint32 maxPower1, WorldPacket &outPacket);
 
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName);
@@ -56,7 +60,8 @@ void SendPlayerCreateToNotifier(
     PlayerGmAppearanceForUpdates const &gmAppearance = {},
     GtPlayerStatGameTables const *statGameTables = nullptr,
     uint32_t nextLevelXpFromWorld = 0,
-    std::optional<std::pair<uint32, uint32>> const &healthOverride = std::nullopt);
+    std::optional<std::pair<uint32, uint32>> const &healthOverride = std::nullopt,
+    std::optional<std::pair<uint32, uint32>> const &power1Override = std::nullopt);
 
 } // namespace WorldSessionObjectUpdate
 

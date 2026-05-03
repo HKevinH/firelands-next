@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 namespace Firelands {
 
@@ -30,6 +31,8 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   out->hasDirectHealthEffect = false;
   out->directHealthTargetGuid = 0;
   out->directHealthDelta = 0;
+  out->power1Delta = 0;
+  out->spellCooldownDurationMs = 0;
 
   uint32 const spellId = static_cast<uint32>(req.client.spellId);
   if (!IsSpellKnown(spellId, req.knownSpells)) {
@@ -48,6 +51,10 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
     return;
   }
 
+  std::optional<SpellDefinition> def;
+  if (m_spellDefinitions)
+    def = m_spellDefinitions->GetDefinition(spellId);
+
   if (req.now < req.gcdReady) {
     SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
                                      req.client.castId, req.client.spellId,
@@ -56,25 +63,42 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
     return;
   }
 
-  if (m_spellDefinitions && m_spellCastTables) {
-    if (auto const def = m_spellDefinitions->GetDefinition(spellId)) {
-      float const maxYards =
-          m_spellCastTables->GetHostileRangeMaxYards(def->rangeIndex);
-      if (maxYards > 0.f && req.hasCasterWorldPosition && req.hasTargetWorldPosition) {
-        float const dx = req.targetX - req.casterX;
-        float const dy = req.targetY - req.casterY;
-        float const dz = req.targetZ - req.casterZ;
-        float const dist =
-            std::sqrt(dx * dx + dy * dy + dz * dz);
-        // TCPP `MAX_SPELL_RANGE_TOLERANCE` (yards) — small slack so borderline casts match client.
-        constexpr float kRangeToleranceYards = 3.0f;
-        if (dist > maxYards + kRangeToleranceYards) {
-          SpellCastWire::BuildSpellFailure(
-              out->failurePacket, req.casterGuid, req.client.castId, req.client.spellId,
-              SpellCastWire::SPELL_FAILED_OUT_OF_RANGE);
-          out->kind = SpellCastOutcome::Kind::SpellFailure;
-          return;
-        }
+  if (def && req.spellCooldownUntilBySpellId != nullptr) {
+    auto const it = req.spellCooldownUntilBySpellId->find(spellId);
+    if (it != req.spellCooldownUntilBySpellId->end() && req.now < it->second) {
+      SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                       req.client.castId, req.client.spellId,
+                                       SpellCastWire::SPELL_FAILED_NOT_READY);
+      out->kind = SpellCastOutcome::Kind::SpellFailure;
+      return;
+    }
+  }
+
+  if (def && def->manaCost > 0u && req.hasCasterPowerSnapshot &&
+      req.casterPower1 < def->manaCost) {
+    SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                     req.client.castId, req.client.spellId,
+                                     SpellCastWire::SPELL_FAILED_NO_POWER);
+    out->kind = SpellCastOutcome::Kind::SpellFailure;
+    return;
+  }
+
+  if (def && m_spellCastTables) {
+    float const maxYards =
+        m_spellCastTables->GetHostileRangeMaxYards(def->rangeIndex);
+    if (maxYards > 0.f && req.hasCasterWorldPosition && req.hasTargetWorldPosition) {
+      float const dx = req.targetX - req.casterX;
+      float const dy = req.targetY - req.casterY;
+      float const dz = req.targetZ - req.casterZ;
+      float const dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+      // TCPP `MAX_SPELL_RANGE_TOLERANCE` (yards) — small slack so borderline casts match client.
+      constexpr float kRangeToleranceYards = 3.0f;
+      if (dist > maxYards + kRangeToleranceYards) {
+        SpellCastWire::BuildSpellFailure(
+            out->failurePacket, req.casterGuid, req.client.castId, req.client.spellId,
+            SpellCastWire::SPELL_FAILED_OUT_OF_RANGE);
+        out->kind = SpellCastOutcome::Kind::SpellFailure;
+        return;
       }
     }
   }
@@ -96,11 +120,8 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   }
 
   uint32 castTimeStart = 0;
-  if (m_spellDefinitions && m_spellCastTables) {
-    if (auto const def = m_spellDefinitions->GetDefinition(spellId))
-      castTimeStart =
-          m_spellCastTables->GetCastTimeMs(def->castingTimeIndex);
-  }
+  if (def && m_spellCastTables)
+    castTimeStart = m_spellCastTables->GetCastTimeMs(def->castingTimeIndex);
 
   uint32 targetFlags = req.client.targetFlags;
   uint64 targetUnitGuid = req.casterGuid;
@@ -117,15 +138,31 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
       req.client.unitTargetGuid != 0)
     hitGuid = req.client.unitTargetGuid;
 
-  if (m_spellDefinitions) {
-    if (auto const def = m_spellDefinitions->GetDefinition(spellId)) {
-      if (def->directHealthEffectBasePoints != 0) {
-        out->hasDirectHealthEffect = true;
-        out->directHealthTargetGuid = hitGuid;
-        out->directHealthDelta = def->directHealthEffectBasePoints;
-      }
+  if (def) {
+    if (def->directHealthEffectBasePoints != 0) {
+      out->hasDirectHealthEffect = true;
+      out->directHealthTargetGuid = hitGuid;
+      out->directHealthDelta = def->directHealthEffectBasePoints;
     }
   }
+
+  uint32 recoveryMs = 0;
+  uint32 gcdMs = 0;
+  if (m_spellCastTables && def) {
+    uint32 catMs = 0;
+    m_spellCastTables->GetCooldownTiming(def->cooldownsId, &catMs, &recoveryMs, &gcdMs);
+    (void)catMs;
+    if (recoveryMs > 0u)
+      out->spellCooldownDurationMs = recoveryMs;
+  }
+  uint32 gcdDuration = gcdMs > 0u ? gcdMs : 1500u;
+  gcdDuration = std::min(gcdDuration, 10000u);
+  out->newGcdReady =
+      req.now + std::chrono::milliseconds(static_cast<int64_t>(gcdDuration));
+
+  if (def && def->manaCost > 0u && req.hasCasterPowerSnapshot &&
+      req.casterPower1 >= def->manaCost)
+    out->power1Delta = -static_cast<int32>(def->manaCost);
 
   uint32 const castFlagsStart = SpellCastWire::CAST_FLAG_HAS_TRAJECTORY;
   uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
@@ -143,7 +180,6 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
                               castFlagsGo, 0, castTimeGo, hitTargets, 1, targetFlags,
                               targetUnitGuid);
 
-  out->newGcdReady = req.now + std::chrono::milliseconds(1500);
   out->kind = SpellCastOutcome::Kind::SpellStartAndGo;
 }
 

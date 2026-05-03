@@ -111,6 +111,8 @@ Estas reglas deben aplicarse **desde la Fase A**, no al final.
 
 **Rendimiento:** no escanear listas largas; cooldown como mapa plano por spellId por sesión.
 
+**Estado (MVP inicial):** `Spell.dbc` carga `cooldownsId` → `SpellCooldowns.dbc` vía `ISpellCastTables::GetCooldownTiming` (`SpellCastTablesDbc` carga `SpellCooldowns.dbc`). GCD del cast = `StartRecoveryTime` si > 0, si no 1500 ms. `RecoveryTime` del mismo row se publica en `SpellCastOutcome.spellCooldownDurationMs`; `WorldSession` guarda `_spellCooldownUntil[spellId]`. Maná: `SpellDefinition.manaCost` desde merge opcional `spell_dbc.MvpManaCost` (migración 20); snapshot `casterPower1` desde `Player` en el mapa; fallo `SPELL_FAILED_NO_POWER`; en éxito `power1Delta` + `SMSG_UPDATE_OBJECT` POWER1. Power cost desde `SpellPower.dbc` / stats reales: pendiente.
+
 ### Fase F — Auras, procs, scripts
 
 1. Consumir tablas `spell_proc`, `spell_linked_spell`, etc., cargadas al inicio.

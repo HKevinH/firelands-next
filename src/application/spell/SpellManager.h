@@ -1,10 +1,11 @@
 #pragma once
 
 #include <chrono>
-#include <cstdint>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
+#include <domain/models/SpellDefinition.h>
 #include <domain/repositories/ISpellCastTables.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <shared/Common.h>
@@ -40,6 +41,13 @@ struct SpellCastRequest {
   IMapCollisionQueries const *collisionQueries = nullptr;
   /// Bypass LoS (unit tests, GM, or while tuning). Does not affect range checks.
   bool skipLineOfSight = false;
+  /// Per-caster spell cooldown end times (`spellId` → instant). Null = skip check.
+  std::unordered_map<uint32, std::chrono::steady_clock::time_point> const *
+      spellCooldownUntilBySpellId = nullptr;
+  /// When set with `manaCost` on the definition, `SpellManager` validates power1.
+  bool hasCasterPowerSnapshot = false;
+  uint32 casterPower1 = 0;
+  uint32 casterMaxPower1 = 0;
 };
 
 /// Result of `SpellManager::ProcessCastRequest`: packets to send and new GCD time.
@@ -55,6 +63,10 @@ struct SpellCastOutcome {
   bool hasDirectHealthEffect = false;
   uint64 directHealthTargetGuid = 0;
   int32 directHealthDelta = 0;
+  /// Negative deducts primary resource (POWER1) on the caster when the cast succeeds.
+  int32 power1Delta = 0;
+  /// If non-zero, caller should set `spellCooldownUntil[spellId] = now + duration`.
+  uint32 spellCooldownDurationMs = 0;
 };
 
 /// Centralizes spell cast validation and server-side spell wire output (Phase A+).

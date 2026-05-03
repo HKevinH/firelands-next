@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS `spell_dbc` (
   `OvRangeIndex` int unsigned DEFAULT NULL COMMENT 'Override rangeIndex, NULL keeps DBC',
   `OvSchoolMask` int unsigned DEFAULT NULL COMMENT 'Override schoolMask, NULL keeps DBC',
   `MvpDirectHealthDelta` int DEFAULT NULL COMMENT 'Phase D MVP: direct health delta on hit, NULL = none',
+  `MvpManaCost` int unsigned DEFAULT NULL COMMENT 'Phase E MVP: flat POWER1 cost, NULL = none',
   `SpellName` varchar(128) NOT NULL,
   PRIMARY KEY (`Id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Custom spell.dbc entries';

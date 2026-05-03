@@ -202,10 +202,11 @@ int main(int argc, char **argv) {
     {
       auto tables = std::make_shared<SpellCastTablesDbc>();
       if (!tables->Load(dbcBasePath + "/SpellCastTimes.dbc",
-                        dbcBasePath + "/SpellRange.dbc")) {
+                        dbcBasePath + "/SpellRange.dbc",
+                        dbcBasePath + "/SpellCooldowns.dbc")) {
         LOG_WARN(
-            "SpellCastTimes.dbc and SpellRange.dbc were not both loadable from "
-            "{}; SMSG_SPELL_START cast time stays 0 until valid DBCs are present.",
+            "SpellCastTimes.dbc / SpellRange.dbc / SpellCooldowns.dbc were not all "
+            "loadable from {}; some cast timing, range, or GCD lookups stay at defaults.",
             dbcBasePath);
       }
       spellCastTables = std::move(tables);

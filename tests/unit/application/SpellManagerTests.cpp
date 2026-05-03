@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <chrono>
+#include <unordered_map>
 #include <application/ports/IMapCollisionQueries.h>
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellCastTables.h>
@@ -48,6 +50,16 @@ public:
     return 0.0f;
   }
 
+  void GetCooldownTiming(uint32 /*cooldownsId*/, uint32 *categoryRecoveryMs,
+                         uint32 *recoveryMs, uint32 *startRecoveryMs) const override {
+    if (categoryRecoveryMs)
+      *categoryRecoveryMs = 0;
+    if (recoveryMs)
+      *recoveryMs = 0;
+    if (startRecoveryMs)
+      *startRecoveryMs = 0;
+  }
+
 private:
   uint32 m_castTimeMs;
   uint32 m_respondForIndex;
@@ -81,6 +93,16 @@ public:
     return rangeIndex == m_rangeIndex ? m_maxYards : 0.f;
   }
 
+  void GetCooldownTiming(uint32 /*cooldownsId*/, uint32 *categoryRecoveryMs,
+                         uint32 *recoveryMs, uint32 *startRecoveryMs) const override {
+    if (categoryRecoveryMs)
+      *categoryRecoveryMs = 0;
+    if (recoveryMs)
+      *recoveryMs = 0;
+    if (startRecoveryMs)
+      *startRecoveryMs = 0;
+  }
+
 private:
   float m_maxYards;
   uint32 m_rangeIndex;
@@ -103,6 +125,49 @@ public:
 
 private:
   int32 m_healthDelta;
+};
+
+class CooldownTablesStub final : public ISpellCastTables {
+public:
+  CooldownTablesStub(uint32 startRecoveryMs, uint32 recoveryMs, uint32 matchCooldownsId)
+      : m_start(startRecoveryMs), m_recovery(recoveryMs), m_match(matchCooldownsId) {}
+
+  uint32 GetCastTimeMs(uint32 /*castingTimeIndex*/) const override { return 0u; }
+
+  float GetHostileRangeMaxYards(uint32 /*rangeIndex*/) const override { return 0.f; }
+
+  void GetCooldownTiming(uint32 cooldownsId, uint32 *categoryRecoveryMs,
+                         uint32 *recoveryMs, uint32 *startRecoveryMs) const override {
+    if (categoryRecoveryMs)
+      *categoryRecoveryMs = 0;
+    if (recoveryMs)
+      *recoveryMs = (cooldownsId == m_match) ? m_recovery : 0u;
+    if (startRecoveryMs)
+      *startRecoveryMs = (cooldownsId == m_match) ? m_start : 0u;
+  }
+
+private:
+  uint32 m_start;
+  uint32 m_recovery;
+  uint32 m_match;
+};
+
+class SpellDefWithCooldownsId final : public ISpellDefinitionStore {
+public:
+  explicit SpellDefWithCooldownsId(uint32 cooldownsId) : m_cdId(cooldownsId) {}
+
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.castingTimeIndex = 1;
+    d.rangeIndex = 0;
+    d.cooldownsId = m_cdId;
+    return d;
+  }
+
+private:
+  uint32 m_cdId;
 };
 
 class MockCollisionLineOfSight final : public IMapCollisionQueries {
@@ -316,6 +381,66 @@ TEST(SpellManagerTests, LineOfSightSkipFlag_IgnoresBlockedLos) {
   SpellCastOutcome out;
   mgr.ProcessCastRequest(req, &out);
   ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
+TEST(SpellManagerTests, GcdUsesSpellCooldownsStartRecovery) {
+  auto defs = std::make_shared<SpellDefWithCooldownsId>(42);
+  auto tables = std::make_shared<CooldownTablesStub>(3200u, 0u, 42u);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(out.newGcdReady -
+                                                                        req.now)
+                      .count();
+  EXPECT_GE(ms, 3190);
+  EXPECT_LE(ms, 3210);
+}
+
+TEST(SpellManagerTests, InsufficientMana_ReturnsNoPower) {
+  class DefMana final : public ISpellDefinitionStore {
+  public:
+    bool HasSpell(uint32 /*spellId*/) const override { return true; }
+    std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+      SpellDefinition d{};
+      d.id = spellId;
+      d.castingTimeIndex = 1;
+      d.rangeIndex = 0;
+      d.manaCost = 100;
+      return d;
+    }
+  };
+  auto defs = std::make_shared<DefMana>();
+  auto tables = std::make_shared<MockSpellCastTables>(0u);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {555};
+  SpellCastRequest req = MakeRequest(0x10ULL, 555, &known);
+  req.hasCasterPowerSnapshot = true;
+  req.casterPower1 = 50;
+  req.casterMaxPower1 = 100;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_NO_POWER));
+}
+
+TEST(SpellManagerTests, PerSpellCooldownActive_ReturnsNotReady) {
+  auto defs = std::make_shared<SpellDefinitionWithRange>(11);
+  auto tables = std::make_shared<MockHostileRangeTables>(40.f, 11);
+  SpellManager mgr(defs, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  std::unordered_map<uint32, std::chrono::steady_clock::time_point> cd;
+  cd[100u] = req.now + std::chrono::hours(1);
+  req.spellCooldownUntilBySpellId = &cd;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_NOT_READY));
 }
 
 TEST(SpellManagerTests, DirectHealthEffect_FilledOnSuccess) {

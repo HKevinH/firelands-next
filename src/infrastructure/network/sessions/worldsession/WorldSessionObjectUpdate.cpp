@@ -368,7 +368,8 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
     uint64 guid, Character const &character,
     GtPlayerStatGameTables const *statGameTables,
     uint32_t nextLevelXpFromWorld,
-    std::optional<std::pair<uint32, uint32>> const &healthOverride) {
+    std::optional<std::pair<uint32, uint32>> const &healthOverride,
+    std::optional<std::pair<uint32, uint32>> const &power1Override) {
   std::map<uint16, uint32> fields;
   fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
   fields[OBJECT_FIELD_GUID + 1] = (uint32)(guid >> 32);
@@ -387,8 +388,13 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
     fields[UNIT_FIELD_HEALTH] = character.GetHealth();
     fields[UNIT_FIELD_MAXHEALTH] = character.GetMaxHealth();
   }
-  fields[UNIT_FIELD_POWER1] = character.GetPower1();
-  fields[UNIT_FIELD_MAXPOWER1] = character.GetMaxPower1();
+  if (power1Override) {
+    fields[UNIT_FIELD_POWER1] = power1Override->first;
+    fields[UNIT_FIELD_MAXPOWER1] = power1Override->second;
+  } else {
+    fields[UNIT_FIELD_POWER1] = character.GetPower1();
+    fields[UNIT_FIELD_MAXPOWER1] = character.GetMaxPower1();
+  }
   fields[UNIT_FIELD_LEVEL] = character.GetLevel();
   for (uint8_t i = 0; i < 5; ++i) {
     fields[static_cast<uint16>(UNIT_FIELD_STAT0 + i)] =
@@ -484,6 +490,16 @@ void BuildPlayerHealthValuesUpdate(uint16 mapId, uint64 playerGuid, uint32 healt
   update.Build(outPacket);
 }
 
+void BuildPlayerPower1ValuesUpdate(uint16 mapId, uint64 playerGuid, uint32 power1,
+                                   uint32 maxPower1, WorldPacket &outPacket) {
+  std::map<uint16, uint32> fields;
+  fields[UNIT_FIELD_POWER1] = power1;
+  fields[UNIT_FIELD_MAXPOWER1] = maxPower1;
+  UpdateData update(mapId);
+  update.AddValuesUpdate(playerGuid, fields);
+  update.Build(outPacket);
+}
+
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName) {
   dst.WriteString(ch.GetName());
@@ -511,11 +527,13 @@ void SendPlayerCreateToNotifier(
     PlayerGmAppearanceForUpdates const &gmAppearance,
     GtPlayerStatGameTables const *statGameTables,
     uint32_t nextLevelXpFromWorld,
-    std::optional<std::pair<uint32, uint32>> const &healthOverride) {
+    std::optional<std::pair<uint32, uint32>> const &healthOverride,
+    std::optional<std::pair<uint32, uint32>> const &power1Override) {
   if (!target)
     return;
   auto fields = BuildPlayerUpdateFields(objectGuid, character, statGameTables,
-                                        nextLevelXpFromWorld, healthOverride);
+                                        nextLevelXpFromWorld, healthOverride,
+                                        power1Override);
   MergeGmAppearanceIntoPlayerFields(fields, gmAppearance);
   UpdateData update(mapId);
   update.AddCreateObject(objectGuid, TYPEID_PLAYER, move, fields);

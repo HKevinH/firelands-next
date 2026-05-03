@@ -14,6 +14,10 @@ struct SpellDefinition {
   uint32 powerType = 0;
   uint32 rangeIndex = 0;
   uint32 schoolMask = 0;
+  /// `Spell.dbc` → `SpellCooldowns.dbc` (TCPP field `CooldownsID`).
+  uint32 cooldownsId = 0;
+  /// Phase E: optional `spell_dbc.MvpManaCost` (resource1); 0 = no server-side cost yet.
+  uint32 manaCost = 0;
   /// Phase D MVP: applied to primary hit target when non-zero (negative = damage).
   /// Populated from optional `spell_dbc.MvpDirectHealthDelta` merge when present.
   int32 directHealthEffectBasePoints = 0;

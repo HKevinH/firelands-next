@@ -28,6 +28,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Firelands {
@@ -308,6 +309,8 @@ private:
   /// Known spells for the logged-in character (mirrors `SMSG_SEND_KNOWN_SPELLS` payload).
   std::vector<uint32> _knownSpells;
   std::chrono::steady_clock::time_point _gcdReady{};
+  /// Phase E: per-spell recovery (`SpellCooldowns.dbc` RecoveryTime) until instant.
+  std::unordered_map<uint32, std::chrono::steady_clock::time_point> _spellCooldownUntil;
 
   PlayerGmAppearanceForUpdates _gmAppearance{};
   bool _gmFlyEnabled = false;

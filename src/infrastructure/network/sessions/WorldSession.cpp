@@ -55,6 +55,19 @@ std::optional<std::pair<uint32, uint32>> TryLivePlayerHealth(uint32 mapId,
   return std::make_pair(pl->GetLiveHealth(), pl->GetLiveMaxHealth());
 }
 
+std::optional<std::pair<uint32, uint32>> TryLivePlayerPower1(uint32 mapId,
+                                                             uint64 guid) {
+  if (guid == 0ull)
+    return std::nullopt;
+  auto map = WorldService::Instance().GetMap(mapId);
+  if (!map)
+    return std::nullopt;
+  auto pl = map->TryGetPlayer(guid);
+  if (!pl)
+    return std::nullopt;
+  return std::make_pair(pl->GetLivePower1(), pl->GetLiveMaxPower1());
+}
+
 constexpr uint8_t kMailMessageTypeNormal = 0;
 constexpr int kMailItemEnchantSlots = 10;
 constexpr uint32_t kMailDaySeconds = 86400u;
@@ -651,6 +664,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
     }
   }
   _gcdReady = {};
+  _spellCooldownUntil.clear();
   // At world login this packet must initialize client spellbook state,
   // including passive language spells. Existing characters may have
   // `firstLogin = false`, but the client still expects InitialLogin=1 here.
@@ -719,7 +733,8 @@ void WorldSession::LoginSpawnInWorld(uint64 guid, Character const &character,
                                      MovementInfo const &move) {
   auto player = std::make_shared<Player>(guid, shared_from_this());
   player->SetPosition(move);
-  player->InitCombatResources(character.GetHealth(), character.GetMaxHealth());
+  player->InitCombatResources(character.GetHealth(), character.GetMaxHealth(),
+                               character.GetPower1(), character.GetMaxPower1());
   WorldService::Instance().AddPlayerToMap(_mapId, player);
 
   SendLoginVerifyWorld(_mapId, move.x, move.y, move.z, move.orientation);
@@ -735,7 +750,8 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
   // Now that the player is on the map, send create/update data and "after add" packets
   UpdateData update(_mapId);
   auto selfFields = ws_obj::BuildPlayerUpdateFields(
-      guid, character, statGt, selfNextXp, TryLivePlayerHealth(_mapId, guid));
+      guid, character, statGt, selfNextXp, TryLivePlayerHealth(_mapId, guid),
+      TryLivePlayerPower1(_mapId, guid));
   MergeGmAppearanceIntoPlayerFields(selfFields, GetGmAppearanceForPlayerUpdates());
   update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields);
 
@@ -778,7 +794,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
       if (auto n = other->GetNotifier()) {
         ws_obj::SendPlayerCreateToNotifier(
             n, _mapId, guid, character, move, newPlayerGm, statGt, selfNextXp,
-            TryLivePlayerHealth(_mapId, guid));
+            TryLivePlayerHealth(_mapId, guid), TryLivePlayerPower1(_mapId, guid));
       }
       if (auto otherCh = _charService->GetCharacterByGuid(other->GetGuid())) {
         PlayerGmAppearanceForUpdates otherGm{};
@@ -793,7 +809,8 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
         ws_obj::SendPlayerCreateToNotifier(
             std::static_pointer_cast<IMapNotifier>(shared_from_this()), _mapId,
             other->GetGuid(), *otherCh, other->GetPosition(), otherGm, statGt,
-            otherNext, TryLivePlayerHealth(_mapId, other->GetGuid()));
+            otherNext, TryLivePlayerHealth(_mapId, other->GetGuid()),
+            TryLivePlayerPower1(_mapId, other->GetGuid()));
       }
     });
   }
@@ -893,6 +910,7 @@ if (!_charService->SaveCharacterOnLogout(_accountId, charGuidLow, mapIdDb,
   _playerXp = 0;
   _knownSpells.clear();
   _gcdReady = {};
+  _spellCooldownUntil.clear();
   ResetGmStateForLogout();
   _mapId = 0;
   _zoneId = 0;
@@ -1126,6 +1144,15 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
   if (collisionHeld)
     req.collisionQueries = collisionHeld.get();
 
+  req.spellCooldownUntilBySpellId = &_spellCooldownUntil;
+  if (auto map = WorldService::Instance().GetMap(_mapId)) {
+    if (auto casterPl = map->TryGetPlayer(_playerGuid)) {
+      req.hasCasterPowerSnapshot = true;
+      req.casterPower1 = casterPl->GetLivePower1();
+      req.casterMaxPower1 = casterPl->GetLiveMaxPower1();
+    }
+  }
+
   SpellCastOutcome out;
   _spellManager->ProcessCastRequest(req, &out);
 
@@ -1147,6 +1174,22 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
           map->BroadcastPacketToNearby(out.directHealthTargetGuid, hpUpdate,
                                        true);
         }
+      }
+      if (out.power1Delta != 0) {
+        if (auto casterPl = map->TryGetPlayer(_playerGuid)) {
+          casterPl->ApplyPower1Delta(out.power1Delta);
+          WorldPacket pwUpdate;
+          ws_obj::BuildPlayerPower1ValuesUpdate(
+              static_cast<uint16>(_mapId), _playerGuid, casterPl->GetLivePower1(),
+              casterPl->GetLiveMaxPower1(), pwUpdate);
+          map->BroadcastPacketToNearby(_playerGuid, pwUpdate, true);
+        }
+      }
+      if (out.spellCooldownDurationMs > 0) {
+        uint32 const sid = static_cast<uint32>(c.spellId);
+        _spellCooldownUntil[sid] =
+            now + std::chrono::milliseconds(
+                      static_cast<int64_t>(out.spellCooldownDurationMs));
       }
     } else {
       SendPacket(out.spellStart);

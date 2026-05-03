@@ -16,6 +16,10 @@ public:
   /// `max(RangeMax[0], RangeMax[1])` yards from `SpellRange.dbc`; 0 if unknown / index 0.
   /// Callers treat 0 as "not loaded or no limit yet" until range validation exists.
   virtual float GetHostileRangeMaxYards(uint32 rangeIndex) const = 0;
+
+  /// `SpellCooldowns.dbc` row for `Spell.dbc` `CooldownsID` (0 = leave outputs zeroed).
+  virtual void GetCooldownTiming(uint32 cooldownsId, uint32 *categoryRecoveryMs,
+                                 uint32 *recoveryMs, uint32 *startRecoveryMs) const = 0;
 };
 
 } // namespace Firelands
