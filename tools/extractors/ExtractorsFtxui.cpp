@@ -2,11 +2,14 @@
 
 #include "ExtractorTasks.h"
 
+#include <shared/system/SystemClipboard.h>
+
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
 #include <ftxui/component/mouse.hpp>
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
+#include <ftxui/screen/box.hpp>
 #include <ftxui/screen/terminal.hpp>
 
 #include <algorithm>
@@ -17,6 +20,7 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -38,6 +42,8 @@ using namespace ftxui;
 Color const kShellBg = Color::RGB(26, 24, 22);
 Color const kLogBg = Color::RGB(28, 26, 24);
 Color const kLogFg = Color::RGB(210, 204, 196);
+Color const kLogSelectBg = Color::RGB(95, 78, 52);
+Color const kLogSelectFg = Color::RGB(255, 252, 245);
 Color const kAccent = Color::RGB(180, 72, 52);
 
 int constexpr kBannerScreenRows = 11;
@@ -114,6 +120,135 @@ std::string StripTerminalAnsi(std::string const &in) {
     out.push_back(in[i++]);
   }
   return out;
+}
+
+// Reserved vertical space for `ComputeLogViewportHeight` (banner + separator + form).
+int constexpr kExtractorsBannerAndSepScreenRows = 12;
+int constexpr kExtractorsFormPanelScreenRows = 14;
+
+struct ExtLogCell {
+  int line = 0;
+  int col = 0;
+};
+
+bool ExtLogCellLess(ExtLogCell const &a, ExtLogCell const &b) {
+  return a.line < b.line || (a.line == b.line && a.col < b.col);
+}
+
+bool ExtractorsLogBodyBoxUsable(Box const &b) {
+  return b.x_max >= b.x_min && b.y_max >= b.y_min;
+}
+
+std::optional<ExtLogCell> HitExtractorsLogBodyCell(int mx, int my, Box const &body,
+                                                   std::vector<std::string> const &lines,
+                                                   int display_start, int visible) {
+  int const n = static_cast<int>(lines.size());
+  if (visible <= 0 || n <= 0 || !ExtractorsLogBodyBoxUsable(body) || !body.Contain(mx, my)) {
+    return std::nullopt;
+  }
+  int const rel_y = std::clamp(my - body.y_min, 0, visible - 1);
+  int const line_index = display_start + rel_y;
+  if (line_index < 0 || line_index >= n) {
+    return std::nullopt;
+  }
+  std::string const row =
+      StripTerminalAnsi(lines[static_cast<std::size_t>(line_index)]);
+  int const col = std::clamp(mx - body.x_min, 0, static_cast<int>(row.size()));
+  return ExtLogCell{line_index, col};
+}
+
+ExtLogCell PickExtractorsExtentLogCell(int mx, int my, Box const &body,
+                                       std::vector<std::string> const &lines, int display_start,
+                                       int visible, int n) {
+  if (auto h = HitExtractorsLogBodyCell(mx, my, body, lines, display_start, visible)) {
+    return *h;
+  }
+  if (visible <= 0 || n <= 0 || !ExtractorsLogBodyBoxUsable(body)) {
+    return ExtLogCell{0, 0};
+  }
+  if (my < body.y_min) {
+    return ExtLogCell{display_start, 0};
+  }
+  if (my > body.y_max) {
+    int const li = std::clamp(display_start + visible - 1, 0, n - 1);
+    std::string const row = StripTerminalAnsi(lines[static_cast<std::size_t>(li)]);
+    return ExtLogCell{li, static_cast<int>(row.size())};
+  }
+  int const rel_y = std::clamp(my - body.y_min, 0, visible - 1);
+  int const li = std::clamp(display_start + rel_y, 0, n - 1);
+  std::string const row = StripTerminalAnsi(lines[static_cast<std::size_t>(li)]);
+  int const col = std::clamp(mx - body.x_min, 0, static_cast<int>(row.size()));
+  return ExtLogCell{li, col};
+}
+
+std::string BuildExtractorsLogSelectionText(std::vector<std::string> const &lines, ExtLogCell a,
+                                             ExtLogCell b) {
+  if (a.line == b.line && a.col == b.col) {
+    return {};
+  }
+  if (!ExtLogCellLess(a, b)) {
+    std::swap(a, b);
+  }
+  int const ls = a.line;
+  int const cs = a.col;
+  int const le = b.line;
+  int const ce = b.col;
+  std::string out;
+  out.reserve(256);
+  for (int L = ls; L <= le; ++L) {
+    std::string const row = StripTerminalAnsi(lines[static_cast<std::size_t>(L)]);
+    int const rn = static_cast<int>(row.size());
+    if (ls == le) {
+      int const c0 = std::clamp(cs, 0, rn);
+      int const c1 = std::clamp(ce, 0, rn);
+      if (c0 < c1) {
+        out.append(row.substr(static_cast<std::size_t>(c0),
+                              static_cast<std::size_t>(c1 - c0)));
+      }
+    } else if (L == ls) {
+      int const c0 = std::clamp(cs, 0, rn);
+      out.append(row.substr(static_cast<std::size_t>(c0)));
+      out.push_back('\n');
+    } else if (L == le) {
+      int const c1 = std::clamp(ce, 0, rn);
+      out.append(row.substr(0, static_cast<std::size_t>(c1)));
+    } else {
+      out.append(row);
+      out.push_back('\n');
+    }
+  }
+  return out;
+}
+
+void ExtractorsSelectionUnderlineSpanOnRow(int row_index, ExtLogCell lo, ExtLogCell hi,
+                                          std::string const &row_plain, int *u0, int *u1) {
+  int const rn = static_cast<int>(row_plain.size());
+  *u0 = *u1 = 0;
+  if (!ExtLogCellLess(lo, hi)) {
+    std::swap(lo, hi);
+  }
+  if (row_index < lo.line || row_index > hi.line) {
+    return;
+  }
+  if (lo.line == hi.line) {
+    int const a = std::clamp(lo.col, 0, rn);
+    int const b = std::clamp(hi.col, 0, rn);
+    if (a < b) {
+      *u0 = a;
+      *u1 = b;
+    }
+    return;
+  }
+  if (row_index == lo.line) {
+    *u0 = std::clamp(lo.col, 0, rn);
+    *u1 = rn;
+  } else if (row_index == hi.line) {
+    *u0 = 0;
+    *u1 = std::clamp(hi.col, 0, rn);
+  } else {
+    *u0 = 0;
+    *u1 = rn;
+  }
 }
 
 class LineRingBuffer final {
@@ -216,10 +351,9 @@ private:
 int ComputeLogViewportHeight() {
   Dimensions const term = Terminal::Size();
   int const term_h = (term.dimy > 2) ? term.dimy : 25;
-  int constexpr kBannerBudget = 12;
-  int constexpr kFormChrome = 14;
   int constexpr kFooter = 3;
-  return std::max(4, term_h - kBannerBudget - kFormChrome - kFooter);
+  return std::max(4, term_h - kExtractorsBannerAndSepScreenRows -
+                         kExtractorsFormPanelScreenRows - kFooter);
 }
 
 bool StdoutIsInteractiveTerminal() {
@@ -277,6 +411,12 @@ int RunExtractorsFtxuiImpl() {
   Component data_field = Input(&data_path_input, "WoW client Data folder (contains .MPQ)");
   Component out_field =
       Input(&out_path_input, "Output folder (created if missing)");
+
+  int log_view_first = -1;
+  bool log_select_drag = false;
+  ExtLogCell log_select_anchor{};
+  ExtLogCell log_select_extent{};
+  Box extractors_log_body_screen;
 
   auto run_clicked = [&]() {
     if (job_running.load(std::memory_order_acquire)) {
@@ -346,6 +486,7 @@ int RunExtractorsFtxuiImpl() {
     if (job_running.load(std::memory_order_acquire)) {
       return;
     }
+    log_select_drag = false;
     log_lines.Clear();
     notify_log();
   };
@@ -362,8 +503,6 @@ int RunExtractorsFtxuiImpl() {
           clear_btn,
       }),
   });
-
-  int log_view_first = -1;
 
   auto scroll_log = [&](int delta) -> bool {
     int const log_h = ComputeLogViewportHeight();
@@ -385,6 +524,7 @@ int RunExtractorsFtxuiImpl() {
     if (new_first == log_view_first) {
       return false;
     }
+    log_select_drag = false;
     log_view_first = new_first;
     screen.RequestAnimationFrame();
     return true;
@@ -441,17 +581,38 @@ int RunExtractorsFtxuiImpl() {
       int const li = display_start + i;
       std::string const row =
           StripTerminalAnsi(lines[static_cast<std::size_t>(li)]);
-      rows.push_back(text(row) | color(kLogFg));
+      Element line_el;
+      if (log_select_drag) {
+        int u0 = 0;
+        int u1 = 0;
+        ExtractorsSelectionUnderlineSpanOnRow(li, log_select_anchor, log_select_extent, row,
+                                              &u0, &u1);
+        if (u0 < u1) {
+          line_el = hbox({
+              text(row.substr(0, static_cast<std::size_t>(u0))) | color(kLogFg),
+              text(row.substr(static_cast<std::size_t>(u0),
+                              static_cast<std::size_t>(u1 - u0))) |
+                  bgcolor(kLogSelectBg) | color(kLogSelectFg) | underlined,
+              text(row.substr(static_cast<std::size_t>(u1))) | color(kLogFg),
+          });
+        } else {
+          line_el = text(row) | color(kLogFg);
+        }
+      } else {
+        line_el = text(row) | color(kLogFg);
+      }
+      rows.push_back(std::move(line_el));
     }
     if (rows.empty()) {
       rows.push_back(text("(console output appears here)") | color(Color::GrayLight));
     }
 
-    Element const log_body = vbox(std::move(rows)) | bgcolor(kLogBg);
+    Element log_body =
+        vbox(std::move(rows)) | bgcolor(kLogBg) | reflect(extractors_log_body_screen);
     Element const log_title = hbox({
         text(" ") | bgcolor(kAccent),
         text(" extractor output ") | bold | color(Color::RGB(210, 200, 190)),
-        text(" · PgUp/PgDn · mouse wheel ") | dim |
+        text(" · PgUp/PgDn · wheel · drag in log = copy ") | dim |
             color(Color::RGB(160, 150, 140)),
         filler() | bgcolor(Color::RGB(40, 36, 34)),
     });
@@ -482,11 +643,59 @@ int RunExtractorsFtxuiImpl() {
   });
 
   root = CatchEvent(root, [&](Event e) {
+    int const log_h = ComputeLogViewportHeight();
+    constexpr std::size_t kBufferLines = 8000;
+    std::vector<std::string> lines = log_lines.CopyRecent(kBufferLines);
+    int const n = static_cast<int>(lines.size());
+    int const max_start = std::max(0, n - log_h);
+    int const display_start =
+        (log_view_first < 0) ? max_start : std::clamp(log_view_first, 0, max_start);
+    int const visible = std::min(log_h, n - display_start);
+
     if (e.is_mouse()) {
-      Mouse const &me = e.mouse();
-      if (me.button == Mouse::WheelUp || me.button == Mouse::WheelDown) {
-        int const delta = (me.button == Mouse::WheelUp) ? -3 : 3;
+      Mouse const &m = e.mouse();
+      if (m.button == Mouse::WheelUp || m.button == Mouse::WheelDown) {
+        int const delta = (m.button == Mouse::WheelUp) ? -3 : 3;
         return scroll_log(delta);
+      }
+      if (m.button == Mouse::Left && m.motion == Mouse::Pressed) {
+        if (log_select_drag) {
+          log_select_extent =
+              PickExtractorsExtentLogCell(m.x, m.y, extractors_log_body_screen, lines,
+                                          display_start, visible, n);
+          screen.RequestAnimationFrame();
+          return true;
+        }
+        if (auto hit = HitExtractorsLogBodyCell(m.x, m.y, extractors_log_body_screen, lines,
+                                                display_start, visible)) {
+          log_select_drag = true;
+          log_select_anchor = *hit;
+          log_select_extent = *hit;
+          screen.RequestAnimationFrame();
+          return true;
+        }
+      }
+      if (log_select_drag && m.motion == Mouse::Released) {
+        log_select_extent =
+            PickExtractorsExtentLogCell(m.x, m.y, extractors_log_body_screen, lines,
+                                        display_start, visible, n);
+        std::string const clip =
+            BuildExtractorsLogSelectionText(lines, log_select_anchor, log_select_extent);
+        log_select_drag = false;
+        screen.RequestAnimationFrame();
+        if (!clip.empty()) {
+          Firelands::SetSystemClipboardUtf8(clip);
+        }
+        return true;
+      }
+      if (log_select_drag && m.motion == Mouse::Pressed &&
+          m.button != Mouse::WheelUp && m.button != Mouse::WheelDown &&
+          m.button != Mouse::Left) {
+        log_select_extent =
+            PickExtractorsExtentLogCell(m.x, m.y, extractors_log_body_screen, lines,
+                                        display_start, visible, n);
+        screen.RequestAnimationFrame();
+        return true;
       }
     }
     if (e == Event::PageUp) {

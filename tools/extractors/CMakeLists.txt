@@ -23,15 +23,17 @@ set_source_files_properties(ExtractorsFtxui.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 target_link_libraries(firelands-extractors PRIVATE
     FirelandsExtractCommon
-    FirelandsMapExtractorLib
+    FirelandsShared
     ftxui::component
 )
 set(_firelands_collision_bin "${CMAKE_BINARY_DIR}/bin")
 target_compile_definitions(firelands-extractors PRIVATE
+    "FIRELANDS_MAP_EXTRACTOR_PATH=\"${_firelands_collision_bin}/firelands-map-extractor-vmap${CMAKE_EXECUTABLE_SUFFIX}\""
     "FIRELANDS_VMAP4_EXTRACTOR_PATH=\"${_firelands_collision_bin}/firelands-vmap4-extractor${CMAKE_EXECUTABLE_SUFFIX}\""
     "FIRELANDS_VMAP4_ASSEMBLER_PATH=\"${_firelands_collision_bin}/firelands-vmap4-assembler${CMAKE_EXECUTABLE_SUFFIX}\""
 )
 add_dependencies(firelands-extractors
+    firelands-map-extractor
     firelands-map-extractor-vmap
     firelands-vmap4-extractor
     firelands-vmap4-assembler

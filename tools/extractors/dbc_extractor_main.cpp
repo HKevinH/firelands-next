@@ -9,7 +9,7 @@ namespace {
 void PrintUsage(const char *prog) {
   std::cerr << "Usage:\n"
             << "  " << prog << " --data <WoW/Data> --out <output_dir> [options]\n"
-            << "Extracts DBFilesClient\\*.dbc and DBFilesClient\\*.db2 from the MPQ chain.\n"
+            << "Extracts DBFilesClient\\*.dbc and DBFilesClient\\*.db2 into <output_dir>/dbc/.\n"
             << "Interactive launcher: firelands-extractors\n"
             << "Options:\n"
             << "  --list-mpqs   Print resolved MPQ open order and exit\n";

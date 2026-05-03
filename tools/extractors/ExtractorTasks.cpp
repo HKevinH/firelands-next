@@ -29,19 +29,15 @@ bool EndsWithInsensitive(const std::string &s, const char *ext) {
 }
 
 std::string NormalizeSlashesLower(std::string s) {
-  for (char &c : s) {
-    if (c == '/') {
-      c = '\\';
-    }
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
+  NormalizeSlashesLowerInPlace(s);
   return s;
 }
 
 // Internal MPQ paths are usually "DBFilesClient\Foo.dbc" or "...\Item.db2";
 // some builds use '/'.
 bool IsDbFilesClientDataStorePath(const std::string &archived) {
-  const std::string n = NormalizeSlashesLower(archived);
+  std::string n = archived;
+  NormalizeSlashesLowerInPlace(n);
   static const char kPrefix[] = "dbfilesclient\\";
   const size_t pl = sizeof(kPrefix) - 1;
   const bool underDbFilesClient =
@@ -129,7 +125,7 @@ int RunDbcExtractTask(const std::filesystem::path &dataDir,
   size_t failed = 0;
 
   for (const auto &archived : storePaths) {
-    const std::filesystem::path dest = outDir / ArchivedPathToRelative(archived);
+    const std::filesystem::path dest = outDir / DbcStoreOutputRelativePath(archived);
     if (chain.ExtractFile(archived.c_str(), dest)) {
       ++extracted;
     } else {
@@ -145,8 +141,8 @@ int RunDbcExtractTask(const std::filesystem::path &dataDir,
            "  - Use menu option 3 (or --list-mpqs) to see which archives were detected.\n";
   }
 
-  out << "Extracted " << extracted << " DBFilesClient file(s) (.dbc / .db2) to "
-      << outDir.string() << "\n";
+  out << "Extracted " << extracted << " DBFilesClient file(s) (.dbc / .db2) under "
+      << (outDir / "dbc").string() << "\n";
   return failed != 0 ? 1 : 0;
 }
 
