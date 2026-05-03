@@ -39,7 +39,12 @@ bool SpellUsesFriendlySpellRangeColumns(SpellDefinition const *def,
     return targetIsSelf;
   if (targetIsSelf)
     return true;
-  return SpellTreatAsBeneficialForFriendlySpellRange(*def);
+  bool const beneficialSpell = SpellTreatAsBeneficialForFriendlySpellRange(*def);
+  if (!beneficialSpell)
+    return false;
+  if (req.hasTargetFactionReactionHint)
+    return req.targetIsFriendlyTeamForSpellRange;
+  return true;
 }
 
 } // namespace

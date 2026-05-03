@@ -20,6 +20,7 @@
 #include <shared/network/UpdateFields.h>
 #include <shared/game/ChatLanguages.h>
 #include <shared/game/InventorySlots.h>
+#include <shared/game/PlayerFactionTeam.h>
 #include <shared/game/PlayerGmAppearance.h>
 #include <shared/dbc/GtPlayerStatGameTables.h>
 #include <shared/game/WowGuid.h>
@@ -735,6 +736,7 @@ void WorldSession::LoginSpawnInWorld(uint64 guid, Character const &character,
                                      MovementInfo const &move) {
   auto player = std::make_shared<Player>(guid, shared_from_this());
   player->SetPosition(move);
+  player->SetRaceAndFaction(character.GetRace(), character.GetFactionTemplate());
   player->InitCombatResources(character.GetHealth(), character.GetMaxHealth(),
                                character.GetPower1(), character.GetMaxPower1());
   WorldService::Instance().AddPlayerToMap(_mapId, player);
@@ -1148,6 +1150,16 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
         req.targetX = tx;
         req.targetY = ty;
         req.targetZ = tz;
+      }
+      if (auto casterPl = map->TryGetPlayer(_playerGuid)) {
+        if (auto targetPl = map->TryGetPlayer(c.unitTargetGuid)) {
+          bool sameTeam = false;
+          if (TrySpellRangeFriendlyTeamHint(casterPl->GetRace(), targetPl->GetRace(),
+                                             &sameTeam)) {
+            req.hasTargetFactionReactionHint = true;
+            req.targetIsFriendlyTeamForSpellRange = sameTeam;
+          }
+        }
       }
     }
   }

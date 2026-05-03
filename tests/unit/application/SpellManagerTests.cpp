@@ -5,6 +5,7 @@
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellCastTables.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
+#include <shared/game/PlayerFactionTeam.h>
 #include <shared/game/SpellAttributes.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldOpcodes.h>
@@ -549,6 +550,58 @@ TEST(SpellManagerTests, FriendlySpellRangeUsesHigherMaxThanHostile) {
   ASSERT_EQ(outFriendly.kind, SpellCastOutcome::Kind::SpellStartAndGo);
 }
 
+TEST(SpellManagerTests, BeneficialSpell_FactionHintEnemyTeam_UsesHostileSpellRange) {
+  uint32 constexpr kRi = 11;
+  auto tables =
+      std::make_shared<MockHostileRangeTables>(5.f, kRi, 0.f, 40.f, 0.f);
+  auto defsHeal = std::make_shared<SpellDefinitionWithRange>(kRi, 1);
+  SpellManager mgrHeal(defsHeal, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = 0x20ULL;
+  req.hasTargetFactionReactionHint = true;
+  req.targetIsFriendlyTeamForSpellRange = false;
+  req.hasCasterWorldPosition = true;
+  req.casterX = 0.f;
+  req.casterY = 0.f;
+  req.casterZ = 0.f;
+  req.hasTargetWorldPosition = true;
+  req.targetX = 10.f;
+  req.targetY = 0.f;
+  req.targetZ = 0.f;
+  SpellCastOutcome out;
+  mgrHeal.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_OUT_OF_RANGE));
+}
+
+TEST(SpellManagerTests, BeneficialSpell_FactionHintSameTeam_UsesFriendlySpellRange) {
+  uint32 constexpr kRi = 11;
+  auto tables =
+      std::make_shared<MockHostileRangeTables>(5.f, kRi, 0.f, 40.f, 0.f);
+  auto defsHeal = std::make_shared<SpellDefinitionWithRange>(kRi, 1);
+  SpellManager mgrHeal(defsHeal, tables);
+  std::vector<uint32> known = {100};
+  SpellCastRequest req = MakeRequest(0x10ULL, 100, &known);
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = 0x20ULL;
+  req.hasTargetFactionReactionHint = true;
+  req.targetIsFriendlyTeamForSpellRange = true;
+  req.hasCasterWorldPosition = true;
+  req.casterX = 0.f;
+  req.casterY = 0.f;
+  req.casterZ = 0.f;
+  req.hasTargetWorldPosition = true;
+  req.targetX = 10.f;
+  req.targetY = 0.f;
+  req.targetZ = 0.f;
+  SpellCastOutcome out;
+  mgrHeal.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
 TEST(SpellManagerTests, AuraDebuffAttrUsesHostileRangeOnOtherUnit) {
   uint32 constexpr kRi = 11;
   auto tables =
@@ -887,4 +940,21 @@ TEST(SpellManagerTests, LineOfSightNotCheckedForSelfTarget) {
   SpellCastOutcome out;
   mgr.ProcessCastRequest(req, &out);
   ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
+TEST(SpellManagerTests, PlayerFactionTeamHint_HumanVsOrc_NotSameTeam) {
+  bool same = true;
+  ASSERT_TRUE(TrySpellRangeFriendlyTeamHint(1, 2, &same));
+  EXPECT_FALSE(same);
+}
+
+TEST(SpellManagerTests, PlayerFactionTeamHint_HumanVsDwarf_SameTeam) {
+  bool same = false;
+  ASSERT_TRUE(TrySpellRangeFriendlyTeamHint(1, 3, &same));
+  EXPECT_TRUE(same);
+}
+
+TEST(SpellManagerTests, PlayerFactionTeamHint_UnknownRace_ReturnsFalse) {
+  bool same = true;
+  EXPECT_FALSE(TrySpellRangeFriendlyTeamHint(1, 99, &same));
 }

@@ -4,6 +4,11 @@
 
 namespace Firelands {
 
+void Player::SetRaceAndFaction(uint8 race, uint32 factionTemplate) {
+  m_race = race;
+  m_factionTemplate = factionTemplate;
+}
+
 void Player::InitCombatResources(uint32 health, uint32 maxHealth, uint32 power1,
                                  uint32 maxPower1) {
   m_liveMaxHealth = std::max<uint32>(1u, maxHealth);

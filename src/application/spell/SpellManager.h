@@ -50,6 +50,11 @@ struct SpellCastRequest {
   bool hasCasterPowerSnapshot = false;
   uint32 casterPower1 = 0;
   uint32 casterMaxPower1 = 0;
+  /// Player-vs-player team hint (Alliance/Horde by race). When false, beneficial spells on other
+  /// units keep optimistic friendly `SpellRange.dbc` columns (legacy behaviour).
+  bool hasTargetFactionReactionHint = false;
+  /// Meaningful only if `hasTargetFactionReactionHint`; same faction team ⇒ friendly band.
+  bool targetIsFriendlyTeamForSpellRange = false;
 };
 
 /// Result of `SpellManager::ProcessCastRequest`: packets to send and new GCD time.

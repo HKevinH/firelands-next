@@ -16,6 +16,11 @@ public:
   /// Seeded from `Character` at world login; authoritative until logout (Phase D/E).
   void InitCombatResources(uint32 health, uint32 maxHealth, uint32 power1,
                            uint32 maxPower1);
+  /// Race / faction template mirror `Character` for server-side targeting hints (spell range).
+  void SetRaceAndFaction(uint8 race, uint32 factionTemplate);
+  uint8 GetRace() const { return m_race; }
+  uint32 GetFactionTemplate() const { return m_factionTemplate; }
+
   uint32 GetLiveHealth() const { return m_liveHealth; }
   uint32 GetLiveMaxHealth() const { return m_liveMaxHealth; }
   void ApplyHealthDelta(int32 delta);
@@ -25,6 +30,8 @@ public:
 
 private:
   std::shared_ptr<IMapNotifier> m_notifier;
+  uint8 m_race = 0;
+  uint32 m_factionTemplate = 0;
   uint32 m_liveHealth = 1;
   uint32 m_liveMaxHealth = 1;
   uint32 m_livePower1 = 0;
