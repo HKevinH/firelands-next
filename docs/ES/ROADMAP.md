@@ -67,8 +67,8 @@ Este documento es el **único lugar** para hacer seguimiento del progreso: roadm
 ### Definition of done (short term)
 
 - [x] Entrar al mundo sin crash (fix 2026-04-29)
-- [ ] Permanecer conectado **≥ 5 min** idle
-- [ ] Time sync “sano”: `SMSG_TIME_SYNC_REQ` con cadencia razonable (más allá del chain actual)
+- [ ] Permanecer conectado **≥ 5 min** idle (validación manual; ver abajo)
+- [x] Time sync “sano”: `SMSG_TIME_SYNC_REQ` por **timer periódico** (no encadenado en cada `CMSG_TIME_SYNC_RESP`); cadencia configurable `Network.TimeSyncPeriodMs` (2 s–1 h, defecto en yaml **5 min** / 300000 ms)
 - [ ] Post-login chatter: implementado o ignorado de forma segura (sin loops, sin asserts)
 - [ ] Validar payloads/order del login burst vs ref (spot-check)
 
@@ -84,6 +84,12 @@ Goal: mantener UI consistente sin implementar sistemas completos todavía.
 - [x] **LFG**: `CMSG_LFG_GET_STATUS` → `SMSG_LFG_UPDATE_STATUS_NONE`; `CMSG_LFG_LOCK_INFO_REQUEST` → `SMSG_LFG_PLAYER_INFO`/`SMSG_LFG_PARTY_INFO` vacíos
 - [x] **Cemetery list**: `CMSG_REQUEST_CEMETERY_LIST` → `SMSG_REQUEST_CEMETERY_LIST_RESPONSE` (lista vacía)
 
+### Validación idle (manual, ≥ 5 min)
+
+1. Entrar al mundo y permanecer inmóvil (sin chat ni comandos) al menos **5 minutos**.
+2. Confirmar que el cliente no se cae y que el servidor no registra cierre de socket inesperado (`Session disconnect` / errores de lectura).
+3. Opcional: `Log.Level: trace` y revisar `CMSG_TIME_SYNC_RESP` periódicos; ajustar `Network.TimeSyncPeriodMs` en `worldserver.yaml` si hace falta (p. ej. 5000 para cadencia tipo referencia).
+
 ### Bitácora (stability)
 
 | Fecha | Nota |
@@ -94,6 +100,7 @@ Goal: mantener UI consistente sin implementar sistemas completos todavía.
 | 2026-04-30 | CreateObject cruzado al login (`Map::ForEachPlayer`); checklist battlefield = no-op documentado |
 | 2026-04-30 | CMSG_CAST_SPELL mínimo: wire 4.3.4 (`SpellCastWire`) + broadcast START/GO + GCD 1.5s |
 | 2026-05-03 | Doc: snapshot refactor capa paquetes (`shared/network/packets/*`) + split `WorldSession`; foco siguiente alineado con estabilidad idle / auras |
+| 2026-05-03 | Estabilidad: `Network.TimeSyncPeriodMs` + cancel defensivo antes de `SchedulePeriodicTimeSync`; trace en `CMSG_TIME_SYNC_RESP`; guía de validación idle en roadmap |
 
 ---
 

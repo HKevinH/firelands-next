@@ -409,9 +409,10 @@ void WorldSession::HandleSwapItem(WorldPacket &packet) {
 void WorldSession::HandleTimeSyncResp(WorldPacket &packet) {
   WorldPackets::Client::TimeSyncResponse ts{};
   WorldPackets::Client::TimeSyncResponse::Read(packet, ts);
-  (void)ts;
   // Trinity (MovementHandler.cpp): RESP updates clock skew only; the following
-  // SMSG_TIME_SYNC_REQ is sent from SendTimeSync() on a ~5s timer — not here.
+  // SMSG_TIME_SYNC_REQ is sent on a periodic timer — not here.
+  LOG_TRACE("CMSG_TIME_SYNC_RESP counter={} clientTime={}", ts.counter,
+            ts.clientTime);
 }
 
 void WorldSession::HandleMoveTimeSkipped(WorldPacket &packet) {

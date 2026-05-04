@@ -444,7 +444,8 @@ void WorldSession::LoginFinalizeWorldEntry(uint64 guid) {
   WorldPacket timeSync(SMSG_TIME_SYNC_REQ);
   timeSync.Append<uint32>(_timeSyncNextCounter++);
   SendPacket(timeSync);
-  // Match Trinity: next time-sync is ~5s later via timer, not on each RESP.
+  // Match Trinity: next time-sync is periodic via timer, not on each RESP.
+  CancelPeriodicTimeSync();
   SchedulePeriodicTimeSync();
   SendLoadCUFProfiles();
 

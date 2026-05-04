@@ -9,4 +9,5 @@ If you prefer, we can later translate the full roadmap into English and keep bot
 - **In flight:** `WorldSession` split into `worldsession/*.cpp` (login flow, client opcode handlers, outbound sends).
 - **Shared packet layer:** new headers under `src/shared/network/packets/` (client read structs, 4.3.4 packed player `ObjectGuid`, small server `ServerPacket` helpers).
 - **Next priorities (see Spanish roadmap):** finish this refactor (build + commit), then spell auras / minimal spell data, plus client idle stability (≥5 min) and time-sync behaviour.
+- **2026-05-03 (stability):** `SMSG_TIME_SYNC_REQ` interval is configurable via `Network.TimeSyncPeriodMs` in `worldserver.yaml` (default 300000 ms / 5 min in repo yaml, clamped 2000–3600000 ms); manual idle test steps are documented in the Spanish roadmap.
 

@@ -2,6 +2,7 @@
 #include <domain/world/Player.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <shared/Config.h>
 #include <shared/Logger.h>
 #include <shared/game/MirrorTimerTypes.h>
 #include <shared/network/WorldOpcodes.h>
@@ -15,6 +16,19 @@ namespace {
 
 namespace ws_obj = WorldSessionObjectUpdate;
 
+/// Cataclysm client expects periodic `SMSG_TIME_SYNC_REQ`; interval is driven by a
+/// steady_timer (not by each `CMSG_TIME_SYNC_RESP`) to avoid flooding during map load.
+uint32_t ClampedTimeSyncPeriodMs() {
+  uint32_t const v = Config::Instance().GetNested<uint32_t>(
+      {"Network", "TimeSyncPeriodMs"}, 300000u);
+  if (v < 2000u)
+    return 2000u;
+  // Upper bound allows multi-minute intervals (e.g. low-traffic dev / idle tests).
+  if (v > 3600000u)
+    return 3600000u;
+  return v;
+}
+
 } // namespace
 
 void WorldSession::CancelPeriodicTimeSync() {
@@ -23,7 +37,8 @@ void WorldSession::CancelPeriodicTimeSync() {
 
 void WorldSession::SchedulePeriodicTimeSync() {
   auto self(shared_from_this());
-  _timeSyncPeriodicTimer.expires_after(std::chrono::milliseconds(5000));
+  _timeSyncPeriodicTimer.expires_after(
+      std::chrono::milliseconds(ClampedTimeSyncPeriodMs()));
   _timeSyncPeriodicTimer.async_wait(
       [this, self](boost::system::error_code ec) {
         if (ec == boost::asio::error::operation_aborted)
