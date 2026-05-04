@@ -33,6 +33,8 @@ enum WorldOpcode : uint32 {
   CMSG_LOGOUT_CANCEL = 0x2324,
   SMSG_LOGIN_VERIFY_WORLD = 0x2005,
   SMSG_TIME_SYNC_REQ = 0x3CA4,
+  /// Reference: The-Cataclysm-Preservation-Project `Opcodes.h` (build 15595).
+  SMSG_START_MIRROR_TIMER = 0x6824,
   /// Reference: SMSG_STOP_MIRROR_TIMER (not used for spell book in 4.3.4).
   SMSG_STOP_MIRROR_TIMER = 0x0B06,
   SMSG_SEND_KNOWN_SPELLS = 0x0104,

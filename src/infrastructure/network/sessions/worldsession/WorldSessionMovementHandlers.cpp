@@ -4,6 +4,8 @@
 #include <shared/Logger.h>
 #include <shared/network/BitReader.h>
 #include <shared/network/MovementFlags.h>
+#include <shared/network/MovementStateQueries.h>
+#include <shared/network/WorldOpcodes.h>
 #include <shared/network/MovementTeleportPackets.h>
 #include <shared/network/MovementWire.h>
 
@@ -116,6 +118,8 @@ void WorldSession::HandleMoveTeleportAck(WorldPacket &packet) {
     map->BroadcastPacketToNearby(_playerGuid, nearbyUpdate, false);
   }
 
+  ResetBreathMirrorState();
+
   // Login merges nearby creatures into the initial SMSG_UPDATE_OBJECT; teleport does not,
   // so the client would see an empty cell until we send CREATE for units here.
   SendNearbyCreatureCreatesToSelf(_teleportPendingX, _teleportPendingY);
@@ -167,6 +171,14 @@ void WorldSession::HandleMovement(WorldPacket &packet) {
       map->BroadcastPacketToNearby(_playerGuid, broadcast);
       SendPacket(broadcast);
     }
+    // `MSG_MOVE_START_SWIM` / `MSG_MOVE_STOP_SWIM` often carry the transition before
+    // `MOVEMENTFLAG_SWIMMING` appears on merged heartbeats — mirror breath from opcode too.
+    bool inLiquidForBreath = MovementIsSwimming(_position);
+    if (op == MSG_MOVE_START_SWIM)
+      inLiquidForBreath = true;
+    else if (op == MSG_MOVE_STOP_SWIM)
+      inLiquidForBreath = false;
+    UpdateBreathFromSwimmingState(inLiquidForBreath);
   }
 }
 

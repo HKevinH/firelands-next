@@ -265,6 +265,11 @@ public:
   /// every CMSG_TIME_SYNC_RESP (that floods the client and breaks map loading).
   void SchedulePeriodicTimeSync();
   void CancelPeriodicTimeSync();
+  void ResetBreathMirrorState();
+  void UpdateBreathFromSwimmingState(bool swimming);
+  void SendStartMirrorTimerPacket(int32_t timerType, int32_t value, int32_t maxValue,
+                                  int32_t scale, bool paused, int32_t spellId);
+  void SendStopMirrorTimerPacket(int32_t timerType);
 
   /// CMSG_PLAYER_LOGIN sub-steps (keeps `HandlePlayerLogin` readable).
   void LoginReadPackedPlayerGuid(WorldPacket &packet, uint64 &outGuid);
@@ -398,6 +403,12 @@ public:
   float _teleportPendingY = 0.f;
   float _teleportPendingZ = 0.f;
   float _teleportPendingO = 0.f;
+
+  /// Underwater breath (`MirrorTimerType::Breath`); driven from movement `MOVEMENTFLAG_SWIMMING`.
+  bool _breathMirrorActive = false;
+  int32_t _breathRemainingMs = 0;
+  std::optional<std::chrono::steady_clock::time_point> _breathLastMonotonicTick;
+  int32_t _breathLastSentValueMs = -1;
 
   /// Faction.dbc id → forced `ReputationRank` for `SMSG_SET_FORCED_REACTIONS` (quest/script overrides).
   std::map<uint32, uint32> _forcedFactionReactions;
