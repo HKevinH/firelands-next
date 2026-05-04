@@ -1,6 +1,7 @@
 #ifndef FIRELANDS_SHARED_BIGINT_H
 #define FIRELANDS_SHARED_BIGINT_H
 
+#include "shared/Common.h"
 #include <openssl/bn.h>
 #include <vector>
 

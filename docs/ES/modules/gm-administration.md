@@ -113,7 +113,7 @@ Aplicar migraciones según el arranque del migrator; ver [tools-sql-build.md](to
 
 ## Configuración
 
-- **`worldserver.yaml`** — `Console.Enabled` y `Console.Tui` controlan si hay consola interactiva y el aspecto del prompt (véase [executables.md](executables.md)).
+- **`worldserver.yaml`** — `Console.Enabled` activa o desactiva la consola interactiva; con TTY siempre se usa la consola FTXUI (véase [executables.md](executables.md)).
 - El **nivel de acceso** de staff está en la cuenta; cambiarlo con `.account setaccess` exige **volver a entrar** para que la sesión del cliente cargue los nuevos permisos.
 
 ## Documentación relacionada

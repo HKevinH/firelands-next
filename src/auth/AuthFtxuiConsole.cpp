@@ -8,6 +8,7 @@
 #include <ftxui/screen/terminal.hpp>
 
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
+#include <infrastructure/network/rest/RestAuthServer.h>
 #include <shared/Logger.h>
 #include <shared/system/SystemClipboard.h>
 
@@ -21,6 +22,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <algorithm>
 #include <cctype>
 #include <deque>
@@ -341,14 +343,19 @@ int ComputeAuthLogViewportHeight() {
   return std::max(6, term_h - kBannerBudget - 1 - kBottomChrome);
 }
 
-void RunAuthFtxuiConsoleImpl(AsyncNetworkServer &authTcpServer,
-                             AsyncNetworkServer *realmLinkTcpServer) {
+void RunAuthFtxuiConsoleImpl(
+    std::shared_ptr<AuthFtxuiRuntime> runtime,
+    std::function<void(std::shared_ptr<AuthFtxuiRuntime>)> bootstrap_worker) {
   auto screen = ScreenInteractive::Fullscreen();
   Closure const requestExit = screen.ExitLoopClosure();
 
   std::shared_ptr<FtxuiLogSink> log_sink =
       std::make_shared<FtxuiLogSink>(std::size_t(12000));
   ReplaceStdoutColorSinkWith(log_sink);
+
+  std::thread bootstrap_thread([fn = std::move(bootstrap_worker), runtime]() {
+    fn(runtime);
+  });
 
   int log_view_first = -1;
   bool log_select_drag = false;
@@ -546,11 +553,28 @@ void RunAuthFtxuiConsoleImpl(AsyncNetworkServer &authTcpServer,
   });
 
   std::atomic<bool> run_ticks{true};
-  std::thread ticker([&] {
+  std::thread ticker([&, runtime] {
     while (run_ticks.load()) {
-      authTcpServer.Update();
-      if (realmLinkTcpServer != nullptr) {
-        realmLinkTcpServer->Update();
+      bool failed = false;
+      bool ready = false;
+      std::shared_ptr<AsyncNetworkServer> auth_srv;
+      std::shared_ptr<AsyncNetworkServer> realm_srv;
+      {
+        std::lock_guard<std::mutex> lock(runtime->mutex);
+        failed = runtime->bootstrap_failed;
+        ready = runtime->services_ready;
+        if (ready && !failed) {
+          auth_srv = runtime->auth_server;
+          realm_srv = runtime->realm_link_server;
+        }
+      }
+      if (failed) {
+        requestExit();
+      } else if (ready && auth_srv) {
+        auth_srv->Update();
+        if (realm_srv) {
+          realm_srv->Update();
+        }
       }
       if (log_sink->ConsumeRenderDirty()) {
         screen.Post(Event::Custom);
@@ -565,6 +589,9 @@ void RunAuthFtxuiConsoleImpl(AsyncNetworkServer &authTcpServer,
   if (ticker.joinable()) {
     ticker.join();
   }
+  if (bootstrap_thread.joinable()) {
+    bootstrap_thread.join();
+  }
 
   RestoreStdoutColorSink(log_sink);
   MuteTerminalLogSinks();
@@ -572,9 +599,10 @@ void RunAuthFtxuiConsoleImpl(AsyncNetworkServer &authTcpServer,
 
 } // namespace (anonymous)
 
-void RunAuthFtxuiConsole(AsyncNetworkServer &authTcpServer,
-                         AsyncNetworkServer *realmLinkTcpServer) {
-  RunAuthFtxuiConsoleImpl(authTcpServer, realmLinkTcpServer);
+void RunAuthFtxuiConsole(
+    std::shared_ptr<AuthFtxuiRuntime> runtime,
+    std::function<void(std::shared_ptr<AuthFtxuiRuntime>)> bootstrap_worker) {
+  RunAuthFtxuiConsoleImpl(std::move(runtime), std::move(bootstrap_worker));
 }
 
 } // namespace Firelands

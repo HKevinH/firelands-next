@@ -1,9 +1,8 @@
 # Firelands Auth Server Configuration
 
-# Full-screen log TUI (FTXUI): same look as world, no command line. TTY required.
+# With a TTY, the auth process always uses the full-screen FTXUI log console (no YAML toggle).
 Console:
   Enabled: true
-  Tui: true
 
 Network:
   BindAddress: "0.0.0.0"

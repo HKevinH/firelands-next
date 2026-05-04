@@ -11,9 +11,8 @@ Network:
 # Disabled automatically when stdout is not a TTY (e.g. Docker without -t).
 Console:
   Enabled: true
-  # Full-screen TUI (FTXUI): falls back to plain stdin when Tui is false. TTY required.
-  # Tip: set Log.StickyBanner to false while using TUI (both fight for the terminal).
-  Tui: true
+  # With a TTY, the world process always uses the full-screen FTXUI console (no YAML toggle).
+  # Tip: set Log.StickyBanner to false while using the console (sticky banner fights the TUI).
 
 # Persistent outbound TCP to auth (realm online / instant offline on crash).
 # Must match authserver.yaml RealmLink.Token and realmlist id.

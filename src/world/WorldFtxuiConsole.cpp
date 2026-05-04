@@ -14,6 +14,7 @@
 #include <spdlog/sinks/stdout_sinks.h>
 
 #include "WorldInteractiveConsole.h"
+#include <application/services/CommandService.h>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
 #include <shared/Logger.h>
 #include <shared/system/SystemClipboard.h>
@@ -25,6 +26,7 @@
 #include <chrono>
 #include <csignal>
 #include <deque>
+#include <functional>
 #include <algorithm>
 #include <cctype>
 #include <memory>
@@ -365,14 +367,19 @@ int ComputeWorldLogViewportHeight() {
   return std::max(6, term_h - kBannerBudget - 1 - kBottomChrome);
 }
 
-void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
-                              WorldInteractiveConsole &interactiveConsole) {
+void RunWorldFtxuiConsoleImpl(
+    std::shared_ptr<WorldFtxuiRuntime> runtime,
+    std::function<void(std::shared_ptr<WorldFtxuiRuntime>)> bootstrap_worker) {
   IgnoreSigIntForTui const ignoreSigIntDuringTui;
   auto screen = ScreenInteractive::Fullscreen();
   std::shared_ptr<FtxuiLogSink> log_sink;
   log_sink = std::make_shared<FtxuiLogSink>(std::size_t(12000));
 
   ReplaceStdoutColorSinkWith(log_sink);
+
+  std::thread bootstrap_thread([fn = std::move(bootstrap_worker), runtime]() {
+    fn(runtime);
+  });
 
   // Log pane scroll: -1 follows the live tail; >=0 is the first visible line
   // index within the copied buffer (PgUp/PgDn and mouse wheel; not Arrow keys,
@@ -408,9 +415,17 @@ void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
     return e;
   };
   auto input = Input(&command, " .help   .exit / quit ", input_opts);
-  input |= CatchEvent([&](Event e) {
+  input |= CatchEvent([&, runtime](Event e) {
     if (e != Event::Return) {
       return false;
+    }
+    std::shared_ptr<WorldInteractiveConsole> ic;
+    {
+      std::lock_guard<std::mutex> lock(runtime->mutex);
+      ic = runtime->interactive_console;
+    }
+    if (!ic) {
+      return true;
     }
     std::string c = command;
     command.clear();
@@ -423,7 +438,7 @@ void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
     }
     c = c.substr(i);
     if (!c.empty()) {
-      interactiveConsole.SubmitLine(std::move(c));
+      ic->SubmitLine(std::move(c));
     }
     return true;
   });
@@ -538,7 +553,7 @@ void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
   const Color kLogSelectFg = Color::RGB(255, 252, 245);
   const Color kShellBg = Color::RGB(28, 26, 24);
 
-  auto root = Renderer(container, [&] {
+  auto root = Renderer(container, [&, runtime] {
     int const log_h = ComputeWorldLogViewportHeight();
 
     constexpr std::size_t kBufferLines = 4000;
@@ -595,12 +610,25 @@ void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
     Element const log_area =
         window(log_title, log_body) | size(HEIGHT, EQUAL, log_h);
 
-    Element const input_rail =
-        hbox({
-            text(" ") | bgcolor(kAccent),
-            input->Render() | flex |
-                borderStyled(ROUNDED, Color::RGB(100, 90, 82)),
-        });
+    std::shared_ptr<WorldInteractiveConsole> ic;
+    {
+      std::lock_guard<std::mutex> lock(runtime->mutex);
+      ic = runtime->interactive_console;
+    }
+    Element input_rail;
+    if (!ic) {
+      input_rail = hbox({
+          text(" ") | bgcolor(kAccent),
+          text(" Initializing server… ") | dim | color(Color::RGB(200, 190, 180)) |
+              flex | borderStyled(ROUNDED, Color::RGB(100, 90, 82)),
+      });
+    } else {
+      input_rail = hbox({
+          text(" ") | bgcolor(kAccent),
+          input->Render() | flex |
+              borderStyled(ROUNDED, Color::RGB(100, 90, 82)),
+      });
+    }
 
     Element const banner = WorldTuiBanner();
 
@@ -616,16 +644,40 @@ void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
   });
 
   std::atomic<bool> run_ticks{true};
-  std::thread ticker([&] {
+  std::thread ticker([&, runtime] {
     while (run_ticks.load()) {
-      worldServer.Update();
-      interactiveConsole.ProcessPending();
+      bool failed = false;
+      bool ready = false;
+      std::shared_ptr<AsyncNetworkServer> ws;
+      std::shared_ptr<WorldInteractiveConsole> ic;
+      std::shared_ptr<CommandService> cs;
+      {
+        std::lock_guard<std::mutex> lock(runtime->mutex);
+        failed = runtime->bootstrap_failed;
+        ready = runtime->services_ready;
+        if (ready && !failed) {
+          ws = runtime->world_server;
+          ic = runtime->interactive_console;
+          cs = runtime->command_service;
+        }
+      }
+      if (failed) {
+        screen.ExitLoopClosure()();
+      } else if (ready && ws) {
+        ws->Update();
+        if (ic) {
+          ic->ProcessPending();
+        }
+        if (cs) {
+          cs->PollScheduledRestart();
+        }
+        if (ic && ic->ShutdownRequested()) {
+          screen.ExitLoopClosure()();
+        }
+      }
       if (log_sink->ConsumeRenderDirty()) {
         screen.Post(Event::Custom);
         screen.RequestAnimationFrame();
-      }
-      if (interactiveConsole.ShutdownRequested()) {
-        screen.ExitLoopClosure()();
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -636,18 +688,30 @@ void RunWorldFtxuiConsoleImpl(AsyncNetworkServer &worldServer,
   if (ticker.joinable()) {
     ticker.join();
   }
+  if (bootstrap_thread.joinable()) {
+    bootstrap_thread.join();
+  }
 
   RestoreStdoutColorSink(log_sink);
-  if (interactiveConsole.ShutdownRequested()) {
+  bool mute = false;
+  {
+    std::lock_guard<std::mutex> lock(runtime->mutex);
+    if (runtime->interactive_console &&
+        runtime->interactive_console->ShutdownRequested()) {
+      mute = true;
+    }
+  }
+  if (mute) {
     MuteTerminalLogSinks();
   }
 }
 
 } // namespace (anonymous)
 
-void RunWorldFtxuiConsole(AsyncNetworkServer &worldServer,
-                          WorldInteractiveConsole &interactiveConsole) {
-  RunWorldFtxuiConsoleImpl(worldServer, interactiveConsole);
+void RunWorldFtxuiConsole(
+    std::shared_ptr<WorldFtxuiRuntime> runtime,
+    std::function<void(std::shared_ptr<WorldFtxuiRuntime>)> bootstrap_worker) {
+  RunWorldFtxuiConsoleImpl(std::move(runtime), std::move(bootstrap_worker));
 }
 
 } // namespace Firelands

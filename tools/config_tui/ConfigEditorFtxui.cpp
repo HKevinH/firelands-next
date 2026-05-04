@@ -302,7 +302,6 @@ struct AuthFields {
   std::string net_port = "3724";
   std::string net_rest_port = "8081";
   bool console_enabled = true;
-  bool console_tui = true;
   bool realm_link_enabled = true;
   std::string realm_link_bind = "127.0.0.1";
   std::string realm_link_port = "3725";
@@ -322,7 +321,6 @@ struct WorldFields {
   std::string net_bind = "0.0.0.0";
   std::string net_port = "8085";
   bool console_enabled = true;
-  bool console_tui = true;
   bool realm_link_enabled = true;
   std::string realm_auth_host = "127.0.0.1";
   std::string realm_auth_port = "3725";
@@ -348,7 +346,6 @@ void YamlToAuth(YAML::Node const &n, AuthFields &f) {
   f.net_port = std::to_string(GetInt(n, {"Network", "Port"}, 3724));
   f.net_rest_port = std::to_string(GetInt(n, {"Network", "RestPort"}, 8081));
   f.console_enabled = GetBool(n, {"Console", "Enabled"}, f.console_enabled);
-  f.console_tui = GetBool(n, {"Console", "Tui"}, f.console_tui);
   f.realm_link_enabled =
       GetBool(n, {"RealmLink", "Enabled"}, f.realm_link_enabled);
   f.realm_link_bind =
@@ -372,7 +369,6 @@ void YamlToWorld(YAML::Node const &n, WorldFields &f) {
   f.net_bind = GetScalar(n, {"Network", "BindAddress"}, f.net_bind);
   f.net_port = std::to_string(GetInt(n, {"Network", "Port"}, 8085));
   f.console_enabled = GetBool(n, {"Console", "Enabled"}, f.console_enabled);
-  f.console_tui = GetBool(n, {"Console", "Tui"}, f.console_tui);
   f.realm_link_enabled =
       GetBool(n, {"RealmLink", "Enabled"}, f.realm_link_enabled);
   f.realm_auth_host = GetScalar(n, {"RealmLink", "AuthHost"}, f.realm_auth_host);
@@ -422,7 +418,6 @@ void AuthToYaml(YAML::Node &n, AuthFields const &f, std::string &err) {
   n["Network"]["Port"] = p;
   n["Network"]["RestPort"] = rp;
   n["Console"]["Enabled"] = f.console_enabled;
-  n["Console"]["Tui"] = f.console_tui;
   n["RealmLink"]["Enabled"] = f.realm_link_enabled;
   n["RealmLink"]["BindAddress"] = f.realm_link_bind;
   n["RealmLink"]["Port"] = rlp;
@@ -457,7 +452,6 @@ void WorldToYaml(YAML::Node &n, WorldFields const &f, std::string &err) {
   n["Network"]["BindAddress"] = f.net_bind;
   n["Network"]["Port"] = p;
   n["Console"]["Enabled"] = f.console_enabled;
-  n["Console"]["Tui"] = f.console_tui;
   n["RealmLink"]["Enabled"] = f.realm_link_enabled;
   n["RealmLink"]["AuthHost"] = f.realm_auth_host;
   n["RealmLink"]["AuthPort"] = ap;
@@ -643,12 +637,9 @@ int RunConfigEditorFtxui(int argc, char **argv) {
       {
           NestedField(
               "Console.Enabled", "Console subsystem",
-              "When off, no stdin / TUI on the auth process.",
+              "When off, no interactive console on the auth process. With a TTY, "
+              "the FTXUI log screen is always used.",
               Checkbox("Enabled", &auth.console_enabled)),
-          NestedField(
-              "Console.Tui", "Fullscreen terminal UI",
-              "FTXUI log screen; needs a real TTY (not pipes / Docker without -t).",
-              Checkbox("Tui", &auth.console_tui)),
       },
       kFieldGap);
 
@@ -792,12 +783,9 @@ int RunConfigEditorFtxui(int argc, char **argv) {
       {
           NestedField(
               "Console.Enabled", "Interactive console",
-              "stdin commands when TUI is off; auto-disabled if stdout is not a TTY.",
+              "Auto-disabled if stdout is not a TTY. With a TTY, the FTXUI console "
+              "is always used (stdin fallback removed).",
               Checkbox("Enabled", &world.console_enabled)),
-          NestedField(
-              "Console.Tui", "Fullscreen terminal UI",
-              "FTXUI console; set Log.StickyBanner false if layout conflicts.",
-              Checkbox("Tui", &world.console_tui)),
       },
       kFieldGap);
 
@@ -881,7 +869,7 @@ int RunConfigEditorFtxui(int argc, char **argv) {
               in(&world.log_file, "path")),
           NestedField(
               "Log.StickyBanner", "Sticky log banner",
-              "ANSI scroll region; prefer off while using Console.Tui.",
+              "ANSI scroll region; prefer off while using the FTXUI console.",
               Checkbox("StickyBanner", &world.log_sticky)),
       },
       kFieldGap);

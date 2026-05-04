@@ -113,7 +113,7 @@ Apply migrations through the world (or auth) startup migrator as configured; see
 
 ## Configuration pointers
 
-- **`worldserver.yaml`** — `Console.Enabled` and `Console.Tui` affect whether the interactive console runs and how input is rendered (see [executables.md](executables.md)).
+- **`worldserver.yaml`** — `Console.Enabled` toggles the interactive console; with a TTY the FTXUI console is always used (see [executables.md](executables.md)).
 - Staff **access level** is stored per account; changing it with `.account setaccess` requires **re-login** for the client session to pick up new privileges.
 
 ## Related documentation
