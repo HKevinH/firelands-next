@@ -13,6 +13,7 @@ add_library(FirelandsInfrastructure STATIC
     world/DbCreatureSpawnBootstrap.cpp
     network/sessions/AuthSession.cpp
     network/sessions/WorldSession.cpp
+    network/sessions/worldsession/WorldSessionClientHandlers.cpp
     network/sessions/worldsession/WorldSessionDispatcher.cpp
     network/sessions/worldsession/WorldSessionAccountDataHandlers.cpp
     network/sessions/worldsession/WorldSessionAuthHandlers.cpp
@@ -22,8 +23,15 @@ add_library(FirelandsInfrastructure STATIC
     network/sessions/worldsession/GmTicketPackets.cpp
     network/sessions/worldsession/WorldSessionGmState.cpp
     network/sessions/worldsession/WorldSessionGmTicketHandlers.cpp
+    network/sessions/worldsession/WorldSessionGmCommands.cpp
     network/sessions/worldsession/WorldSessionCharacterHandlers.cpp
     network/sessions/worldsession/WorldSessionItemHandlers.cpp
+    network/sessions/worldsession/WorldSessionLoginFlow.cpp
+    network/sessions/worldsession/WorldSessionNetwork.cpp
+    network/sessions/worldsession/WorldSessionOutboundPackets.cpp
+    network/sessions/worldsession/WorldSessionSpellCast.cpp
+    network/sessions/worldsession/WorldSessionTimeMirror.cpp
+    network/sessions/worldsession/WorldSessionWorldLifecycle.cpp
     network/asio/AsyncNetworkServer.cpp
     network/realm_link/RealmLiveRegistry.cpp
     network/realm_link/RealmLinkSession.cpp
