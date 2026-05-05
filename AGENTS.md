@@ -2,7 +2,8 @@
 
 ## Build Commands
 
-**Nota para el agente:** NUNCA compiles el proyecto automáticamente. Después de cualquier cambio, PIDE confirmación al usuario antes de compilar. Solo compila si el usuario lo autoriza explícitamente.
+**Agent note:** NEVER compile the project automatically. After any change, ASK the user for confirmation before compiling. Only compile if the user explicitly authorizes it.
+**Agent note:** For complex tasks spanning multiple domains, you MUST use sub agents (Auth, World, DB, Core) as defined in the Delegation skill.
 
 ### Configuration
 ```bash
@@ -107,7 +108,7 @@ docker-compose up -d db
 
 ## Language & Communication
 
-- **User Communication**: Spanish
+- **User Communication**: English (caveman style)
 - **Code**: English only (variables, functions, types, comments)
 - **Git**: English only (commit messages, branch names)
 

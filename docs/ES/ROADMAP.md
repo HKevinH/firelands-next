@@ -67,7 +67,7 @@ Este documento es el **único lugar** para hacer seguimiento del progreso: roadm
 ### Definition of done (short term)
 
 - [x] Entrar al mundo sin crash (fix 2026-04-29)
-- [ ] Permanecer conectado **≥ 5 min** idle (validación manual; ver abajo)
+- [x] Permanecer conectado **≥ 5 min** idle (validación manual; ver abajo)
 - [x] Time sync “sano”: `SMSG_TIME_SYNC_REQ` por **timer periódico** (no encadenado en cada `CMSG_TIME_SYNC_RESP`); cadencia configurable `Network.TimeSyncPeriodMs` (2 s–1 h, defecto en yaml **5 min** / 300000 ms)
 - [ ] Post-login chatter: implementado o ignorado de forma segura (sin loops, sin asserts)
 - [ ] Validar payloads/order del login burst vs ref (spot-check)
@@ -101,6 +101,7 @@ Goal: mantener UI consistente sin implementar sistemas completos todavía.
 | 2026-04-30 | CMSG_CAST_SPELL mínimo: wire 4.3.4 (`SpellCastWire`) + broadcast START/GO + GCD 1.5s |
 | 2026-05-03 | Doc: snapshot refactor capa paquetes (`shared/network/packets/*`) + split `WorldSession`; foco siguiente alineado con estabilidad idle / auras |
 | 2026-05-03 | Estabilidad: `Network.TimeSyncPeriodMs` + cancel defensivo antes de `SchedulePeriodicTimeSync`; trace en `CMSG_TIME_SYNC_RESP`; guía de validación idle en roadmap |
+| 2026-05-05 | Estabilidad: validación idle ≥ 5 min completada (cliente estable) |
 
 ---
 
