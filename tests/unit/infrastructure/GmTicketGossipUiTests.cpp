@@ -19,5 +19,11 @@ TEST(GmTicketGossipUi, TruncateForGossipOption_AppendsEllipsis) {
   EXPECT_EQ(out.substr(out.size() - 3), "...");
 }
 
+TEST(GmTicketGossipUi, DetailNpcTextId_IsUniquePerTicket) {
+  EXPECT_NE(DetailNpcTextIdForTicket(1), DetailNpcTextIdForTicket(2));
+  EXPECT_TRUE(IsReservedText(DetailNpcTextIdForTicket(42)));
+  EXPECT_EQ(TicketIdFromDetailNpcTextId(DetailNpcTextIdForTicket(99)), 99u);
+}
+
 } // namespace
 } // namespace Firelands::gm_ticket_ui

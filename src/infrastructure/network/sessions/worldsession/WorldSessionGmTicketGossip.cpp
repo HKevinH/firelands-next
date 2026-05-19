@@ -99,8 +99,11 @@ bool WorldSession::TryBuildGmTicketNpcText(uint32_t textId, NpcText &out) const 
     return true;
   }
 
-  if (textId == kNpcTextDetail) {
-    auto const t = _gmTicketService->GetById(_gmTicketUi->selectedTicketId);
+  if (textId == kNpcTextDetail || TicketIdFromDetailNpcTextId(textId)) {
+    uint64_t ticketId = _gmTicketUi->selectedTicketId;
+    if (auto const fromText = TicketIdFromDetailNpcTextId(textId))
+      ticketId = *fromText;
+    auto const t = _gmTicketService->GetById(ticketId);
     if (!t) {
       out.options[0].text0 = "Ticket no longer available.";
       out.options[0].text1 = out.options[0].text0;
@@ -206,7 +209,8 @@ void WorldSession::SendGmTicketDetailMenu() {
   }
   items.push_back(MakeOption(DetailBack, "Back", GossipOptionIcon::Chat));
 
-  SendGossipMessage(_gmTicketUi->gossipNpcGuid, kMenuDetail, kNpcTextDetail, items);
+  SendGossipMessage(_gmTicketUi->gossipNpcGuid, kMenuDetail,
+                    DetailNpcTextIdForTicket(t->id), items);
 }
 
 void WorldSession::NotifyPlayerGmTicketReply(GmTicket const &ticket) {
