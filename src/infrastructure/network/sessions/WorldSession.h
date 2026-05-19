@@ -62,6 +62,8 @@ class ISpellDefinitionStore;
 class FactionTemplateDbc;
 class IGossipRepository;
 class INpcTextRepository;
+class IQuestGossipRepository;
+class Creature;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -86,6 +88,7 @@ public:
        std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc = nullptr,
        std::shared_ptr<IGossipRepository> gossipRepo = nullptr,
        std::shared_ptr<INpcTextRepository> npcTextRepo = nullptr,
+       std::shared_ptr<IQuestGossipRepository> questGossipRepo = nullptr,
        std::shared_ptr<EmotesTextDbc const> emotesTextDbc = nullptr);
 
   ~WorldSession();
@@ -204,6 +207,11 @@ public:
   void HandleGossipHello(WorldPacket &packet);
   void HandleGossipSelectOption(WorldPacket &packet);
   void HandleNpcTextQuery(WorldPacket &packet);
+  void HandleQuestGiverHello(WorldPacket &packet);
+  void HandleQuestGiverQueryQuest(WorldPacket &packet);
+  void HandleQuestGiverStatusQuery(WorldPacket &packet);
+  void HandleTaxiNodeStatusQuery(WorldPacket &packet);
+  void HandleQuestGiverStatusMultipleQuery(WorldPacket &packet);
   void HandleQueryNextMailTime(WorldPacket &packet);
   void HandleMailGetList(WorldPacket &packet);
   void HandleCalendarGetNumPending(WorldPacket &packet);
@@ -280,10 +288,18 @@ public:
 
   // Gossip
   void SendGossipMessage(uint64_t npcGuid, uint32_t menuId, uint32_t textId,
-                         std::vector<GossipMenuItem> const &items);
+                         std::vector<GossipMenuItem> const &items,
+                         std::vector<GossipQuestItem> const &quests = {});
   void SendGossipComplete();
+  /// Push `SMSG_NPC_TEXT_UPDATE` for gossip window body (client often skips query on 4.3.4).
+  void SendNpcTextForGossipWindow(uint32_t textId);
   std::optional<uint32_t> TryResolveCreatureTemplateEntry(uint64_t npcGuid) const;
   bool TrySendDatabaseGossipMenu(uint64_t npcGuid, uint32_t templateEntry);
+  /// Gossip menu or quest list for a quest giver NPC (used by gossip + quest hello opcodes).
+  bool TryOpenQuestGiverDialog(uint64_t npcGuid);
+  uint32_t ResolveEffectiveNpcFlagsForCreature(Creature const &creature) const;
+  void SendQuestGiverStatusForGuid(uint64_t npcGuid, uint32_t creatureEntry);
+  void SendQuestGiverStatusMultipleNearby();
 
   struct GmTicketUiSession {
     uint64_t gossipNpcGuid = 0;
@@ -375,6 +391,7 @@ public:
   std::shared_ptr<FactionTemplateDbc const> _factionTemplateDbc;
   std::shared_ptr<IGossipRepository> _gossipRepo;
   std::shared_ptr<INpcTextRepository> _npcTextRepo;
+  std::shared_ptr<IQuestGossipRepository> _questGossipRepo;
   std::shared_ptr<EmotesTextDbc const> _emotesTextDbc;
 
   bool IsActivePlayerAlive() const;

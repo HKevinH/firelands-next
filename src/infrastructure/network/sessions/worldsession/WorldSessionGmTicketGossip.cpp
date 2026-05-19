@@ -5,8 +5,8 @@
 #include <domain/models/NpcText.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/GmTicketGossipUi.h>
-#include <infrastructure/network/sessions/worldsession/GossipPackets.h>
-#include <infrastructure/network/sessions/worldsession/NpcTextPackets.h>
+#include <shared/network/packets/server/GossipPackets.h>
+#include <shared/network/packets/server/NpcTextPackets.h>
 #include <shared/Logger.h>
 #include <algorithm>
 #include <optional>

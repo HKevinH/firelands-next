@@ -15,7 +15,7 @@ inline WorldPacket BuildNpcTextUpdate(NpcText const &text) {
     out.Append<float>(option.probability);
     out.WriteString(option.text0);
     out.WriteString(option.text1);
-    out.Append<uint32_t>(static_cast<uint32_t>(option.language));
+    out.Append<uint8_t>(option.language);
     for (NpcTextEmote const &emote : option.emotes) {
       out.Append<uint32_t>(static_cast<uint32_t>(emote.delay));
       out.Append<uint32_t>(static_cast<uint32_t>(emote.emote));

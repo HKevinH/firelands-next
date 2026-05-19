@@ -1,4 +1,6 @@
 #include <application/logic/GossipLogic.h>
+#include <domain/models/QuestGossip.h>
+#include <shared/game/UnitNpcFlags.h>
 #include <gtest/gtest.h>
 
 namespace Firelands {
@@ -6,6 +8,19 @@ namespace Firelands {
 TEST(GossipLogicTests, ResolveGossipMenuId_UsesTemplateWhenSet) {
   EXPECT_EQ(ResolveGossipMenuIdForTemplate(435), 435u);
   EXPECT_EQ(ResolveGossipMenuIdForTemplate(0), kDefaultNpcGossipMenuId);
+}
+
+TEST(GossipLogicTests, CreatureUsesGossipMenuDialog_DistinguishesQuestHubFromTrainer) {
+  // Jinthala (37951): quest giver only, no gossip menu.
+  EXPECT_FALSE(CreatureUsesGossipMenuDialog(0, kUnitNpcFlagQuestGiver));
+  // Zentabra (38243): gossip menu 10984.
+  EXPECT_TRUE(CreatureUsesGossipMenuDialog(10984, kUnitNpcFlagGossip));
+  EXPECT_TRUE(CreatureUsesGossipMenuDialog(0, kUnitNpcFlagGossip));
+}
+
+TEST(GossipLogicTests, ResolveGossipNpcTextId_FallsBackWhenMenuTextMissing) {
+  EXPECT_EQ(ResolveGossipNpcTextId(15272), 15272u);
+  EXPECT_EQ(ResolveGossipNpcTextId(0), 1u);
 }
 
 TEST(GossipLogicTests, FilterGossipOptionsByNpcFlags_MatchesRoleFlags) {
@@ -37,12 +52,37 @@ TEST(GossipLogicTests, FilterGossipOptionsByNpcFlags_ZeroFlagsKeepsAll) {
   EXPECT_EQ(filtered.size(), 1u);
 }
 
+TEST(GossipLogicTests, ShouldSendGossipMenu_QuestLinesOnly) {
+  EXPECT_TRUE(ShouldSendGossipMenu(0, false, 1));
+  EXPECT_FALSE(ShouldSendGossipMenu(0, false, 0));
+  EXPECT_TRUE(ShouldSendGossipMenu(0, true, 0));
+  EXPECT_TRUE(ShouldSendGossipMenu(1, false, 0));
+}
+
 TEST(GossipLogicTests, FindGossipMenuItem_ByOptionIndex) {
   GossipMenuItem a;
   a.optionIndex = 3;
   std::vector<GossipMenuItem> items = {a};
   EXPECT_NE(FindGossipMenuItem(items, 3), nullptr);
   EXPECT_EQ(FindGossipMenuItem(items, 9), nullptr);
+}
+
+TEST(GossipLogicTests, BuildGossipQuestItems_MapsSummaryToWireFields) {
+  QuestGossipSummary summary;
+  summary.questId = 42;
+  summary.title = "Kill rats";
+  summary.questLevel = 3;
+  summary.flags = kQuestFlagAutoComplete;
+
+  auto items = BuildGossipQuestItems({summary});
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0].questId, 42u);
+  EXPECT_EQ(items[0].questTitle, "Kill rats");
+  EXPECT_EQ(items[0].questLevel, 3);
+  EXPECT_EQ(items[0].questFlags, kQuestFlagAutoComplete);
+  EXPECT_TRUE(items[0].isAutoComplete);
+  EXPECT_EQ(items[0].questIcon,
+            static_cast<uint8_t>(QuestGossipIcon::Available));
 }
 
 } // namespace Firelands

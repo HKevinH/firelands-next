@@ -19,7 +19,7 @@ std::vector<CreatureSpawnRow> MySqlCreatureSpawnRepository::LoadAllSpawns() cons
         "SELECT c.`guid`, c.`id`, c.`map`, c.`position_x`, c.`position_y`, "
         "c.`position_z`, c.`orientation`, c.`modelid`, "
         "ct.`modelid1`, ct.`modelid2`, ct.`modelid3`, ct.`modelid4`, "
-        "ct.`unit_class`, ct.`minlevel`, ct.`maxlevel`, ct.`faction` "
+        "ct.`unit_class`, ct.`minlevel`, ct.`maxlevel`, ct.`faction`, ct.`npcflag` "
         "FROM `creature` c "
         "INNER JOIN `creature_template` ct ON ct.`entry` = c.`id`"));
     while (res->next()) {
@@ -41,6 +41,8 @@ std::vector<CreatureSpawnRow> MySqlCreatureSpawnRepository::LoadAllSpawns() cons
       row.maxLevel = static_cast<uint8>(res->getUInt("maxlevel"));
       if (!res->isNull("faction"))
         row.factionTemplate = res->getUInt("faction");
+      if (!res->isNull("npcflag"))
+        row.npcFlags = static_cast<uint32>(res->getUInt64("npcflag"));
       if (row.minLevel == 0)
         row.minLevel = 1;
       if (row.maxLevel == 0)

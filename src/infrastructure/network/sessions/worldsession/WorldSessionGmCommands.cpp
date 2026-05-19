@@ -140,7 +140,7 @@ bool WorldSession::GmSpawnNpc(uint32 creatureEntry, uint32 displayId,
   uint64 const guid = AllocateGmSpawnCreatureGuid(creatureEntry);
   constexpr uint32_t kSeedHp = 100u;
   auto spawned = std::make_shared<Creature>(guid, creatureEntry, resolvedDisplay, kSeedHp,
-                                            1u, factionForCreature);
+                                            1u, factionForCreature, npcFlagsForSpawn);
   spawned->SetPosition(_position);
   WorldService::Instance().AddCreatureToMap(_mapId, std::move(spawned));
 

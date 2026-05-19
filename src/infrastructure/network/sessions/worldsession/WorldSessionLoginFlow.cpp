@@ -343,9 +343,10 @@ void WorldSession::SendNearbyCreatureCreatesInChunks(float x, float y) {
   };
 
   map->ForEachCreatureNear(x, y, 1, [&](std::shared_ptr<Creature> const &cr) {
+    const uint32_t npcFlags = ResolveEffectiveNpcFlagsForCreature(*cr);
     auto npcFields = ws_obj::BuildMinimalNpcUnitCreateFields(
         cr->GetGuid(), cr->GetEntry(), cr->GetDisplayId(), cr->GetLiveHealth(),
-        cr->GetLiveMaxHealth(), cr->GetLevel(), 0u, cr->GetFactionTemplate());
+        cr->GetLiveMaxHealth(), cr->GetLevel(), npcFlags, cr->GetFactionTemplate());
     batch.AddCreateObject(cr->GetGuid(), TYPEID_UNIT, cr->GetPosition(),
                           npcFields);
     ++inBatch;
@@ -403,6 +404,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
   update.Build(updatePacket);
   SendPacket(updatePacket);
   SendNearbyCreatureCreatesInChunks(move.x, move.y);
+  SendQuestGiverStatusMultipleNearby();
 
   // Other logged-in players see this client; this client sees them (same map).
   if (auto map = WorldService::Instance().GetMap(_mapId)) {

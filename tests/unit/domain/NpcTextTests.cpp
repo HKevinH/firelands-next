@@ -13,4 +13,14 @@ TEST(NpcTextTests, MakeFallback_SetsFirstOptionProbabilityAndGreeting) {
   EXPECT_TRUE(text.options[1].text0.empty());
 }
 
+TEST(NpcTextTests, EnsureNpcTextGreeting_FillsEmptyRefRow) {
+  NpcText text;
+  text.id = 15272;
+  text.options[0].probability = 1.f;
+  ASSERT_FALSE(NpcTextHasVisibleGreeting(text));
+  EnsureNpcTextGreeting(text, "Nature guides you.");
+  EXPECT_TRUE(NpcTextHasVisibleGreeting(text));
+  EXPECT_EQ(text.options[0].text0, "Nature guides you.");
+}
+
 } // namespace Firelands

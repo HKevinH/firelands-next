@@ -17,9 +17,11 @@ public:
 
   /// `maxHealth` seeds runtime HP from `creature_classlevelstats` / spawn bootstrap.
   Creature(uint64 guid, uint32 entry, uint32 displayId, uint32 maxHealth = 100u,
-           uint8 level = 1u, uint32 factionTemplate = kDefaultFactionTemplate);
+           uint8 level = 1u, uint32 factionTemplate = kDefaultFactionTemplate,
+           uint32 npcFlags = 0u);
 
   uint32 GetEntry() const { return m_entry; }
+  uint32 GetNpcFlags() const { return m_npcFlags; }
   uint32 GetDisplayId() const { return m_displayId; }
   uint8 GetLevel() const { return m_level; }
   /// `FactionTemplate.dbc` row; drives client hostility vs player factions / forced reactions.
@@ -33,6 +35,7 @@ public:
 private:
   uint32 m_entry;
   uint32 m_displayId;
+  uint32 m_npcFlags = 0;
   uint32 m_factionTemplate = kDefaultFactionTemplate;
   uint8 m_level = 1;
   uint32 m_liveHealth = 1;

@@ -1,6 +1,7 @@
+#include <application/logic/GossipLogic.h>
 #include <domain/models/Character.h>
 #include <infrastructure/network/sessions/WorldSession.h>
-#include <infrastructure/network/sessions/worldsession/GossipPackets.h>
+#include <shared/network/packets/server/GossipPackets.h>
 #include <shared/Config.h>
 #include <shared/game/StarterOpeningCinematic.h>
 #include <shared/network/BitWriter.h>
@@ -314,10 +315,12 @@ void WorldSession::SendLoginVerifyWorld(uint32 mapId, float x, float y, float z,
 }
 
 void WorldSession::SendGossipMessage(uint64_t npcGuid, uint32_t menuId, uint32_t textId,
-                                     std::vector<GossipMenuItem> const &items) {
+                                     std::vector<GossipMenuItem> const &items,
+                                     std::vector<GossipQuestItem> const &quests) {
   _gossipMenuSent = true;
-  auto data = gossip::BuildGossipMessage(npcGuid, menuId, textId, items);
+  auto data = gossip::BuildGossipMessage(npcGuid, menuId, textId, items, quests);
   SendPacket(data);
+  SendNpcTextForGossipWindow(ResolveGossipNpcTextId(textId));
 }
 
 void WorldSession::SendGossipComplete() {

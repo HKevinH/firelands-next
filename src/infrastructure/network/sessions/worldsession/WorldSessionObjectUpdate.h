@@ -69,6 +69,9 @@ void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
 
 uint64 ReadClientTargetGuid(WorldPacket &packet);
 
+/// Packed `ObjectGuid` (quest giver status query/hello); not the 8-byte gossip target form.
+uint64 ReadClientQuestGiverGuid(WorldPacket &packet);
+
 void SendPlayerCreateToNotifier(
     std::shared_ptr<IMapNotifier> target, uint32 mapId, uint64 objectGuid,
     Character const &character, MovementInfo const &move,

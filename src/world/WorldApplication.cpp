@@ -28,6 +28,7 @@
 #include <infrastructure/persistence/MySqlGmTicketRepository.h>
 #include <infrastructure/persistence/MySqlGossipRepository.h>
 #include <infrastructure/persistence/MySqlNpcTextRepository.h>
+#include <infrastructure/persistence/MySqlQuestGossipRepository.h>
 #include <infrastructure/persistence/MySqlNpcTemplateSearchRepository.h>
 #include <infrastructure/persistence/MySqlPlayerCreateInfoRepository.h>
 #include <infrastructure/persistence/MySqlRealmRepository.h>
@@ -223,6 +224,8 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
         std::make_shared<MySqlGossipRepository>(worldConn);
     auto npcTextRepo =
         std::make_shared<MySqlNpcTextRepository>(worldConn);
+    auto questGossipRepo =
+        std::make_shared<MySqlQuestGossipRepository>(worldConn);
     auto creatureStatsRepo =
         std::make_shared<MySqlCreatureClassLevelStatsRepository>(worldConn);
     auto creatureSpawnRepo =
@@ -234,14 +237,14 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
         [authService, charService, commandService, accountDataRepo,
          languagesDbc, emotesTextDbc, spellDefinitions, realmRepo,
          onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
-         npcTemplateSearchRepo, factionTemplateDbc, gossipRepo,
-         npcTextRepo](boost::asio::ip::tcp::socket socket) {
+         npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
+         questGossipRepo](boost::asio::ip::tcp::socket socket) {
           std::make_shared<WorldSession>(
               std::move(socket), authService, charService, commandService,
               accountDataRepo, languagesDbc, spellDefinitions, realmRepo,
               onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
               npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
-              emotesTextDbc)
+              questGossipRepo, emotesTextDbc)
               ->Start();
         };
 

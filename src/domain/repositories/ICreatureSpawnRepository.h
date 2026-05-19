@@ -24,6 +24,8 @@ struct CreatureSpawnRow {
   uint8 maxLevel = 1;
   /// `creature_template.faction` → `FactionTemplate.dbc` id.
   uint32 factionTemplate = 0;
+  /// `creature_template.npcflag` → `UNIT_NPC_FLAGS` on spawn.
+  uint32 npcFlags = 0;
 };
 
 /// Loads static NPC placements from `creature` joined with `creature_template`.

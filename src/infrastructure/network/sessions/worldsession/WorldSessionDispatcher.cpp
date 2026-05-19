@@ -57,6 +57,7 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_SET_ACTIVE_MOVER:
   case CMSG_SET_ACTIONBAR_TOGGLES:
   case CMSG_REQUEST_RAID_INFO:
+  case CMSG_GROUP_INVITE_RESPONSE:
   case CMSG_UNREGISTER_ALL_ADDON_PREFIXES:
   case CMSG_BATTLEFIELD_STATUS:
   case CMSG_QUERY_BATTLEFIELD_STATE:
@@ -128,6 +129,21 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
     break;
   case CMSG_NPC_TEXT_QUERY:
     HandleNpcTextQuery(packet);
+    break;
+  case CMSG_QUESTGIVER_HELLO:
+    HandleQuestGiverHello(packet);
+    break;
+  case CMSG_QUESTGIVER_QUERY_QUEST:
+    HandleQuestGiverQueryQuest(packet);
+    break;
+  case CMSG_TAXI_NODE_STATUS_QUERY:
+    HandleTaxiNodeStatusQuery(packet);
+    break;
+  case CMSG_QUESTGIVER_STATUS_QUERY:
+    HandleQuestGiverStatusQuery(packet);
+    break;
+  case CMSG_QUESTGIVER_STATUS_MULTIPLE_QUERY:
+    HandleQuestGiverStatusMultipleQuery(packet);
     break;
   case CMSG_NAME_QUERY:
     HandleNameQuery(packet);

@@ -1,0 +1,43 @@
+#include <application/logic/QuestGiverLogic.h>
+#include <domain/models/QuestGiverStatus.h>
+#include <domain/models/QuestGossip.h>
+#include <domain/repositories/IQuestGossipRepository.h>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include <vector>
+
+namespace Firelands {
+
+namespace {
+
+class MockQuestGossipRepository : public IQuestGossipRepository {
+public:
+  MOCK_METHOD(std::vector<QuestGossipSummary>, GetStarterQuestsForCreature,
+              (uint32_t creatureEntry), (const, override));
+};
+
+} // namespace
+
+TEST(QuestGiverLogicTests, EffectiveNpcFlags_AddsQuestGiverWhenStartersExist) {
+  EXPECT_EQ(EffectiveUnitNpcFlagsForCreature(0, false), 0u);
+  EXPECT_EQ(EffectiveUnitNpcFlagsForCreature(0, true), kUnitNpcFlagQuestGiver);
+  EXPECT_EQ(EffectiveUnitNpcFlagsForCreature(
+                kUnitNpcFlagGossip | kUnitNpcFlagFlightMaster, true),
+            kUnitNpcFlagGossip | kUnitNpcFlagQuestGiver);
+}
+
+TEST(QuestGiverLogicTests, ResolveDialogStatus_UsesRepository) {
+  MockQuestGossipRepository repo;
+  EXPECT_EQ(ResolveQuestGiverDialogStatus(&repo, 100),
+            QuestGiverDialogStatus::None);
+
+  QuestGossipSummary summary;
+  summary.questId = 1;
+  EXPECT_CALL(repo, GetStarterQuestsForCreature(38243))
+      .WillOnce(testing::Return(std::vector<QuestGossipSummary>{summary}));
+  EXPECT_EQ(ResolveQuestGiverDialogStatus(&repo, 38243),
+            QuestGiverDialogStatus::Available);
+  EXPECT_EQ(static_cast<uint32_t>(QuestGiverDialogStatus::Available), 0x100u);
+}
+
+} // namespace Firelands

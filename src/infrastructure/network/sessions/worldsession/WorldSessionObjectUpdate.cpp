@@ -571,6 +571,13 @@ uint64 ReadClientTargetGuid(WorldPacket &packet) {
   return 0;
 }
 
+uint64 ReadClientQuestGiverGuid(WorldPacket &packet) {
+  // CMSG_QUESTGIVER_STATUS_QUERY uses a full 8-byte ObjectGuid on 4.3.4 (see world log:
+  // opcode 0x4407, payload 8). CMSG_QUESTGIVER_HELLO may use packed form — same rule as
+  // gossip hello: uint64 when 8 bytes remain, else packed.
+  return ReadClientTargetGuid(packet);
+}
+
 void SendPlayerCreateToNotifier(
     std::shared_ptr<IMapNotifier> target, uint32 mapId, uint64 objectGuid,
     Character const &character, MovementInfo const &move,

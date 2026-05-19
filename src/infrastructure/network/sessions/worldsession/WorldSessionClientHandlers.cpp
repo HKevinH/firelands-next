@@ -15,7 +15,9 @@
 #include <shared/network/packets/server/PongPacket.h>
 #include <shared/network/packets/server/SimpleOutboundPackets.h>
 #include <shared/network/UpdateData.h>
-#include <infrastructure/network/sessions/worldsession/NpcTextPackets.h>
+#include <shared/network/packets/server/NpcTextPackets.h>
+#include <application/logic/GossipLogic.h>
+#include <domain/repositories/IQuestGossipRepository.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
 #include <array>
@@ -514,19 +516,8 @@ void WorldSession::HandleGossipHello(WorldPacket &packet) {
   if (auto host = WorldService::Instance().GetScriptHost())
     host->FireGossipHello(npcGuid);
 
-  if (!_gossipMenuSent) {
-    if (!_gossipRepo) {
-      LOG_WARN("Gossip hello guid={:#x}: world DB gossip repository not configured",
-               npcGuid);
-    } else if (auto const entry = TryResolveCreatureTemplateEntry(npcGuid)) {
-      if (TrySendDatabaseGossipMenu(npcGuid, *entry))
-        return;
-      LOG_DEBUG("Gossip hello entry={} guid={:#x}: no menu to send", *entry, npcGuid);
-    } else {
-      LOG_DEBUG("Gossip hello guid={:#x}: could not resolve creature template entry",
-                npcGuid);
-    }
-  }
+  if (!_gossipMenuSent && TryOpenQuestGiverDialog(npcGuid))
+    return;
 
   SendGossipComplete();
 }
@@ -540,19 +531,7 @@ void WorldSession::HandleNpcTextQuery(WorldPacket &packet) {
 
   LOG_DEBUG("CMSG_NPC_TEXT_QUERY textId={} guid={:#x}", textId, guid);
 
-  NpcText payload = NpcText::MakeFallback(textId);
-  if (!TryBuildGmTicketNpcText(textId, payload)) {
-    if (_npcTextRepo) {
-      if (auto const loaded = _npcTextRepo->TryGetById(textId))
-        payload = *loaded;
-      else
-        LOG_DEBUG("CMSG_NPC_TEXT_QUERY textId={}: no npc_text row, using fallback",
-                  textId);
-    }
-  }
-
-  WorldPacket npcTextPkt = gossip::BuildNpcTextUpdate(payload);
-  SendPacket(npcTextPkt);
+  SendNpcTextForGossipWindow(textId);
 }
 
 void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
@@ -579,8 +558,16 @@ void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
       if (item->actionMenuId != 0) {
         auto const chainedOptions = _gossipRepo->GetMenuOptions(item->actionMenuId);
         auto const textId = _gossipRepo->GetMenuTextId(item->actionMenuId);
+        std::vector<GossipQuestItem> quests;
+        if (_questGossipRepo) {
+          if (auto const entry = TryResolveCreatureTemplateEntry(npcGuid)) {
+            auto const summaries =
+                _questGossipRepo->GetStarterQuestsForCreature(*entry);
+            quests = BuildGossipQuestItems(summaries);
+          }
+        }
         SendGossipMessage(npcGuid, item->actionMenuId, textId.value_or(0),
-                          chainedOptions);
+                          chainedOptions, quests);
         return;
       }
     }

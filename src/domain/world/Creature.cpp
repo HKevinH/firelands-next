@@ -5,8 +5,8 @@
 namespace Firelands {
 
 Creature::Creature(uint64 guid, uint32 entry, uint32 displayId, uint32 maxHealth,
-                   uint8 level, uint32 factionTemplate)
-    : WorldObject(guid), m_entry(entry), m_displayId(displayId),
+                   uint8 level, uint32 factionTemplate, uint32 npcFlags)
+    : WorldObject(guid), m_entry(entry), m_displayId(displayId), m_npcFlags(npcFlags),
       m_level(level == 0 ? 1 : level),
       m_factionTemplate(factionTemplate == 0 ? kDefaultFactionTemplate
                                               : factionTemplate) {

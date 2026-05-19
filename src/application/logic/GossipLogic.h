@@ -1,6 +1,8 @@
 #pragma once
 
 #include <domain/models/GossipMenu.h>
+#include <domain/models/QuestGossip.h>
+#include <shared/game/UnitNpcFlags.h>
 #include <cstdint>
 #include <vector>
 
@@ -13,6 +15,21 @@ inline constexpr uint32_t kDefaultNpcGossipMenuId = 0u;
 /// Picks the menu id to load from `gossip_menu` for a creature template.
 inline uint32_t ResolveGossipMenuIdForTemplate(uint32_t templateGossipMenuId) noexcept {
   return templateGossipMenuId != 0 ? templateGossipMenuId : kDefaultNpcGossipMenuId;
+}
+
+/// True when the client expects `SMSG_GOSSIP_MESSAGE` (+ npc text), not quest list only.
+/// Pure quest hubs (e.g. Jinthala 37951: `npcflag`=quest giver, `gossip_menu_id`=0) need
+/// `SMSG_QUESTGIVER_QUEST_LIST` instead.
+inline bool CreatureUsesGossipMenuDialog(uint32_t templateGossipMenuId,
+                                         uint64_t templateNpcFlags) noexcept {
+  if (templateGossipMenuId != 0)
+    return true;
+  return (templateNpcFlags & kUnitNpcFlagGossip) != 0;
+}
+
+/// Wire text id for `SMSG_NPC_TEXT_UPDATE` when `gossip_menu` has no row.
+inline uint32_t ResolveGossipNpcTextId(uint32_t menuTextId) noexcept {
+  return menuTextId != 0 ? menuTextId : 1u;
 }
 
 /// Keeps options with no npcflag gate or a matching role flag on the template.
@@ -39,6 +56,31 @@ FindGossipMenuItem(std::vector<GossipMenuItem> const &items,
       return &item;
   }
   return nullptr;
+}
+
+/// True when `SMSG_GOSSIP_MESSAGE` has at least one option, text id, or quest line.
+inline bool ShouldSendGossipMenu(size_t gossipOptionCount, bool hasMenuText,
+                                 size_t questCount) noexcept {
+  return questCount > 0 || gossipOptionCount > 0 || hasMenuText;
+}
+
+/// Until character quest status exists, starter quests show as available (yellow !).
+inline QuestGossipIcon ResolveQuestGossipIcon(QuestGossipSummary const &) noexcept {
+  return QuestGossipIcon::Available;
+}
+
+inline std::vector<GossipQuestItem>
+BuildGossipQuestItems(std::vector<QuestGossipSummary> const &quests) {
+  std::vector<GossipQuestItem> items;
+  items.reserve(quests.size());
+  for (auto const &summary : quests) {
+    QuestGossipSummary normalized = summary;
+    if (!normalized.isAutoComplete)
+      normalized.isAutoComplete = QuestHasAutoCompleteFlag(summary.flags);
+    items.push_back(
+        ToGossipQuestItem(normalized, ResolveQuestGossipIcon(normalized)));
+  }
+  return items;
 }
 
 } // namespace Firelands
