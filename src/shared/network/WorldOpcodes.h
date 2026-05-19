@@ -197,9 +197,17 @@ enum WorldOpcode : uint32 {
   CMSG_CONTACT_LIST = 0x4534,
   CMSG_MESSAGECHAT_WHISPER = 0x0D56,
   CMSG_MESSAGECHAT_YELL = 0x3544,
+  /// Reference: `CMSG_EMOTE` — cancel / stop hardcoded client emotes.
+  CMSG_EMOTE = 0x4C26,
+  /// Reference: `CMSG_TEXT_EMOTE` — `/wave`, `/dance`, etc.
+  CMSG_TEXT_EMOTE = 0x2E24,
   /// Compact Unit Frame profiles save request.
   CMSG_SAVE_CUF_PROFILES = 0x730E,
   SMSG_MESSAGECHAT = 0x2026,
+  /// Reference: `SMSG_EMOTE` — play one-shot animation on a unit.
+  SMSG_EMOTE = 0x0A34,
+  /// Reference: `SMSG_TEXT_EMOTE` — chat-style text emote to nearby players.
+  SMSG_TEXT_EMOTE = 0x0B05,
   /// Reference: WowPacketParser V4_3_4_15595 — big on-screen banner (yellow UI).
   SMSG_NOTIFICATION = 0x14A0,
   /// Reference: `SMSG_GM_MESSAGECHAT` (GM chat tag); not wired yet.

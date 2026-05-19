@@ -18,7 +18,8 @@ WorldSession::WorldSession(
     std::shared_ptr<INpcTemplateSearchRepository const> npcTemplateSearch,
     std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc,
     std::shared_ptr<IGossipRepository> gossipRepo,
-    std::shared_ptr<INpcTextRepository> npcTextRepo)
+    std::shared_ptr<INpcTextRepository> npcTextRepo,
+    std::shared_ptr<EmotesTextDbc const> emotesTextDbc)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
@@ -33,9 +34,11 @@ WorldSession::WorldSession(
       _npcTemplateSearch(std::move(npcTemplateSearch)),
       _factionTemplateDbc(std::move(factionTemplateDbc)),
       _gossipRepo(std::move(gossipRepo)),
-      _npcTextRepo(std::move(npcTextRepo)), _serverSeed(0),
+      _npcTextRepo(std::move(npcTextRepo)),
+      _emotesTextDbc(std::move(emotesTextDbc)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()),
-      _pendingSpellCastTimer(_socket.get_executor()) {}
+      _pendingSpellCastTimer(_socket.get_executor()),
+      _writeWakeTimer(_socket.get_executor()) {}
 
 WorldSession::~WorldSession() {
   if (_playerGuid != 0) {

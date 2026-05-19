@@ -103,6 +103,12 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_MESSAGECHAT_RAID_WARNING:
     HandleMessageChat(packet);
     break;
+  case CMSG_EMOTE:
+    HandleEmoteOpcode(packet);
+    break;
+  case CMSG_TEXT_EMOTE:
+    HandleTextEmoteOpcode(packet);
+    break;
   case CMSG_MESSAGECHAT_ADDON_BATTLEGROUND:
   case CMSG_MESSAGECHAT_ADDON_GUILD:
   case CMSG_MESSAGECHAT_ADDON_OFFICER:

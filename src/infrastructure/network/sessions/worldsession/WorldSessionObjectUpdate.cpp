@@ -539,6 +539,16 @@ void BuildUnitFactionTemplateValuesUpdate(uint16 mapId, uint64 unitGuid,
   update.Build(outPacket);
 }
 
+void BuildUnitNpcEmoteStateValuesUpdate(uint16 mapId, uint64 unitGuid,
+                                        uint32 emoteState,
+                                        WorldPacket &outPacket) {
+  std::map<uint16, uint32> fields;
+  fields[UNIT_NPC_EMOTESTATE] = emoteState;
+  UpdateData update(mapId);
+  update.AddValuesUpdate(unitGuid, fields);
+  update.Build(outPacket);
+}
+
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName) {
   dst.WriteString(ch.GetName());

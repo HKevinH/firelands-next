@@ -101,6 +101,9 @@ void WorldSession::HandleMoveTeleportAck(WorldPacket &packet) {
 
   _awaitingTeleportNear = false;
 
+  if (_unitNpcEmoteState != 0)
+    ApplyUnitNpcEmoteState(0);
+
   _position.x = _teleportPendingX;
   _position.y = _teleportPendingY;
   _position.z = _teleportPendingZ;
@@ -144,6 +147,8 @@ void WorldSession::HandleMovement(WorldPacket &packet) {
   bool const mergeMovementState =
       parsed && !WsIsTrustedPositionOpcode(op) && WsIsClientMovementOpcode(op);
 
+  MovementInfo const previousPosition = _position;
+
   if (trustFullPosition) {
     _position = move;
   } else if (mergeMovementState) {
@@ -160,6 +165,15 @@ void WorldSession::HandleMovement(WorldPacket &packet) {
   // If parsing fails (wrong layout for a given opcode), still echo the raw bytes so
   // the client state machine does not stall; only apply map/DB position when parsed.
   if (WsIsClientMovementOpcode(op)) {
+    bool positionChanged = false;
+    if (trustFullPosition) {
+      float const dx = _position.x - previousPosition.x;
+      float const dy = _position.y - previousPosition.y;
+      float const dz = _position.z - previousPosition.z;
+      positionChanged = (dx * dx + dy * dy + dz * dz) > 0.0001f;
+    }
+    TryClearEmotesOnMovement(op, positionChanged);
+
     auto map = WorldService::Instance().GetMap(_mapId);
     if (map) {
       if (trustFullPosition)

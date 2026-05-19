@@ -41,6 +41,7 @@
 #include <shared/Logger.h>
 #include <shared/dbc/FactionTemplateDbc.h>
 #include <shared/dbc/ItemDbHotfixStore.h>
+#include <shared/dbc/EmotesTextDbc.h>
 #include <shared/dbc/LanguagesDbc.h>
 #include <shared/dbc/SpellDifficultyDbc.h>
 #include <thread>
@@ -146,6 +147,14 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
       languagesDbc.reset();
     }
 
+    auto emotesTextDbc = std::make_shared<EmotesTextDbc>();
+    if (!emotesTextDbc->Load(dbcBasePath + "/EmotesText.dbc")) {
+      LOG_WARN("EmotesText.dbc not loaded from {}; /wave and other text emotes "
+               "will not play.",
+               dbcBasePath + "/EmotesText.dbc");
+      emotesTextDbc.reset();
+    }
+
     auto spellEntryStore = std::make_shared<SpellEntryDbcStore>();
     bool const spellDbcOk = spellEntryStore->Load(dbcBasePath + "/Spell.dbc");
     if (!spellDbcOk) {
@@ -223,15 +232,16 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
 
     auto sessionFactory =
         [authService, charService, commandService, accountDataRepo,
-         languagesDbc, spellDefinitions, realmRepo, onlineCharRegistry,
-         gmTicketService, itemDbHotfix, spellManager, npcTemplateSearchRepo,
-         factionTemplateDbc, gossipRepo,
+         languagesDbc, emotesTextDbc, spellDefinitions, realmRepo,
+         onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
+         npcTemplateSearchRepo, factionTemplateDbc, gossipRepo,
          npcTextRepo](boost::asio::ip::tcp::socket socket) {
           std::make_shared<WorldSession>(
               std::move(socket), authService, charService, commandService,
               accountDataRepo, languagesDbc, spellDefinitions, realmRepo,
               onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
-              npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo)
+              npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
+              emotesTextDbc)
               ->Start();
         };
 

@@ -237,6 +237,9 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
   if (_playerGuid == 0)
     return;
 
+  if (type == CHAT_MSG_EMOTE && !IsActivePlayerAlive())
+    return;
+
   if (type != CHAT_MSG_EMOTE && type != CHAT_MSG_AFK && type != CHAT_MSG_DND) {
     // Force deterministic spoken language for this character. Some clients can
     // keep stale language selections in the normal chat box and send invalid
@@ -288,9 +291,10 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
             receiverGuid, message.size());
   SendPacket(response);
 
-  if (type == CHAT_MSG_SAY || type == CHAT_MSG_YELL) {
+  if (type == CHAT_MSG_SAY || type == CHAT_MSG_YELL || type == CHAT_MSG_EMOTE) {
     if (auto map = WorldService::Instance().GetMap(_mapId)) {
-      map->BroadcastPacketToNearby(_playerGuid, response, false);
+      map->BroadcastPacketToNearby(_playerGuid, response,
+                                   type == CHAT_MSG_EMOTE);
     }
   }
 }
