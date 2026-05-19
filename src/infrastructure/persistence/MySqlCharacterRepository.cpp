@@ -178,6 +178,37 @@ void EnsureCharactersTutorialMaskColumns(std::shared_ptr<sql::Connection> conn) 
     (void)EnsureCharactersTutorialColumn(conn, names[i], after[i]);
 }
 
+bool EnsureCharacterSpellCooldownTables(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS firelands_characters.character_spell_cooldown ("
+        "guid INT UNSIGNED NOT NULL,"
+        "spell INT UNSIGNED NOT NULL,"
+        "remaining_ms INT UNSIGNED NOT NULL,"
+        "PRIMARY KEY (guid, spell),"
+        "KEY idx_guid (guid),"
+        "CONSTRAINT fk_character_spell_cooldown_guid FOREIGN KEY (guid) REFERENCES "
+        "characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS "
+        "firelands_characters.character_spell_category_cooldown ("
+        "guid INT UNSIGNED NOT NULL,"
+        "category INT UNSIGNED NOT NULL,"
+        "remaining_ms INT UNSIGNED NOT NULL,"
+        "PRIMARY KEY (guid, category),"
+        "KEY idx_guid (guid),"
+        "CONSTRAINT fk_character_spell_category_cooldown_guid FOREIGN KEY (guid) "
+        "REFERENCES characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return true;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("EnsureCharacterSpellCooldownTables failed: {}", e.what());
+    return false;
+  }
+}
+
 bool EnsureCharacterSpellTable(std::shared_ptr<sql::Connection> conn) {
   try {
     std::unique_ptr<sql::Statement> st(conn->createStatement());
@@ -620,6 +651,7 @@ MySqlCharacterRepository::MySqlCharacterRepository(
   EnsureCharactersLivePower1Column(_connection);
   EnsureCharactersTutorialMaskColumns(_connection);
   EnsureCharacterSpellTable(_connection);
+  EnsureCharacterSpellCooldownTables(_connection);
   _charStartOutfitLoaded =
       _charStartOutfitDbc.Load("data/dbc/CharStartOutfit.dbc");
   if (!_charStartOutfitLoaded) {
@@ -1137,6 +1169,97 @@ MySqlCharacterRepository::GetCharacterSpellIds(uint32_t characterGuid) {
     LOG_WARN("GetCharacterSpellIds failed: {}", e.what());
   }
   return out;
+}
+
+CharacterCooldownState MySqlCharacterRepository::LoadCharacterCooldowns(
+    uint32_t characterGuid) {
+  CharacterCooldownState state;
+  if (!EnsureCharacterSpellCooldownTables(_connection))
+    return state;
+  try {
+    {
+      std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+          "SELECT spell, remaining_ms FROM character_spell_cooldown WHERE guid = ?"));
+      ps->setUInt(1, characterGuid);
+      std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+      while (rs->next()) {
+        PersistedSpellCooldown row{};
+        row.spellId = rs->getUInt("spell");
+        row.remainingMs = rs->getUInt("remaining_ms");
+        if (row.spellId != 0u && row.remainingMs > 0u)
+          state.spellCooldowns.push_back(row);
+      }
+    }
+    {
+      std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+          "SELECT category, remaining_ms FROM character_spell_category_cooldown "
+          "WHERE guid = ?"));
+      ps->setUInt(1, characterGuid);
+      std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+      while (rs->next()) {
+        PersistedCategoryCooldown row{};
+        row.category = rs->getUInt("category");
+        row.remainingMs = rs->getUInt("remaining_ms");
+        if (row.category != 0u && row.remainingMs > 0u)
+          state.categoryCooldowns.push_back(row);
+      }
+    }
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("LoadCharacterCooldowns failed: {}", e.what());
+    state.spellCooldowns.clear();
+    state.categoryCooldowns.clear();
+  }
+  return state;
+}
+
+bool MySqlCharacterRepository::SaveCharacterCooldowns(
+    uint32_t characterGuid, CharacterCooldownState const &state) {
+  if (!EnsureCharacterSpellCooldownTables(_connection))
+    return false;
+  try {
+    {
+      std::shared_ptr<sql::PreparedStatement> del(_connection->prepareStatement(
+          "DELETE FROM character_spell_cooldown WHERE guid = ?"));
+      del->setUInt(1, characterGuid);
+      del->executeUpdate();
+    }
+    if (!state.spellCooldowns.empty()) {
+      std::shared_ptr<sql::PreparedStatement> ins(_connection->prepareStatement(
+          "INSERT INTO character_spell_cooldown (guid, spell, remaining_ms) "
+          "VALUES (?, ?, ?)"));
+      for (PersistedSpellCooldown const &row : state.spellCooldowns) {
+        if (row.spellId == 0u || row.remainingMs == 0u)
+          continue;
+        ins->setUInt(1, characterGuid);
+        ins->setUInt(2, row.spellId);
+        ins->setUInt(3, row.remainingMs);
+        ins->executeUpdate();
+      }
+    }
+    {
+      std::shared_ptr<sql::PreparedStatement> del(_connection->prepareStatement(
+          "DELETE FROM character_spell_category_cooldown WHERE guid = ?"));
+      del->setUInt(1, characterGuid);
+      del->executeUpdate();
+    }
+    if (!state.categoryCooldowns.empty()) {
+      std::shared_ptr<sql::PreparedStatement> ins(_connection->prepareStatement(
+          "INSERT INTO character_spell_category_cooldown (guid, category, "
+          "remaining_ms) VALUES (?, ?, ?)"));
+      for (PersistedCategoryCooldown const &row : state.categoryCooldowns) {
+        if (row.category == 0u || row.remainingMs == 0u)
+          continue;
+        ins->setUInt(1, characterGuid);
+        ins->setUInt(2, row.category);
+        ins->setUInt(3, row.remainingMs);
+        ins->executeUpdate();
+      }
+    }
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("SaveCharacterCooldowns failed: {}", e.what());
+    return false;
+  }
 }
 
 bool MySqlCharacterRepository::AddCharacterSpell(uint32_t characterGuid,

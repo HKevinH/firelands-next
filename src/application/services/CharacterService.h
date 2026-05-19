@@ -181,6 +181,15 @@ public:
                                        srcSlot, dstSlot);
   }
 
+  CharacterCooldownState LoadCharacterCooldowns(uint32_t characterGuid) {
+    return m_repository->LoadCharacterCooldowns(characterGuid);
+  }
+
+  bool SaveCharacterCooldowns(uint32_t characterGuid,
+                            CharacterCooldownState const &state) {
+    return m_repository->SaveCharacterCooldowns(characterGuid, state);
+  }
+
   bool SaveCharacterOnLogout(
       uint32_t accountId, uint32_t characterGuid, uint16_t mapId, uint16_t zoneId,
       float x, float y, float z, float orientation, uint32_t moneyCopper,

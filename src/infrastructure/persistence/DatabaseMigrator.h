@@ -171,8 +171,28 @@ std::string content((std::istreambuf_iterator<char>(file)),
           if (trimmed.find("CREATE DATABASE") != std::string::npos)
             continue;
 
-          if (trimmed.rfind("USE ", 0) == 0)
+          if (trimmed.rfind("USE ", 0) == 0) {
+            std::string db;
+            if (auto const tick1 = trimmed.find('`'); tick1 != std::string::npos) {
+              if (auto const tick2 = trimmed.find('`', tick1 + 1);
+                  tick2 != std::string::npos)
+                db = trimmed.substr(tick1 + 1, tick2 - tick1 - 1);
+            } else {
+              std::string rest = trimmed.substr(4);
+              rest.erase(0, rest.find_first_not_of(" \t\r\n"));
+              if (auto const semi = rest.find(';'); semi != std::string::npos)
+                rest = rest.substr(0, semi);
+              if (auto const last = rest.find_last_not_of(" \t\r\n");
+                  last != std::string::npos)
+                rest.erase(last + 1);
+              db = rest;
+            }
+            if (!db.empty()) {
+              conn->setSchema(db);
+              LOG_DEBUG("Selected database: {}", db);
+            }
             continue;
+          }
 
           try {
             std::unique_ptr<sql::Statement> stmnt(conn->createStatement());

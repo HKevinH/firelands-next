@@ -31,6 +31,10 @@ public:
                 (uint32_t, uint32_t, uint8_t), (override));
     MOCK_METHOD(std::vector<uint32_t>, GetCharacterSpellIds, (uint32_t),
                 (override));
+    MOCK_METHOD(CharacterCooldownState, LoadCharacterCooldowns, (uint32_t),
+                (override));
+    MOCK_METHOD(bool, SaveCharacterCooldowns, (uint32_t, CharacterCooldownState const &),
+                (override));
     MOCK_METHOD(bool, AddCharacterSpell, (uint32_t, uint32_t), (override));
     MOCK_METHOD(bool, HasItemTemplate, (uint32_t), (const, override));
     MOCK_METHOD(bool, GrantItemToBag0,

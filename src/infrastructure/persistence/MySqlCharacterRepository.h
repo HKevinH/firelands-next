@@ -42,6 +42,9 @@ namespace Firelands {
         bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,
                                    uint8_t level) override;
         std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) override;
+        CharacterCooldownState LoadCharacterCooldowns(uint32_t characterGuid) override;
+        bool SaveCharacterCooldowns(uint32_t characterGuid,
+                                    CharacterCooldownState const &state) override;
         bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) override;
         bool HasItemTemplate(uint32_t itemEntry) const override;
         bool GrantItemToBag0(uint32_t characterGuid, uint32_t itemEntry, uint32_t count,

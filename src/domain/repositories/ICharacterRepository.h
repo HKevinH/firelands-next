@@ -1,6 +1,7 @@
 #pragma once
 
 #include <domain/models/Character.h>
+#include <domain/models/CharacterCooldown.h>
 #include <domain/models/PlayerCreateInfo.h>
 #include <array>
 #include <shared/game/AccessLevel.h>
@@ -60,6 +61,9 @@ public:
   virtual bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,
                                     uint8_t level) = 0;
   virtual std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) = 0;
+  virtual CharacterCooldownState LoadCharacterCooldowns(uint32_t characterGuid) = 0;
+  virtual bool SaveCharacterCooldowns(uint32_t characterGuid,
+                                    CharacterCooldownState const &state) = 0;
   virtual bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) = 0;
   /// True if `itemEntry` resolves from `item_template`, item DB2 hotfix, or CharStartOutfit DBC.
   virtual bool HasItemTemplate(uint32_t itemEntry) const = 0;
