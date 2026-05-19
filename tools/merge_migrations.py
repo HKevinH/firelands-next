@@ -81,7 +81,7 @@ def detect_database(path: Path, content: str) -> str | None:
         return "firelands_auth"
     if "item_instance" in name or "characters" in name:
         return "firelands_characters"
-    if "world" in name or name.startswith(("5_", "8_", "9_", "10_", "12_", "15_", "16_", "17_", "18_", "19_", "20_", "22_", "23_", "24_", "25_", "26_", "27_world", "29_", "30_")):
+    if "world" in name or name.startswith(("5_", "8_", "9_", "10_", "12_", "15_", "16_", "17_", "18_", "19_", "20_", "22_", "23_", "24_", "25_", "26_", "27_world", "29_", "30_", "31_", "32_")):
         return "firelands_world"
     return None
 

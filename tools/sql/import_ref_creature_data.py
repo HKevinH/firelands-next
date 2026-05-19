@@ -177,6 +177,7 @@ def map_creature_template_row(f: list[str]) -> str:
         icon_raw = strip_sql_string(icon_tok) if icon_tok.startswith("'") else icon_tok
         icon_sql = sql_string(icon_raw[:64]) if icon_raw else "NULL"
 
+    gossip_menu_id = f[14].strip()
     modelid1, modelid2, modelid3, modelid4 = f[6], f[7], f[8], f[9]
     minlevel, maxlevel = f[15], f[16]
     faction = f[19]
@@ -227,6 +228,7 @@ def map_creature_template_row(f: list[str]) -> str:
         sub_sql,
         "N''",
         icon_sql,
+        gossip_menu_id,
         "0",
         "0",
         faction,
@@ -352,7 +354,7 @@ def map_creature_row(f: list[str]) -> str:
 TEMPLATE_COLUMNS = (
     "`entry`, `KillCredit1`, `KillCredit2`, `modelid1`, `modelid2`, `modelid3`, `modelid4`, "
     "`name`, `femaleName`, `subname`, `TitleAlt`, "
-    "`IconName`, `RequiredExpansion`, `VignetteID`, `faction`, `npcflag`, `speed_walk`, "
+    "`IconName`, `gossip_menu_id`, `RequiredExpansion`, `VignetteID`, `faction`, `npcflag`, `speed_walk`, "
     "`speed_run`, `scale`, `Classification`, `dmgschool`, `BaseAttackTime`, `RangeAttackTime`, "
     "`BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `unit_flags3`, "
     "`family`, `trainer_class`, `type`, `VehicleId`, `AIName`, `MovementType`, "
@@ -404,6 +406,73 @@ def _peel_outer_tuple_sql_row(line_stripped: str) -> tuple[str, str] | None:
     if s.endswith(","):
         return s[1:-1], ","
     return None
+
+
+def write_gossip_menu_id_migration(
+    template_sql: Path,
+    out_path: Path,
+    *,
+    batch_size: int = 250,
+) -> None:
+    """Emit JDBC-safe migration: ADD `gossip_menu_id` + CASE batched backfill from ref dump."""
+    rows = extract_insert_rows(template_sql, "creature_template")
+    pairs: list[tuple[str, str]] = []
+    for r in rows:
+        if len(r) < 80:
+            continue
+        entry = r[0].strip()
+        gid = r[14].strip()
+        try:
+            if int(gid) <= 0:
+                continue
+        except ValueError:
+            continue
+        pairs.append((entry, gid))
+
+    header = (
+        "-- Links creature_template to gossip_menu (Trinity `gossip_menu_id` → MenuID).\n"
+        "-- Data backfill from firelands-cata-ref creature_template.sql.\n"
+        "-- JDBC-safe conditional DDL + batched UPDATE … CASE.\n"
+        "-- Regenerate: python3 tools/sql/import_ref_creature_data.py --write-gossip-menu-id-migration\n"
+        "-- Run after migration 30 (creature ref import). Before gossip_menu INSERTs.\n"
+        "\n"
+        "USE `firelands_world`;\n"
+        "\n"
+        "SET @exist_gossip_menu_id :=\n"
+        "  (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS\n"
+        "   WHERE TABLE_SCHEMA = DATABASE()\n"
+        "     AND TABLE_NAME = 'creature_template'\n"
+        "     AND COLUMN_NAME = 'gossip_menu_id');\n"
+        "\n"
+        "SET @fl_sql := IF(@exist_gossip_menu_id = 0,\n"
+        "  'ALTER TABLE `creature_template`\n"
+        "     ADD COLUMN `gossip_menu_id` int unsigned NOT NULL DEFAULT ''0''\n"
+        "     COMMENT ''Links to gossip_menu.MenuID (Trinity cata)''\n"
+        "     AFTER `IconName`',\n"
+        "  'SELECT 1');\n"
+        "\n"
+        "PREPARE _fl_m31_p FROM @fl_sql;\n"
+        "EXECUTE _fl_m31_p;\n"
+        "DEALLOCATE PREPARE _fl_m31_p;\n"
+        "\n"
+    )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as out:
+        out.write(header)
+        for i in range(0, len(pairs), batch_size):
+            chunk = pairs[i : i + batch_size]
+            entries = ", ".join(p[0] for p in chunk)
+            out.write("UPDATE `creature_template` SET `gossip_menu_id` = CASE `entry`\n")
+            for entry, gid in chunk:
+                out.write(f"  WHEN {entry} THEN {gid}\n")
+            out.write("  ELSE `gossip_menu_id` END\n")
+            out.write(f"WHERE `entry` IN ({entries});\n\n")
+
+    print(
+        f"Wrote {out_path.name}: {len(pairs)} templates with gossip_menu_id > 0 "
+        f"({(len(pairs) + batch_size - 1) // batch_size} UPDATE batch(es))"
+    )
 
 
 def patch_migration_modelids(template_sql: Path, migration_path: Path, out_path: Path) -> None:
@@ -485,6 +554,11 @@ def main() -> None:
         action="store_true",
         help="Inject modelid1..4 into an existing ref-import file using `--ref` creature_template.sql (does not rebuild from scratch)",
     )
+    ap.add_argument(
+        "--write-gossip-menu-id-migration",
+        action="store_true",
+        help="Write sql/migrations/31_world_creature_template_gossip_menu_id.sql from ref gossip_menu_id values",
+    )
     ap.add_argument("--template-batch", type=int, default=120)
     ap.add_argument("--creature-batch", type=int, default=200)
     args = ap.parse_args()
@@ -499,6 +573,12 @@ def main() -> None:
             raise SystemExit(f"--patch-migration: file not found: {args.out}")
         print(f"Patching model columns using {template_sql.name} ...")
         patch_migration_modelids(template_sql, args.out, args.out)
+        return
+
+    if args.write_gossip_menu_id_migration:
+        migration_out = root / "sql" / "migrations" / "31_world_creature_template_gossip_menu_id.sql"
+        print(f"Generating gossip_menu_id migration from {template_sql.name} ...")
+        write_gossip_menu_id_migration(template_sql, migration_out)
         return
 
     if not creature_sql.is_file():
