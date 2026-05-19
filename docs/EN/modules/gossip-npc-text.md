@@ -85,12 +85,13 @@ Gossip menus reference a **text id** (`gossip_menu.TextID`). The client issues `
 
 ### Planned behaviour
 
-`WorldSession::HandleNpcTextQuery`:
+`WorldSession::SendNpcTextForGossipWindow` (also used from `HandleNpcTextQuery`):
 
-1. Read `textId` + NPC `guid` from the packet.
-2. Load row via `INpcTextRepository::TryGetById` when wired.
-3. On miss, use `NpcText::MakeFallback(textId)` (default greeting `Greetings $N`).
-4. Send `gossip::BuildNpcTextUpdate(payload)`.
+1. Load row via `INpcTextRepository::TryGetById` when wired.
+2. On miss, use `NpcText::MakeFallback(textId)` (default greeting `Greetings $N`).
+3. Send `gossip::BuildNpcTextUpdate(payload)`.
+
+After `SMSG_GOSSIP_MESSAGE`, the server **pushes** npc text immediately when `textId != 0` (15595 clients often never send `CMSG_NPC_TEXT_QUERY` otherwise).
 
 ### New / touched code (WIP)
 
@@ -120,10 +121,23 @@ After migrations land, regenerate bundled world schema (`merge-migrations`) and 
 - [ ] Regenerate `sql/bundled/firelands_world.sql`
 - [ ] Manual: NPC with known `TextID` shows correct dialog body in client (not only fallback)
 
+### Quest lines in gossip (shipped)
+
+| Migration | Purpose |
+|-----------|---------|
+| `36_world_quest_gossip_tables.sql` | DDL: `quest_template`, `creature_queststarter` |
+| `38_world_quest_gossip_data.sql` | Full starters: `python3 tools/sql/import_ref_quest_gossip.py` |
+
+### Quest overhead markers (! / ?)
+
+The client requests `CMSG_QUESTGIVER_STATUS_QUERY` / `CMSG_QUESTGIVER_STATUS_MULTIPLE_QUERY`; the server answers with `SMSG_QUESTGIVER_STATUS` / `_MULTIPLE` (uint64 guid + uint32 cata status flags, e.g. `0x100` = available). Starter NPCs keep template gossip + quest-giver `UNIT_NPC_FLAGS` (flight master bit stripped). Interaction: `CMSG_QUESTGIVER_HELLO` and/or `CMSG_GOSSIP_HELLO` → gossip menu or `SMSG_QUESTGIVER_QUEST_LIST`.
+
+Until per-character quest status exists, any starter on the NPC is reported as **available** (yellow !).
+
 ### Not in this slice
 
 - `BroadcastTextID*` columns stored but not used server-side yet
-- Quest gossip lines still `0` in `SMSG_GOSSIP_MESSAGE`
+- Quest accept/complete opcodes (`CMSG_QUESTGIVER_ACCEPT_QUEST`, etc.)
 
 ---
 
