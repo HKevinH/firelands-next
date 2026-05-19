@@ -46,7 +46,13 @@ enum SpellFailedReason : uint8 {
   /// Cataclysm `SharedDefines.h`; verify against build 15595 if mismatch.
   SPELL_FAILED_LINE_OF_SIGHT = 49,
   SPELL_FAILED_NO_POWER = 87,
+  SPELL_FAILED_INTERRUPTED = 47,
+  /// Client `SPELL_FAILED_SPELL_IS_PASSIVE` (4.3.4); passive spells are not castable.
+  SPELL_FAILED_SPELL_IS_PASSIVE = 58,
 };
+
+/// Parses `CMSG_CANCEL_CAST` (spell id + cast id).
+bool TryReadClientCancelCast(WorldPacket &packet, uint32 &outSpellId, uint8 &outCastId);
 
 struct ClientCastSpellData {
   uint8 castId = 0;
@@ -61,6 +67,10 @@ struct ClientCastSpellData {
 /// Parses CMSG_CAST_SPELL payload after opcode (operator>> SpellCastRequest + target).
 /// Returns false if the packet is truncated or uses unsupported optional sections.
 bool TryReadClientCastSpell(WorldPacket &packet, ClientCastSpellData &out);
+
+/// Timestamp for `SMSG_SPELL_GO` (client movement clock). Falls back to monotonic ms since
+/// first use when `clientMovementTimeMs` is 0.
+uint32 ResolveSpellGoTimestampMs(uint32 clientMovementTimeMs);
 
 /// Builds SMSG_SPELL_START (no HitInfo; matches Spell::SendSpellStart for common case).
 void BuildSpellStart(WorldPacket &out, uint64 casterGuid, uint8 castId, uint32 spellId,

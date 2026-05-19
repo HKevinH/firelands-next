@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <domain/models/SpellDefinition.h>
+#include <domain/repositories/ISpellCastTables.h>
 #include <shared/Common.h>
 #include <shared/network/SpellCastWire.h>
 
@@ -19,6 +21,11 @@ uint64 ResolvePrimarySpellHitUnitGuid(uint32 clientTargetFlags, uint64 casterGui
 /// Sets `SpellCastOutcome` immediate-health fields when the definition carries a delta.
 void ApplyImmediateHealthFromDefinition(SpellDefinition const *def, uint64 hitGuid,
                                         SpellCastOutcome *out);
+
+/// Sets `SpellCastOutcome` aura-apply fields when the definition has an aura effect.
+void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 casterGuid,
+                               uint8 casterLevel, std::chrono::steady_clock::time_point now,
+                               ISpellCastTables const *castTables, SpellCastOutcome *out);
 
 } // namespace SpellHitEffects
 

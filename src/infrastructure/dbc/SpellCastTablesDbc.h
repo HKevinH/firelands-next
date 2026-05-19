@@ -25,10 +25,18 @@ public:
     float friendlyMaxYards = 0.f;
   };
 
+  /// `SpellDuration.dbc` row (base, per level, max cap).
+  struct DurationRow {
+    uint32 baseMs = 0;
+    uint32 perLevelMs = 0;
+    uint32 maxMs = 0;
+  };
+
   /// Each file is optional: missing file logs a warning and that table stays empty.
   bool Load(std::string const &spellCastTimesPath, std::string const &spellRangePath,
             std::string const &spellCooldownsPath, std::string const &spellPowerPath,
-            std::string const &spellCategoriesPath);
+            std::string const &spellCategoriesPath,
+            std::string const &spellDurationPath = {});
 
   bool HasCastTimes() const { return !m_castBaseMs.empty(); }
   bool HasRanges() const { return !m_spellRangeRows.empty(); }
@@ -45,6 +53,8 @@ public:
 
   uint32 GetSpellCategoryGroupForCategoriesId(uint32 categoriesId) const override;
 
+  uint32 GetDurationMs(uint32 durationIndex, uint8 casterLevel) const override;
+
 private:
   std::unordered_map<uint32, int32> m_castBaseMs;
   std::unordered_map<uint32, SpellRangeRow> m_spellRangeRows;
@@ -52,6 +62,7 @@ private:
   std::unordered_map<uint32, uint32> m_spellPowerManaCost;
   /// `SpellCategories.dbc` row id → `Category` field (shared cooldown group key).
   std::unordered_map<uint32, uint32> m_spellCategoryGroupByCategoriesRowId;
+  std::unordered_map<uint32, DurationRow> m_durationRows;
 };
 
 } // namespace Firelands

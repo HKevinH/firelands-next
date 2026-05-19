@@ -232,6 +232,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
   _gcdReady = {};
   _spellCooldownUntil.clear();
   _spellCategoryCooldownUntil.clear();
+  RestorePersistedSpellCooldowns(static_cast<uint32>(character.GetGuid()));
   // At world login this packet must initialize client spellbook state,
   // including passive language spells. Existing characters may have
   // `firstLogin = false`, but the client still expects InitialLogin=1 here.
@@ -474,6 +475,9 @@ void WorldSession::LoginFinalizeWorldEntry(uint64 guid) {
 
   // If login spawn already has swim flags (rare persisted state), show breath UI immediately.
   UpdateBreathFromSwimmingState(MovementIsSwimming(_position));
+
+  SendClientActiveSpellCooldowns();
+  SendClientActiveCategoryCooldowns();
 }
 
 } // namespace Firelands

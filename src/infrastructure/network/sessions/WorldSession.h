@@ -129,6 +129,7 @@ public:
   bool GmAddItem(uint32 itemEntry, uint32 count) override;
   bool GmRemoveItem(uint32 itemEntry, uint32 count) override;
   bool GmSetLevel(uint8 level) override;
+  bool GmDamageUnit(uint64 targetGuid, uint32 amount) override;
 
   bool GmSpawnNpc(uint32 creatureEntry, uint32 displayId,
                   uint32 factionTemplateOrZeroDefault = 0) override;
@@ -221,6 +222,28 @@ public:
   void HandleLfgLockInfoRequest(WorldPacket &packet);
   void HandleRequestCemeteryList(WorldPacket &packet);
   void HandleCastSpell(WorldPacket &packet);
+  void HandleCancelAura(WorldPacket &packet);
+  void HandleCancelCast(WorldPacket &packet);
+  void HandleRequestCategoryCooldowns(WorldPacket &packet);
+
+  /// Phase E: `SMSG_SPELL_COOLDOWN` (GCD + spell recovery) to the casting client.
+  void SendClientSpellCooldownsAfterCast(
+      uint32 spellId, uint32 spellCooldownDurationMs,
+      std::chrono::steady_clock::time_point gcdReady,
+      std::chrono::steady_clock::time_point now);
+  /// All active per-spell recovery timers (`SMSG_SPELL_COOLDOWN`, login / relog).
+  void SendClientActiveSpellCooldowns();
+  /// Active shared category timers (`SMSG_CATEGORY_COOLDOWN`).
+  void SendClientActiveCategoryCooldowns();
+  /// Updates session CD maps and pushes spell + category cooldown packets to the client.
+  void CommitSpellCooldownsFromCast(uint32 spellId, SpellCastOutcome const &out,
+                                    std::chrono::steady_clock::time_point now);
+  /// Deferred `SMSG_SPELL_GO` completion: spell recovery only (GCD was sent at cast start).
+  void CommitSpellRecoveryCooldownFromDeferred(uint32 spellId,
+                                               uint32 spellCooldownDurationMs,
+                                               std::chrono::steady_clock::time_point now);
+  void RestorePersistedSpellCooldowns(uint32 characterGuid);
+  void SavePersistedSpellCooldowns(uint32 characterGuid);
   void HandleSwapInvItem(WorldPacket &packet);
   void HandleSwapItem(WorldPacket &packet);
   void HandleDbQueryBulk(WorldPacket &packet);
@@ -369,6 +392,19 @@ public:
     uint32 spellCooldownDurationMs = 0;
     uint32 spellCategoryCooldownGroup = 0;
     uint32 spellCategoryCooldownDurationMs = 0;
+    bool hasAuraApply = false;
+    uint64 auraTargetGuid = 0;
+    uint64 auraCasterGuid = 0;
+    uint32 auraSpellId = 0;
+    uint32 auraEffectType = 0;
+    uint8 auraEffectIndex = 0;
+    int32 auraBasePoints = 0;
+    int32 auraDieSides = 0;
+    uint32 auraDurationMs = 0;
+    uint32 auraPeriodicPeriodMs = 0;
+    int32 auraPeriodicHealthDeltaPerTick = 0;
+    bool auraIsNegative = false;
+    uint8 auraCasterLevel = 1;
   };
 
   void CancelPendingClientSpellCast();
@@ -448,6 +484,9 @@ public:
 
   boost::asio::steady_timer _timeSyncPeriodicTimer;
   boost::asio::steady_timer _pendingSpellCastTimer;
+  bool _pendingDeferredCastActive = false;
+  uint8 _pendingCastId = 0;
+  uint32 _pendingSpellId = 0;
   std::atomic<bool> _periodicTimeSyncRunning{false};
 
   /// Filled while handling CMSG_AUTH_SESSION; consumed by SendAddonInfo (SMSG_ADDON_INFO).

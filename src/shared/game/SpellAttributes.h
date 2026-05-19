@@ -6,6 +6,10 @@ namespace Firelands {
 
 /// `Spell.dbc` field `Attributes` (wowdev SpellAttr0).
 namespace SpellAttr0 {
+/// `SPELL_ATTR0_PASSIVE` — no cast button; aura applied from spell passives.
+constexpr uint32 kPassive = 0x00000010u;
+/// `SPELL_ATTR0_CANT_CANCEL` — player cannot remove via `CMSG_CANCEL_AURA`.
+constexpr uint32 kCantCancel = 0x00000020u;
 /// `SPELL_ATTR0_NEGATIVE_SPELL` — harmful / debuff-style classification when effects do not imply polarity.
 constexpr uint32 kNegativeSpell = 0x00000100u;
 /// `SPELL_ATTR0_AURA_IS_DEBUFF` (wowdev / vmangos name) — most harmful auras carry this bit.

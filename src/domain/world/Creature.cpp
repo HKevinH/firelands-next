@@ -31,4 +31,26 @@ void Creature::ApplyHealthDelta(int32 delta) {
   m_liveHealth = static_cast<uint32>(clamped);
 }
 
+void Creature::AddAura(Aura const &aura) { m_auraState.AddAura(aura); }
+
+std::optional<AuraRemoval> Creature::TryRemoveAura(uint32 spellId) {
+  return m_auraState.TryRemoveAura(spellId);
+}
+
+bool Creature::HasAura(uint32 spellId) const { return m_auraState.HasAura(spellId); }
+
+std::vector<AuraRemoval> Creature::UpdateAuras(
+    std::chrono::steady_clock::time_point now) {
+  return m_auraState.UpdateAuras(now);
+}
+
+std::vector<AuraPeriodicTick> Creature::TickPeriodicAuras(
+    std::chrono::steady_clock::time_point now) {
+  return m_auraState.TickPeriodicAuras(now);
+}
+
+uint8 Creature::AllocateAuraVisualSlot(uint32 spellId) {
+  return m_auraState.AllocateAuraVisualSlot(spellId);
+}
+
 } // namespace Firelands

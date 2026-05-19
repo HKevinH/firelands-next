@@ -2,6 +2,7 @@ add_executable(FirelandsUnitTests
     unit/domain/UnitTests.cpp
     unit/domain/RealmTests.cpp
     unit/domain/AuraTests.cpp
+    unit/domain/SpellDefinitionTests.cpp
     unit/domain/GossipMenuTests.cpp
     unit/domain/NpcTextTests.cpp
     unit/infrastructure/MySqlAccountRepositoryTests.cpp
@@ -20,6 +21,9 @@ add_executable(FirelandsUnitTests
     unit/shared/ChrRacesDbcTests.cpp
     unit/shared/PermissionsTests.cpp
     unit/shared/SpellCastWireTests.cpp
+    unit/shared/AuraUpdateWireTests.cpp
+    unit/shared/SpellCooldownWireTests.cpp
+    unit/shared/SpellEffectMagnitudeTests.cpp
     unit/shared/MovementStateQueriesTests.cpp
     unit/application/SRPServiceTests.cpp
     unit/application/RealmListServiceTests.cpp
@@ -42,6 +46,7 @@ add_executable(FirelandsUnitTests
     unit/infrastructure/LuaGameScriptHostTests.cpp
     unit/infrastructure/MapCollisionQueriesStubTests.cpp
     unit/infrastructure/SpellCastTablesSpellPowerTests.cpp
+    unit/infrastructure/SpellCastTablesDurationTests.cpp
     # TODO: fix missing headers for vmap/tools tests
     # unit/tools/WowDataMpqListTests.cpp
     # unit/vmap/BihTests.cpp

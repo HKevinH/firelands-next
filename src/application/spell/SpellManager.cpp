@@ -79,6 +79,19 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   out->deferredTargetFlags = 0;
   out->deferredTargetUnitGuid = 0;
   out->deferredHitGuid = 0;
+  out->hasAuraApply = false;
+  out->auraTargetGuid = 0;
+  out->auraCasterGuid = 0;
+  out->auraSpellId = 0;
+  out->auraEffectType = 0;
+  out->auraEffectIndex = 0;
+  out->auraBasePoints = 0;
+  out->auraDieSides = 0;
+  out->auraDurationMs = 0;
+  out->auraPeriodicPeriodMs = 0;
+  out->auraPeriodicHealthDeltaPerTick = 0;
+  out->auraIsNegative = false;
+  out->auraCasterLevel = 1;
 
   uint32 const spellId = static_cast<uint32>(req.client.spellId);
   if (!IsSpellKnown(spellId, req.knownSpells)) {
@@ -100,6 +113,14 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   std::optional<SpellDefinition> def;
   if (m_spellDefinitions)
     def = m_spellDefinitions->GetDefinition(spellId);
+
+  if (def && def->isPassiveSpell()) {
+    SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                     req.client.castId, req.client.spellId,
+                                     SpellCastWire::SPELL_FAILED_SPELL_IS_PASSIVE);
+    out->kind = SpellCastOutcome::Kind::SpellFailure;
+    return;
+  }
 
   if (req.now < req.gcdReady) {
     SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
@@ -225,6 +246,10 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   SpellHitEffects::ApplyImmediateHealthFromDefinition(
       def.has_value() ? &*def : nullptr, hitGuid, out);
 
+  SpellHitEffects::ApplyAuraFromDefinition(def.has_value() ? &*def : nullptr, hitGuid,
+                                           req.casterGuid, req.casterLevel, req.now,
+                                           m_spellCastTables.get(), out);
+
   if (cooldownRecoveryMs > 0u)
     out->spellCooldownDurationMs = cooldownRecoveryMs;
   if (cooldownCategoryRecoveryMs > 0u && categoryGroup > 0u) {
@@ -250,10 +275,8 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   bool const resolveInstantly = (castTimeStart == 0u);
   if (resolveInstantly) {
     uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
-    uint32 const castTimeGo = static_cast<uint32>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            req.now.time_since_epoch())
-            .count());
+    uint32 const castTimeGo =
+        SpellCastWire::ResolveSpellGoTimestampMs(req.clientTimestampMs);
     uint64 const hitTargets[1] = {hitGuid};
     SpellCastWire::BuildSpellGo(out->spellGo, req.casterGuid, req.client.castId, spellId,
                                 castFlagsGo, 0, castTimeGo, hitTargets, 1, targetFlags,

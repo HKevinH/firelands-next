@@ -73,6 +73,10 @@ public:
     return 0u;
   }
 
+  uint32 GetDurationMs(uint32 /*durationIndex*/, uint8 /*casterLevel*/) const override {
+    return 0u;
+  }
+
 private:
   uint32 m_castTimeMs;
   uint32 m_respondForIndex;
@@ -177,6 +181,10 @@ public:
     return 0u;
   }
 
+  uint32 GetDurationMs(uint32 /*durationIndex*/, uint8 /*casterLevel*/) const override {
+    return 0u;
+  }
+
 private:
   float m_hostileMax;
   float m_hostileMin;
@@ -235,6 +243,10 @@ public:
     return 0u;
   }
 
+  uint32 GetDurationMs(uint32 /*durationIndex*/, uint8 /*casterLevel*/) const override {
+    return 0u;
+  }
+
 private:
   uint32 m_start;
   uint32 m_recovery;
@@ -271,6 +283,10 @@ public:
 
   uint32 GetSpellCategoryGroupForCategoriesId(uint32 categoriesId) const override {
     return categoriesId == 100u ? 7u : 0u;
+  }
+
+  uint32 GetDurationMs(uint32 /*durationIndex*/, uint8 /*casterLevel*/) const override {
+    return 0u;
   }
 
 private:
@@ -394,6 +410,33 @@ static SpellCastRequest MakeRequest(uint64 casterGuid, int32 spellId,
   req.gcdReady = {};
   req.knownSpells = knownSpells;
   return req;
+}
+
+TEST(SpellManagerTests, AuraSpell_FillsAuraApplyOnSuccess) {
+  class DurationOnlyTables final : public ISpellCastTables {
+  public:
+    uint32 GetCastTimeMs(uint32) const override { return 0u; }
+    float GetSpellRangeMinYards(uint32, bool) const override { return 0.f; }
+    float GetSpellRangeMaxYards(uint32, bool) const override { return 0.f; }
+    void GetCooldownTiming(uint32, uint32 *, uint32 *, uint32 *) const override {}
+    uint32 GetSpellPowerManaCost(uint32) const override { return 0u; }
+    uint32 GetSpellCategoryGroupForCategoriesId(uint32) const override { return 0u; }
+    uint32 GetDurationMs(uint32 durationIndex, uint8 /*casterLevel*/) const override {
+      return durationIndex == 9u ? 18000u : 0u;
+    }
+  };
+
+  auto defs = std::make_shared<SpellDefinitionWithAura>(8, 12, 0, 9);
+  auto tables = std::make_shared<DurationOnlyTables>();
+  SpellManager mgr(defs, tables);
+  std::unordered_set<uint32> known = {139};
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(MakeRequest(0x10ULL, 139, &known), &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  EXPECT_TRUE(out.hasAuraApply);
+  EXPECT_EQ(out.auraSpellId, 139u);
+  EXPECT_EQ(out.auraDurationMs, 18000u);
+  EXPECT_EQ(out.auraTargetGuid, 0x10ULL);
 }
 
 TEST(SpellManagerTests, AuraEffectFieldsAreSetCorrectly) {
@@ -999,6 +1042,32 @@ TEST(SpellManagerTests, PlayerFactionTeamHint_HumanVsDwarf_SameTeam) {
 TEST(SpellManagerTests, PlayerFactionTeamHint_UnknownRace_ReturnsFalse) {
   bool same = true;
   EXPECT_FALSE(TrySpellRangeFriendlyTeamHint(1, 99, &same));
+}
+
+class SpellDefinitionPassive final : public ISpellDefinitionStore {
+public:
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.attributes = SpellAttr0::kPassive;
+    return d;
+  }
+};
+
+TEST(SpellManagerTests, PassiveSpellRejected) {
+  auto defs = std::make_shared<SpellDefinitionPassive>();
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {12345};
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(MakeRequest(0x10ULL, 12345, &known), &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  out.failurePacket.SetReadPos(0);
+  (void)out.failurePacket.ReadPackedGuid();
+  (void)out.failurePacket.Read<uint8>();
+  (void)out.failurePacket.Read<int32>();
+  EXPECT_EQ(out.failurePacket.Read<uint8>(),
+            SpellCastWire::SPELL_FAILED_SPELL_IS_PASSIVE);
 }
 
 } // namespace

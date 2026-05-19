@@ -173,13 +173,60 @@ static bool LoadSpellCategories(
   return !outCategoriesRowIdToCategoryGroup.empty();
 }
 
+// Cataclysm 4.3.4: 4 fields, 16-byte records (ID, BaseDuration, PerLevel, MaxDuration).
+constexpr std::string_view kSpellDurationFmt = "niii";
+
+static bool LoadSpellDuration(
+    std::string const &path,
+    std::unordered_map<uint32, SpellCastTablesDbc::DurationRow> &outRows) {
+  outRows.clear();
+  if (path.empty())
+    return false;
+  constexpr std::string_view kFmt = kSpellDurationFmt;
+  DbcReader reader;
+  if (!reader.Load(path)) {
+    LOG_WARN("SpellDuration.dbc not found or unreadable: {}", path);
+    return false;
+  }
+  std::vector<uint32_t> const offsets = DbcBuildFieldByteOffsets(kFmt);
+  if (!reader.VerifyFormat(kFmt)) {
+    LOG_WARN("SpellDuration.dbc: field count mismatch (path={})", path);
+    return false;
+  }
+  char const last = kFmt[kFmt.size() - 1];
+  size_t const expected =
+      static_cast<size_t>(offsets.back()) +
+      (((last == 'b') || (last == 'X')) ? 1u : 4u);
+  if (expected != static_cast<size_t>(reader.GetRecordSize())) {
+    LOG_WARN("SpellDuration.dbc: record size {} expected {} (path={})",
+             reader.GetRecordSize(), expected, path);
+    return false;
+  }
+
+  uint32_t const n = reader.GetRecordCount();
+  outRows.reserve(static_cast<size_t>(n));
+  for (uint32_t rec = 0; rec < n; ++rec) {
+    uint32_t const id = reader.ReadUInt32(rec, 0, offsets);
+    if (id == 0u)
+      continue;
+    SpellCastTablesDbc::DurationRow row{};
+    row.baseMs = reader.ReadUInt32(rec, 1, offsets);
+    row.perLevelMs = reader.ReadUInt32(rec, 2, offsets);
+    row.maxMs = reader.ReadUInt32(rec, 3, offsets);
+    outRows.emplace(id, row);
+  }
+  LOG_DEBUG("SpellDuration.dbc: {} rows from {}.", outRows.size(), path);
+  return !outRows.empty();
+}
+
 } // namespace
 
 bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
                               std::string const &spellRangePath,
                               std::string const &spellCooldownsPath,
                               std::string const &spellPowerPath,
-                              std::string const &spellCategoriesPath) {
+                              std::string const &spellCategoriesPath,
+                              std::string const &spellDurationPath) {
   bool const ct = LoadCastTimes(spellCastTimesPath, m_castBaseMs);
   bool const rg = LoadSpellRange(spellRangePath, m_spellRangeRows);
   bool cd = false;
@@ -228,7 +275,9 @@ bool SpellCastTablesDbc::Load(std::string const &spellCastTimesPath,
   m_spellCategoryGroupByCategoriesRowId.clear();
   bool const sc =
       LoadSpellCategories(spellCategoriesPath, m_spellCategoryGroupByCategoriesRowId);
-  return ct || rg || cd || sp || sc;
+  m_durationRows.clear();
+  bool const dur = LoadSpellDuration(spellDurationPath, m_durationRows);
+  return ct || rg || cd || sp || sc || dur;
 }
 
 uint32 SpellCastTablesDbc::GetCastTimeMs(uint32 castingTimeIndex) const {
@@ -302,6 +351,22 @@ uint32 SpellCastTablesDbc::GetSpellCategoryGroupForCategoriesId(
   if (it == m_spellCategoryGroupByCategoriesRowId.end())
     return 0u;
   return it->second;
+}
+
+uint32 SpellCastTablesDbc::GetDurationMs(uint32 durationIndex,
+                                         uint8 casterLevel) const {
+  if (durationIndex == 0u)
+    return 0u;
+  auto it = m_durationRows.find(durationIndex);
+  if (it == m_durationRows.end())
+    return 0u;
+  DurationRow const &row = it->second;
+  uint64 duration = row.baseMs;
+  if (casterLevel > 1u && row.perLevelMs > 0u)
+    duration += static_cast<uint64>(row.perLevelMs) * static_cast<uint64>(casterLevel - 1u);
+  if (row.maxMs > 0u && duration > row.maxMs)
+    duration = row.maxMs;
+  return static_cast<uint32>(duration);
 }
 
 } // namespace Firelands

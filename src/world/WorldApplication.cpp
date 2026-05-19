@@ -9,6 +9,7 @@
 #include <application/services/PlayerCreateInfoService.h>
 #include <application/services/WorldService.h>
 #include <application/spell/SpellManager.h>
+#include <infrastructure/world/MapAuraTicker.h>
 #include <atomic>
 #include <chrono>
 #include <conncpp.hpp>
@@ -165,7 +166,8 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
                         dbcBasePath + "/SpellRange.dbc",
                         dbcBasePath + "/SpellCooldowns.dbc",
                         dbcBasePath + "/SpellPower.dbc",
-                        dbcBasePath + "/SpellCategories.dbc")) {
+                        dbcBasePath + "/SpellCategories.dbc",
+                        dbcBasePath + "/SpellDuration.dbc")) {
         LOG_WARN("One or more spell DBCs were not loadable from {} (cast "
                  "times, range, cooldowns, "
                  "power, categories); some lookups use defaults.",
@@ -278,18 +280,31 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
       return 0;
     }
 
+    auto const auraTickInterval = std::chrono::milliseconds(100);
+    auto lastAuraTick = std::chrono::steady_clock::now();
+
     if (console_enabled) {
       interactiveConsole->Start(console_enabled, true);
       LOG_DEBUG("Interactive console (stdin); type .help or quit to exit.");
       while (!interactiveConsole->ShutdownRequested()) {
         worldServer->Update();
         interactiveConsole->ProcessPending();
+        auto const tickNow = std::chrono::steady_clock::now();
+        if (tickNow - lastAuraTick >= auraTickInterval) {
+          TickMapAuras(tickNow);
+          lastAuraTick = tickNow;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     } else {
       while (!interactiveConsole->ShutdownRequested()) {
         worldServer->Update();
         commandService->PollScheduledRestart();
+        auto const tickNow = std::chrono::steady_clock::now();
+        if (tickNow - lastAuraTick >= auraTickInterval) {
+          TickMapAuras(tickNow);
+          lastAuraTick = tickNow;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     }

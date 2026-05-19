@@ -25,6 +25,8 @@ struct SpellCastRequest {
   SpellCastWire::ClientCastSpellData client{};
   std::chrono::steady_clock::time_point now{};
   std::chrono::steady_clock::time_point gcdReady{};
+  /// Client movement `time` field (ms) for `SMSG_SPELL_GO`; 0 lets `SpellManager` use fallback.
+  uint32 clientTimestampMs = 0;
   std::unordered_set<uint32> const *knownSpells = nullptr;
   /// When both are set, `SpellManager` checks 3D distance vs `SpellRange.dbc` min/max for the
   /// hostile or friendly column pair (plus slack). Otherwise range checks are skipped.
@@ -56,6 +58,8 @@ struct SpellCastRequest {
   bool hasTargetFactionReactionHint = false;
   /// Meaningful only if `hasTargetFactionReactionHint`; same faction team ⇒ friendly band.
   bool targetIsFriendlyTeamForSpellRange = false;
+  /// Caster level for aura packets (defaults to 1 when unset).
+  uint8 casterLevel = 1;
 };
 
 /// Result of `SpellManager::ProcessCastRequest`: packets to send and new GCD time.
@@ -88,6 +92,20 @@ struct SpellCastOutcome {
   uint32 deferredTargetFlags = 0;
   uint64 deferredTargetUnitGuid = 0;
   uint64 deferredHitGuid = 0;
+  /// Phase F: aura apply on successful hit (see `SpellHitEffects::ApplyAuraFromDefinition`).
+  bool hasAuraApply = false;
+  uint64 auraTargetGuid = 0;
+  uint64 auraCasterGuid = 0;
+  uint32 auraSpellId = 0;
+  uint32 auraEffectType = 0;
+  uint8 auraEffectIndex = 0;
+  int32 auraBasePoints = 0;
+  int32 auraDieSides = 0;
+  uint32 auraDurationMs = 0;
+  uint32 auraPeriodicPeriodMs = 0;
+  int32 auraPeriodicHealthDeltaPerTick = 0;
+  bool auraIsNegative = false;
+  uint8 auraCasterLevel = 1;
 };
 
 /// Centralizes spell cast validation and server-side spell wire output (Phase A+).

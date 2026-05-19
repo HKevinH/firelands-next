@@ -3,26 +3,21 @@
 #include <boost/asio/redirect_error.hpp>
 #include <infrastructure/network/asio/AsioAwaitables.h>
 #include <application/spell/SpellManager.h>
-#include <domain/world/Creature.h>
-#include <domain/world/Player.h>
 #include <infrastructure/network/sessions/WorldSession.h>
-#include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 #include <shared/Logger.h>
 #include <shared/game/PlayerFactionTeam.h>
+#include <domain/repositories/ISpellDefinitionStore.h>
 #include <shared/network/SpellCastWire.h>
-#include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
 
 namespace Firelands {
 
-namespace {
-
-namespace ws_obj = WorldSessionObjectUpdate;
-
-} // namespace
-
 void WorldSession::CancelPendingClientSpellCast() {
   (void)_pendingSpellCastTimer.cancel();
+  _pendingDeferredCastActive = false;
+  _pendingCastId = 0;
+  _pendingSpellId = 0;
 }
 
 void WorldSession::ScheduleDeferredSpellCastCompletion(SpellCastOutcome const &out) {
@@ -43,6 +38,23 @@ void WorldSession::ScheduleDeferredSpellCastCompletion(SpellCastOutcome const &o
   finish.spellCooldownDurationMs = out.spellCooldownDurationMs;
   finish.spellCategoryCooldownGroup = out.spellCategoryCooldownGroup;
   finish.spellCategoryCooldownDurationMs = out.spellCategoryCooldownDurationMs;
+  finish.hasAuraApply = out.hasAuraApply;
+  finish.auraTargetGuid = out.auraTargetGuid;
+  finish.auraCasterGuid = out.auraCasterGuid;
+  finish.auraSpellId = out.auraSpellId;
+  finish.auraEffectType = out.auraEffectType;
+  finish.auraEffectIndex = out.auraEffectIndex;
+  finish.auraBasePoints = out.auraBasePoints;
+  finish.auraDieSides = out.auraDieSides;
+  finish.auraDurationMs = out.auraDurationMs;
+  finish.auraPeriodicPeriodMs = out.auraPeriodicPeriodMs;
+  finish.auraPeriodicHealthDeltaPerTick = out.auraPeriodicHealthDeltaPerTick;
+  finish.auraIsNegative = out.auraIsNegative;
+  finish.auraCasterLevel = out.auraCasterLevel;
+
+  _pendingDeferredCastActive = true;
+  _pendingCastId = out.deferredCastId;
+  _pendingSpellId = out.deferredSpellId;
 
   _pendingSpellCastTimer.expires_after(std::chrono::milliseconds(
       static_cast<int64_t>(std::max<uint32_t>(1u, out.deferredCastTimeMs))));
@@ -61,12 +73,14 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
   if (_playerGuid != finish.casterGuid || finish.casterGuid == 0 || _mapId != finish.mapId)
     return;
 
+  _pendingDeferredCastActive = false;
+  _pendingCastId = 0;
+  _pendingSpellId = 0;
+
   uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
   auto const nowGo = std::chrono::steady_clock::now();
-  uint32 const castTimeGo = static_cast<uint32>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          nowGo.time_since_epoch())
-          .count());
+  uint32 const castTimeGo =
+      SpellCastWire::ResolveSpellGoTimestampMs(_position.time);
   WorldPacket spellGo;
   uint64 const hitTargets[1] = {finish.hitGuid};
   SpellCastWire::BuildSpellGo(spellGo, finish.casterGuid, finish.castId, finish.spellId,
@@ -74,45 +88,35 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
                               finish.targetFlags, finish.targetUnitGuid);
 
   if (auto map = WorldService::Instance().GetMap(finish.mapId)) {
+    SpellCastOutcome combat{};
+    combat.hasDirectHealthEffect = finish.hasDirectHealthEffect;
+    combat.directHealthTargetGuid = finish.directHealthTargetGuid;
+    combat.directHealthDelta = finish.directHealthDelta;
+    combat.power1Delta = finish.power1Delta;
+    combat.hasAuraApply = finish.hasAuraApply;
+    combat.auraTargetGuid = finish.auraTargetGuid;
+    combat.auraCasterGuid = finish.auraCasterGuid;
+    combat.auraSpellId = finish.auraSpellId;
+    combat.auraEffectType = finish.auraEffectType;
+    combat.auraEffectIndex = finish.auraEffectIndex;
+    combat.auraBasePoints = finish.auraBasePoints;
+    combat.auraDieSides = finish.auraDieSides;
+    combat.auraDurationMs = finish.auraDurationMs;
+    combat.auraPeriodicPeriodMs = finish.auraPeriodicPeriodMs;
+    combat.auraPeriodicHealthDeltaPerTick = finish.auraPeriodicHealthDeltaPerTick;
+    combat.auraIsNegative = finish.auraIsNegative;
+    combat.auraCasterLevel = finish.auraCasterLevel;
+    ApplySpellCastAuraOnMap(map, combat, nowGo);
     map->BroadcastPacketToNearby(finish.casterGuid, spellGo, true);
-    if (finish.hasDirectHealthEffect && finish.directHealthDelta != 0) {
-      if (auto target = map->TryGetPlayer(finish.directHealthTargetGuid)) {
-        target->ApplyHealthDelta(finish.directHealthDelta);
-        WorldPacket hpUpdate;
-        ws_obj::BuildPlayerHealthValuesUpdate(
-            static_cast<uint16>(finish.mapId), finish.directHealthTargetGuid,
-            target->GetLiveHealth(), target->GetLiveMaxHealth(), hpUpdate);
-        map->BroadcastPacketToNearby(finish.directHealthTargetGuid, hpUpdate, true);
-      } else if (auto cr = map->TryGetCreature(finish.directHealthTargetGuid)) {
-        cr->ApplyHealthDelta(finish.directHealthDelta);
-        WorldPacket hpUpdate;
-        ws_obj::BuildPlayerHealthValuesUpdate(
-            static_cast<uint16>(finish.mapId), finish.directHealthTargetGuid,
-            cr->GetLiveHealth(), cr->GetLiveMaxHealth(), hpUpdate);
-        map->BroadcastPacketToNearby(finish.directHealthTargetGuid, hpUpdate, true);
-      }
-    }
-    if (finish.power1Delta != 0) {
-      if (auto casterPl = map->TryGetPlayer(finish.casterGuid)) {
-        casterPl->ApplyPower1Delta(finish.power1Delta);
-        WorldPacket pwUpdate;
-        ws_obj::BuildPlayerPower1ValuesUpdate(
-            static_cast<uint16>(finish.mapId), finish.casterGuid,
-            casterPl->GetLivePower1(), casterPl->GetLiveMaxPower1(), pwUpdate);
-        map->BroadcastPacketToNearby(finish.casterGuid, pwUpdate, true);
-      }
-    }
-    if (finish.spellCooldownDurationMs > 0) {
-      _spellCooldownUntil[finish.spellId] =
-          nowGo + std::chrono::milliseconds(
-                      static_cast<int64_t>(finish.spellCooldownDurationMs));
-    }
+    ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, combat, nowGo);
     if (finish.spellCategoryCooldownGroup > 0 &&
         finish.spellCategoryCooldownDurationMs > 0) {
       _spellCategoryCooldownUntil[finish.spellCategoryCooldownGroup] =
           nowGo + std::chrono::milliseconds(static_cast<int64_t>(
               finish.spellCategoryCooldownDurationMs));
     }
+    CommitSpellRecoveryCooldownFromDeferred(finish.spellId, finish.spellCooldownDurationMs,
+                                            nowGo);
   } else {
     SendPacket(spellGo);
   }
@@ -145,7 +149,9 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
   req.client = c;
   req.now = now;
   req.gcdReady = _gcdReady;
+  req.clientTimestampMs = _position.time;
   req.knownSpells = &_knownSpellIds;
+  req.casterLevel = 80;
   MovementInfo const &pos = GetPosition();
   req.hasCasterWorldPosition = true;
   req.casterX = pos.x;
@@ -204,52 +210,15 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
     return;
   case SpellCastOutcome::Kind::SpellStartAndGo:
     if (auto map = WorldService::Instance().GetMap(_mapId)) {
+      ApplySpellCastAuraOnMap(map, out, now);
       map->BroadcastPacketToNearby(_playerGuid, out.spellStart, true);
       map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
-      if (out.hasDirectHealthEffect && out.directHealthDelta != 0) {
-        if (auto target = map->TryGetPlayer(out.directHealthTargetGuid)) {
-          target->ApplyHealthDelta(out.directHealthDelta);
-          WorldPacket hpUpdate;
-          ws_obj::BuildPlayerHealthValuesUpdate(
-              static_cast<uint16>(_mapId), out.directHealthTargetGuid,
-              target->GetLiveHealth(), target->GetLiveMaxHealth(), hpUpdate);
-          map->BroadcastPacketToNearby(out.directHealthTargetGuid, hpUpdate,
-                                       true);
-        } else if (auto cr = map->TryGetCreature(out.directHealthTargetGuid)) {
-          cr->ApplyHealthDelta(out.directHealthDelta);
-          WorldPacket hpUpdate;
-          ws_obj::BuildPlayerHealthValuesUpdate(
-              static_cast<uint16>(_mapId), out.directHealthTargetGuid,
-              cr->GetLiveHealth(), cr->GetLiveMaxHealth(), hpUpdate);
-          map->BroadcastPacketToNearby(out.directHealthTargetGuid, hpUpdate,
-                                       true);
-        }
-      }
-      if (out.power1Delta != 0) {
-        if (auto casterPl = map->TryGetPlayer(_playerGuid)) {
-          casterPl->ApplyPower1Delta(out.power1Delta);
-          WorldPacket pwUpdate;
-          ws_obj::BuildPlayerPower1ValuesUpdate(
-              static_cast<uint16>(_mapId), _playerGuid, casterPl->GetLivePower1(),
-              casterPl->GetLiveMaxPower1(), pwUpdate);
-          map->BroadcastPacketToNearby(_playerGuid, pwUpdate, true);
-        }
-      }
-      if (out.spellCooldownDurationMs > 0) {
-        uint32 const sid = static_cast<uint32>(c.spellId);
-        _spellCooldownUntil[sid] =
-            now + std::chrono::milliseconds(
-                      static_cast<int64_t>(out.spellCooldownDurationMs));
-      }
-      if (out.spellCategoryCooldownGroup > 0 &&
-          out.spellCategoryCooldownDurationMs > 0) {
-        _spellCategoryCooldownUntil[out.spellCategoryCooldownGroup] =
-            now + std::chrono::milliseconds(static_cast<int64_t>(
-                out.spellCategoryCooldownDurationMs));
-      }
+      ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, out, now);
+      CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);
     } else {
       SendPacket(out.spellStart);
       SendPacket(out.spellGo);
+      CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);
     }
     _gcdReady = out.newGcdReady;
     return;
@@ -260,12 +229,67 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       SendPacket(out.spellStart);
     }
     _gcdReady = out.newGcdReady;
+    SendClientSpellCooldownsAfterCast(static_cast<uint32>(c.spellId), 0u, out.newGcdReady,
+                                      now);
     ScheduleDeferredSpellCastCompletion(out);
     return;
   case SpellCastOutcome::Kind::None:
   default:
     return;
   }
+}
+
+void WorldSession::HandleCancelAura(WorldPacket &packet) {
+  if (_playerGuid == 0)
+    return;
+  if (packet.Size() < sizeof(uint32))
+    return;
+
+  uint32 const spellId = packet.Read<uint32>();
+  if (spellId == 0)
+    return;
+
+  if (_spellDefinitions) {
+    if (auto def = _spellDefinitions->GetDefinition(spellId)) {
+      if (!def->playerCanCancelAuraByClient())
+        return;
+    }
+  }
+
+  auto map = WorldService::Instance().GetMap(_mapId);
+  if (!map)
+    return;
+
+  (void)RemovePlayerAuraOnMap(map, _playerGuid, spellId);
+}
+
+void WorldSession::HandleCancelCast(WorldPacket &packet) {
+  if (_playerGuid == 0)
+    return;
+
+  uint32 spellId = 0;
+  uint8 castId = 0;
+  if (!SpellCastWire::TryReadClientCancelCast(packet, spellId, castId))
+    return;
+
+  bool const hadDeferred = _pendingDeferredCastActive;
+  uint8 const pendingCastId = _pendingCastId;
+  uint32 const pendingSpellId = _pendingSpellId;
+
+  CancelPendingClientSpellCast();
+
+  if (!hadDeferred)
+    return;
+
+  if (spellId != 0u && pendingSpellId != 0u && spellId != pendingSpellId)
+    return;
+
+  WorldPacket fail;
+  SpellCastWire::BuildSpellFailure(
+      fail, _playerGuid, castId != 0 ? castId : pendingCastId,
+      static_cast<int32>(spellId != 0 ? spellId : pendingSpellId),
+      SpellCastWire::SPELL_FAILED_INTERRUPTED);
+  SendPacket(fail);
 }
 
 } // namespace Firelands

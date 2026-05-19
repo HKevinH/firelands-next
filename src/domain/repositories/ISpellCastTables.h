@@ -31,6 +31,9 @@ public:
   /// (`CategoriesID`). Used with `SpellCooldowns.dbc` `CategoryRecoveryTime` for category
   /// cooldown. Returns 0 if unknown or `categoriesId` is 0.
   virtual uint32 GetSpellCategoryGroupForCategoriesId(uint32 categoriesId) const = 0;
+
+  /// `SpellDuration.dbc` duration for `durationIndex` (base + per-level, capped by max); 0 if unknown.
+  virtual uint32 GetDurationMs(uint32 durationIndex, uint8 casterLevel) const = 0;
 };
 
 } // namespace Firelands

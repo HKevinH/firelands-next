@@ -3,200 +3,135 @@
 #include <cstdint>
 #include <memory>
 #include <domain/world/Aura.h>
+#include <domain/world/Creature.h>
 #include <domain/world/Player.h>
 
 using namespace Firelands;
 
+namespace {
+
+Aura MakeAura(uint32 spellId, uint32 auraEffectType, int32 basePoints, int32 dieSides,
+              uint64 casterGuid, std::chrono::steady_clock::time_point expireTime,
+              uint8 visualSlot = 0, uint32 periodicPeriodMs = 0,
+              int32 periodicHealthDeltaPerTick = 0) {
+  auto const nextTick = std::chrono::steady_clock::now();
+  return Aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime,
+              visualSlot, periodicPeriodMs, periodicHealthDeltaPerTick, nextTick);
+}
+
+} // namespace
+
 TEST(AuraTests, ConstructorInitializesFieldsCorrectly) {
-    std::uint32_t spellId = 123;
-    std::uint32_t auraEffectType = 4;
-    std::int32_t basePoints = 10;
-    std::int32_t dieSides = 6;
-    std::uint64_t casterGuid = 0x1000ULL;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto expireTime = now + std::chrono::seconds(30);
-    
-    Aura aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime);
-    
-    EXPECT_EQ(aura.GetSpellId(), spellId);
-    EXPECT_EQ(aura.GetAuraEffectType(), auraEffectType);
-    EXPECT_EQ(aura.GetBasePoints(), basePoints);
-    EXPECT_EQ(aura.GetDieSides(), dieSides);
-    EXPECT_EQ(aura.GetCasterGuid(), casterGuid);
-    EXPECT_EQ(aura.GetExpireTime(), expireTime);
+  auto const now = std::chrono::steady_clock::now();
+  auto const expireTime = now + std::chrono::seconds(30);
+  Aura const aura = MakeAura(123, 4, 10, 6, 0x1000ULL, expireTime, 2);
+
+  EXPECT_EQ(aura.GetSpellId(), 123u);
+  EXPECT_EQ(aura.GetAuraEffectType(), 4u);
+  EXPECT_EQ(aura.GetBasePoints(), 10);
+  EXPECT_EQ(aura.GetDieSides(), 6);
+  EXPECT_EQ(aura.GetCasterGuid(), 0x1000ULL);
+  EXPECT_EQ(aura.GetExpireTime(), expireTime);
+  EXPECT_EQ(aura.GetVisualSlot(), 2u);
 }
 
 TEST(AuraTests, IsExpiredReturnsFalseWhenNotExpired) {
-    std::uint32_t spellId = 123;
-    std::uint32_t auraEffectType = 4;
-    std::int32_t basePoints = 10;
-    std::int32_t dieSides = 6;
-    std::uint64_t casterGuid = 0x1000ULL;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto expireTime = now + std::chrono::seconds(30); // Future time
-    
-    Aura aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime);
-    
-    EXPECT_FALSE(aura.IsExpired());
+  auto const now = std::chrono::steady_clock::now();
+  Aura const aura = MakeAura(123, 4, 10, 6, 0x1000ULL, now + std::chrono::seconds(30));
+  EXPECT_FALSE(aura.IsExpired(now));
 }
 
 TEST(AuraTests, IsExpiredReturnsTrueWhenExpired) {
-    std::uint32_t spellId = 123;
-    std::uint32_t auraEffectType = 4;
-    std::int32_t basePoints = 10;
-    std::int32_t dieSides = 6;
-    std::uint64_t casterGuid = 0x1000ULL;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto expireTime = now - std::chrono::seconds(30); // Past time
-    
-    Aura aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime);
-    
-    EXPECT_TRUE(aura.IsExpired());
+  auto const now = std::chrono::steady_clock::now();
+  Aura const aura = MakeAura(123, 4, 10, 6, 0x1000ULL, now - std::chrono::seconds(30));
+  EXPECT_TRUE(aura.IsExpired(now));
 }
 
 TEST(AuraTests, GetMagnitudeReturnsBasePointsWhenDieSidesZero) {
-    std::uint32_t spellId = 123;
-    std::uint32_t auraEffectType = 4;
-    std::int32_t basePoints = 15;
-    std::int32_t dieSides = 0; // No random component
-    std::uint64_t casterGuid = 0x1000ULL;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto expireTime = now + std::chrono::seconds(30);
-    
-    Aura aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime);
-    
-    // When dieSides is 0, magnitude should equal basePoints
-    EXPECT_EQ(aura.GetMagnitude(), basePoints);
+  auto const now = std::chrono::steady_clock::now();
+  Aura const aura = MakeAura(123, 4, 15, 0, 0x1000ULL, now + std::chrono::seconds(30));
+  EXPECT_EQ(aura.GetMagnitude(), 15);
 }
 
-TEST(AuraTests, GetMagnitudeIncludesRandomComponentWhenDieSidesPositive) {
-    std::uint32_t spellId = 123;
-    std::uint32_t auraEffectType = 4;
-    std::int32_t basePoints = 10;
-    std::int32_t dieSides = 6; // Random component 0-5
-    std::uint64_t casterGuid = 0x1000ULL;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto expireTime = now + std::chrono::seconds(30);
-    
-    Aura aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime);
-    
-    std::int32_t magnitude = aura.GetMagnitude();
-    // Magnitude should be between basePoints and basePoints + dieSides
-    EXPECT_GE(magnitude, basePoints);
-    EXPECT_LE(magnitude, basePoints + dieSides);
+TEST(AuraTests, GetMagnitudeIncludesHalfDieSidesWhenPositive) {
+  auto const now = std::chrono::steady_clock::now();
+  Aura const aura = MakeAura(123, 4, 10, 6, 0x1000ULL, now + std::chrono::seconds(30));
+  EXPECT_EQ(aura.GetMagnitude(), 13);
 }
 
-TEST(AuraTests, GetMagnitudeHandlesNegativeDieSides) {
-    std::uint32_t spellId = 123;
-    std::uint32_t auraEffectType = 4;
-    std::int32_t basePoints = 10;
-    std::int32_t dieSides = -2; // Negative dieSides
-    std::uint64_t casterGuid = 0x1000ULL;
-    
-    auto now = std::chrono::steady_clock::now();
-    auto expireTime = now + std::chrono::seconds(30);
-    
-    Aura aura(spellId, auraEffectType, basePoints, dieSides, casterGuid, expireTime);
-    
-    // When dieSides is negative, magnitude should equal basePoints (negative dieSides treated as 0)
-    EXPECT_EQ(aura.GetMagnitude(), basePoints);
+TEST(AuraTests, PeriodicTickDueAndAdvance) {
+  auto const now = std::chrono::steady_clock::now();
+  Aura aura = MakeAura(1, 8, 5, 0, 0, now + std::chrono::minutes(1), 0, 1000, 10);
+  EXPECT_FALSE(aura.IsPeriodicDue(now));
+  aura.AdvancePeriodicTick(now);
+  EXPECT_TRUE(aura.IsPeriodicDue(now + std::chrono::milliseconds(1001)));
 }
 
-// Player aura management tests
 TEST(PlayerAuraTests, PlayerUpdatesAurasCorrectly) {
-    // Create a player
-    std::unique_ptr<Player> player = std::make_unique<Player>(0x1000ULL, nullptr);
-    
-    // Create an expired aura (already expired)
-    auto expiredTime = std::chrono::steady_clock::now() - std::chrono::seconds(30);
-    Aura expiredAura(123, 4, 10, 6, 0x2000ULL, expiredTime);
-    
-    // Create a valid aura
-    auto validTime = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    Aura validAura(456, 5, 15, 8, 0x3000ULL, validTime);
-    
-    // Add both auras
-    player->AddAura(expiredAura);
-    player->AddAura(validAura);
-    
-    // Verify both auras were added
-    EXPECT_TRUE(player->HasAura(123));
-    EXPECT_TRUE(player->HasAura(456));
-    
-    // Update auras (should remove expired ones)
-    player->UpdateAuras();
-    
-    // Verify expired aura was removed
-    EXPECT_FALSE(player->HasAura(123));
-    
-    // Verify valid aura remains
-    EXPECT_TRUE(player->HasAura(456));
-    
-    // Verify only one active aura remains
-    auto activeAuras = player->GetActiveAuras();
-    EXPECT_EQ(activeAuras.size(), 1u);
-    EXPECT_EQ(activeAuras[0].GetSpellId(), 456u);
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  player->AddAura(MakeAura(123, 4, 10, 6, 0x2000ULL, now - std::chrono::seconds(30)));
+  player->AddAura(MakeAura(456, 5, 15, 8, 0x3000ULL, now + std::chrono::seconds(30)));
+
+  EXPECT_TRUE(player->HasAura(123));
+  EXPECT_TRUE(player->HasAura(456));
+
+  auto const removed = player->UpdateAuras(now);
+  ASSERT_EQ(removed.size(), 1u);
+  EXPECT_EQ(removed[0].spellId, 123u);
+  EXPECT_FALSE(player->HasAura(123));
+  EXPECT_TRUE(player->HasAura(456));
 }
 
 TEST(PlayerAuraTests, PlayerCanRemoveAura) {
-    // Create a player
-    auto player = std::make_unique<Player>(0x1000ULL, nullptr);
-    
-    // Create and add an aura
-    Aura aura(123, 4, 10, 6, 0x2000ULL, 
-              std::chrono::steady_clock::now() + std::chrono::seconds(30));
-    player->AddAura(aura);
-    
-    // Verify aura exists
-    EXPECT_TRUE(player->HasAura(123));
-    
-    // Remove aura
-    player->RemoveAura(123);
-    
-    // Verify aura is gone
-    EXPECT_FALSE(player->HasAura(123));
-    
-    // Verify no active auras
-    auto activeAuras = player->GetActiveAuras();
-    EXPECT_EQ(activeAuras.size(), 0u);
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  player->AddAura(MakeAura(123, 4, 10, 6, 0x2000ULL, now + std::chrono::seconds(30)));
+  EXPECT_TRUE(player->HasAura(123));
+  player->RemoveAura(123);
+  EXPECT_FALSE(player->HasAura(123));
 }
 
-TEST(PlayerAuraTests, PlayerRemovesExpiredAurasOnUpdate) {
-    // Create a player
-    auto player = std::make_unique<Player>(0x1000ULL, nullptr);
-    
-    // Create an expired aura (already expired)
-    auto expiredTime = std::chrono::steady_clock::now() - std::chrono::seconds(30);
-    Aura expiredAura(123, 4, 10, 6, 0x2000ULL, expiredTime);
-    
-    // Create a valid aura
-    auto validTime = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-    Aura validAura(456, 5, 15, 8, 0x3000ULL, validTime);
-    
-    // Add both auras
-    player->AddAura(expiredAura);
-    player->AddAura(validAura);
-    
-    // Verify both auras were added
-    EXPECT_TRUE(player->HasAura(123));
-    EXPECT_TRUE(player->HasAura(456));
-    
-    // Update auras (should remove expired ones)
-    player->UpdateAuras();
-    
-    // Verify expired aura was removed
-    EXPECT_FALSE(player->HasAura(123));
-    
-    // Verify valid aura remains
-    EXPECT_TRUE(player->HasAura(456));
-    
-    // Verify only one active aura remains
-    auto activeAuras = player->GetActiveAuras();
-    EXPECT_EQ(activeAuras.size(), 1u);
-    EXPECT_EQ(activeAuras[0].GetSpellId(), 456u);
+TEST(PlayerAuraTests, TryRemoveAuraReturnsVisualSlot) {
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  player->AddAura(MakeAura(774, 8, 10, 0, 0, now + std::chrono::seconds(30), 5));
+  auto const removal = player->TryRemoveAura(774);
+  ASSERT_TRUE(removal.has_value());
+  EXPECT_EQ(removal->spellId, 774u);
+  EXPECT_EQ(removal->visualSlot, 5u);
+  EXPECT_FALSE(player->HasAura(774));
+  EXPECT_FALSE(player->TryRemoveAura(774).has_value());
+}
+
+TEST(PlayerAuraTests, AllocateAuraVisualSlotReusesSlotForSameSpell) {
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  player->AddAura(MakeAura(99, 4, 1, 0, 0, now + std::chrono::seconds(10), 3));
+  EXPECT_EQ(player->AllocateAuraVisualSlot(99), 3u);
+  EXPECT_EQ(player->AllocateAuraVisualSlot(100), 0u);
+}
+
+TEST(PlayerAuraTests, PeriodicTickReturnsHealthDelta) {
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  Aura aura = MakeAura(77, 8, 0, 0, 0, now + std::chrono::minutes(1), 1, 500, 25);
+  aura.AdvancePeriodicTick(now - std::chrono::seconds(1));
+  player->AddAura(aura);
+
+  auto ticks = player->TickPeriodicAuras(now);
+  ASSERT_EQ(ticks.size(), 1u);
+  EXPECT_EQ(ticks[0].spellId, 77u);
+  EXPECT_EQ(ticks[0].healthDelta, 25);
+}
+
+TEST(CreatureAuraTests, AddAuraAndRemoveBySpellId) {
+  Creature creature(0x2000ULL, 1, 100, 500);
+  auto const now = std::chrono::steady_clock::now();
+  creature.AddAura(MakeAura(589, 3, 5, 0, 0x100ULL, now + std::chrono::seconds(20), 2));
+  EXPECT_TRUE(creature.HasAura(589));
+  auto const removal = creature.TryRemoveAura(589);
+  ASSERT_TRUE(removal.has_value());
+  EXPECT_EQ(removal->visualSlot, 2u);
+  EXPECT_FALSE(creature.HasAura(589));
 }

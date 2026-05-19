@@ -1,11 +1,12 @@
 #pragma once
 
 #include <application/ports/IMapNotifier.h>
-#include <domain/world/WorldObject.h>
 #include <domain/world/Aura.h>
+#include <domain/world/UnitAuraState.h>
+#include <domain/world/WorldObject.h>
 #include <chrono>
 #include <memory>
-#include <unordered_map>
+#include <optional>
 #include <vector>
 
 namespace Firelands {
@@ -19,7 +20,7 @@ public:
 
   /// Seeded from `Character` at world login; authoritative until logout (Phase D/E).
   void InitCombatResources(uint32 health, uint32 maxHealth, uint32 power1,
-                            uint32 maxPower1);
+                           uint32 maxPower1);
   /// Race / faction template mirror `Character` for server-side targeting hints (spell range).
   void SetRaceAndFaction(uint8 race, uint32 factionTemplate);
   void SetFactionTemplate(uint32 factionTemplate);
@@ -33,12 +34,19 @@ public:
   uint32 GetLiveMaxPower1() const { return m_liveMaxPower1; }
   void ApplyPower1Delta(int32 delta);
 
-  /// Aura management
-  void AddAura(const Aura& aura);
+  void AddAura(Aura const &aura);
   void RemoveAura(uint32 spellId);
+  /// Removes by spell id when present; returns visual slot for `SMSG_AURA_UPDATE` remove.
+  std::optional<AuraRemoval> TryRemoveAura(uint32 spellId);
   bool HasAura(uint32 spellId) const;
   std::vector<Aura> GetActiveAuras() const;
-  void UpdateAuras(); // Remove expired auras
+  /// Removes expired auras; returns spell id + visual slot for wire remove packets.
+  std::vector<AuraRemoval> UpdateAuras(std::chrono::steady_clock::time_point now);
+  /// Applies due periodic ticks; advances each aura's next tick time.
+  std::vector<AuraPeriodicTick> TickPeriodicAuras(
+      std::chrono::steady_clock::time_point now);
+  /// Reuses slot for the same spell id when refreshing.
+  uint8 AllocateAuraVisualSlot(uint32 spellId);
 
 private:
   std::shared_ptr<IMapNotifier> m_notifier;
@@ -48,9 +56,8 @@ private:
   uint32 m_liveMaxHealth = 1;
   uint32 m_livePower1 = 0;
   uint32 m_liveMaxPower1 = 1;
-  
-  // Aura storage: spellId -> aura (assuming one aura per spell for simplicity)
-  std::unordered_map<uint32_t, Aura> m_auras;
+
+  UnitAuraState m_auraState;
 };
 
 } // namespace Firelands

@@ -1,6 +1,7 @@
 #include <shared/network/SpellCastWire.h>
 
 #include <algorithm>
+#include <chrono>
 
 namespace Firelands {
 namespace SpellCastWire {
@@ -64,6 +65,25 @@ static void AppendSpellCastDataCore(WorldPacket &data, uint64 casterGuid,
 }
 
 } // namespace
+
+uint32 ResolveSpellGoTimestampMs(uint32 clientMovementTimeMs) {
+  if (clientMovementTimeMs != 0u)
+    return clientMovementTimeMs;
+  static auto const kStart = std::chrono::steady_clock::now();
+  return static_cast<uint32>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 std::chrono::steady_clock::now() - kStart)
+                                 .count());
+}
+
+bool TryReadClientCancelCast(WorldPacket &packet, uint32 &outSpellId, uint8 &outCastId) {
+  outSpellId = 0;
+  outCastId = 0;
+  if (packet.Size() - packet.GetReadPos() < sizeof(uint32) + sizeof(uint8))
+    return false;
+  outSpellId = packet.Read<uint32>();
+  outCastId = packet.Read<uint8>();
+  return true;
+}
 
 bool TryReadClientCastSpell(WorldPacket &packet, ClientCastSpellData &out) {
   out = {};

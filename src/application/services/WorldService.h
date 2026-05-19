@@ -6,6 +6,7 @@
 #include <domain/world/GameObject.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -61,6 +62,10 @@ public:
   /// Explicit teardown hook for process shutdown. Releases map-held objects
   /// (players/sessions) while core services (io_context, logger) are still alive.
   void ResetForShutdown();
+
+  /// Invokes `fn` for each active map while holding the maps lock.
+  void ForEachMap(
+      std::function<void(uint32 mapId, std::shared_ptr<Map> const &)> const &fn);
 
 private:
   WorldService() = default;

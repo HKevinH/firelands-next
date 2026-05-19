@@ -41,6 +41,15 @@ std::shared_ptr<IMapCollisionQueries> WorldService::GetCollisionQueries() {
   return m_collisionQueries;
 }
 
+void WorldService::ForEachMap(
+    std::function<void(uint32 mapId, std::shared_ptr<Map> const &)> const &fn) {
+  std::lock_guard<std::mutex> lock(m_worldMutex);
+  for (auto const &[mapId, map] : m_maps) {
+    if (map)
+      fn(mapId, map);
+  }
+}
+
 void WorldService::ResetForShutdown() {
   std::unordered_map<uint32, std::shared_ptr<Map>> mapsToDestroy;
   {

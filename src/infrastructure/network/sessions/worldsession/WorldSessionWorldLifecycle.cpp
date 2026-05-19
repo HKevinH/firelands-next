@@ -58,6 +58,8 @@ void WorldSession::FinalizeWorldExit() {
     }
   }
 
+  SavePersistedSpellCooldowns(charGuidLow);
+
   if (!_charService->SaveCharacterOnLogout(
           _accountId, charGuidLow, mapIdDb, zoneIdDb, persistPos.x, persistPos.y,
           persistPos.z, persistPos.orientation, _moneyCopper, _playerXp, _tutorialInts,

@@ -4,6 +4,17 @@
 
 using namespace Firelands;
 
+TEST(SpellCastWireTests, TryReadClientCancelCast) {
+  WorldPacket p(CMSG_CANCEL_CAST, 8);
+  p.Append<uint32>(774u);
+  p.Append<uint8>(2u);
+  uint32 spellId = 0;
+  uint8 castId = 0;
+  ASSERT_TRUE(SpellCastWire::TryReadClientCancelCast(p, spellId, castId));
+  EXPECT_EQ(spellId, 774u);
+  EXPECT_EQ(castId, 2u);
+}
+
 TEST(SpellCastWireTests, TryReadClientCastSpell_MinimalPayload) {
   WorldPacket p(CMSG_CAST_SPELL, 64);
   p.Append<uint8>(3);   // cast id
@@ -20,6 +31,11 @@ TEST(SpellCastWireTests, TryReadClientCastSpell_MinimalPayload) {
   EXPECT_EQ(c.sendCastFlags, 0);
   EXPECT_EQ(c.targetFlags, 0u);
   EXPECT_EQ(c.unitTargetGuid, 0u);
+}
+
+TEST(SpellCastWireTests, ResolveSpellGoTimestampPrefersClientMovementTime) {
+  EXPECT_EQ(SpellCastWire::ResolveSpellGoTimestampMs(42'000'000u), 42'000'000u);
+  EXPECT_NE(SpellCastWire::ResolveSpellGoTimestampMs(0u), 0u);
 }
 
 TEST(SpellCastWireTests, BuildSpellStartAndGo_RoundtripSize) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/Common.h>
+#include <shared/game/SpellAttributes.h>
 
 namespace Firelands {
 
@@ -38,12 +39,27 @@ struct SpellDefinition {
   bool hasAuraEffect = false;
   /// Aura effect subtype when hasAuraEffect (e.g., SPELL_AURA_MOD_STAT, SPELL_AURA_PERIODIC_HEAL).
   uint32 auraEffectType = 0;
+  /// `SpellEffect.dbc` `EffectIndex` (0–2) for the chosen apply-aura row.
+  uint8 auraEffectIndex = 0;
   /// Base points from SpellEffect.dbc for the aura effect (used for aura magnitude).
   int32 auraBasePoints = 0;
   /// DieSides from SpellEffect.dbc for the aura effect (used for aura magnitude range).
   int32 auraDieSides = 0;
+  /// `SpellEffect.dbc` `EffectRealPointsPerLevel` (field 6) for the chosen apply-aura row.
+  float auraRealPointsPerLevel = 0.f;
   /// Duration index from Spell.dbc - used to determine aura duration.
   uint32 auraDurationIndex = 0;
+  /// `SpellEffect.dbc` `EffectAuraPeriod` (ms) when the aura effect is periodic.
+  uint32 auraPeriodicPeriodMs = 0;
+  /// Signed HP change per periodic tick (negative = damage).
+  int32 auraPeriodicHealthDeltaPerTick = 0;
+
+  bool isPassiveSpell() const { return (attributes & SpellAttr0::kPassive) != 0u; }
+
+  /// False when `SPELL_ATTR0_CANT_CANCEL` is set (right-click buff dismiss blocked).
+  bool playerCanCancelAuraByClient() const {
+    return (attributes & SpellAttr0::kCantCancel) == 0u;
+  }
 };
 
 } // namespace Firelands

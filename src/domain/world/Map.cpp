@@ -87,6 +87,16 @@ void Map::ForEachPlayer(
   }
 }
 
+void Map::ForEachCreature(
+    std::function<void(std::shared_ptr<Creature> const &)> const &fn) {
+  std::lock_guard<std::mutex> lock(m_mapMutex);
+  for (auto const &[id, obj] : m_objects) {
+    (void)id;
+    if (auto cr = std::dynamic_pointer_cast<Creature>(obj))
+      fn(cr);
+  }
+}
+
 std::shared_ptr<Player> Map::TryGetPlayer(uint64 guid) {
   std::lock_guard<std::mutex> lock(m_mapMutex);
   auto it = m_objects.find(guid);

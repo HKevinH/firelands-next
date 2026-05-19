@@ -224,9 +224,18 @@ enum WorldOpcode : uint32 {
 
   /// Reference: WowPacketParser V4_3_4_15595 Opcodes.cs
   CMSG_CAST_SPELL = 0x4C07,
+  /// Right-click remove buff (WowPacketParser V4_3_4_15595: uint32 spell id).
+  CMSG_CANCEL_AURA = 0x0E26,
+  /// WowPacketParser `V4_3_4_15595` — stop current cast (spell id + cast id).
+  CMSG_CANCEL_CAST = 0x0115,
   SMSG_SPELL_START = 0x6415,
   SMSG_SPELL_GO = 0x6E16,
   SMSG_SPELL_FAILURE = 0x4535,
+  SMSG_AURA_UPDATE = 0x4707,
+  /// WowPacketParser `V4_3_4_15595` — per-spell recovery on unit guid.
+  SMSG_SPELL_COOLDOWN = 0x4B16,
+  /// Shared category recovery (login / `CMSG_REQUEST_CATEGORY_COOLDOWNS`).
+  SMSG_CATEGORY_COOLDOWN = 0x71B6,
 
   /// Reference: Opcodes.h (NPC gossip)
   CMSG_GOSSIP_HELLO = 0x4525,

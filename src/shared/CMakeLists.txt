@@ -20,6 +20,8 @@ add_library(FirelandsShared STATIC
     network/MovementWire.cpp
     network/movement/ClientMovementMse.cpp
     network/SpellCastWire.cpp
+    network/AuraUpdateWire.cpp
+    network/SpellCooldownWire.cpp
 )
 
 target_include_directories(FirelandsShared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -66,7 +66,6 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_SAVE_CUF_PROFILES:
   case CMSG_VOICE_SESSION_ENABLE:
   case CMSG_GUILD_SET_ACHIEVEMENT_TRACKING:
-  case CMSG_REQUEST_CATEGORY_COOLDOWNS:
   case CMSG_WORLD_STATE_UI_TIMER_UPDATE:
     // Client probes features we haven't implemented yet. For stability we safely
     // ignore these requests (no side effects, no disconnect).
@@ -120,6 +119,15 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
     break;
   case CMSG_CAST_SPELL:
     HandleCastSpell(packet);
+    break;
+  case CMSG_CANCEL_CAST:
+    HandleCancelCast(packet);
+    break;
+  case CMSG_CANCEL_AURA:
+    HandleCancelAura(packet);
+    break;
+  case CMSG_REQUEST_CATEGORY_COOLDOWNS:
+    HandleRequestCategoryCooldowns(packet);
     break;
   case CMSG_GOSSIP_HELLO:
     HandleGossipHello(packet);

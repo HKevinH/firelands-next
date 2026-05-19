@@ -1,17 +1,6 @@
 #include <domain/world/Player.h>
 
-#include <algorithm>
-
 namespace Firelands {
-
-void Player::SetRaceAndFaction(uint8 race, uint32 factionTemplate) {
-  m_race = race;
-  m_factionTemplate = factionTemplate;
-}
-
-void Player::SetFactionTemplate(uint32 factionTemplate) {
-  m_factionTemplate = factionTemplate;
-}
 
 void Player::InitCombatResources(uint32 health, uint32 maxHealth, uint32 power1,
                                  uint32 maxPower1) {
@@ -26,10 +15,19 @@ void Player::InitCombatResources(uint32 health, uint32 maxHealth, uint32 power1,
     m_livePower1 = m_liveMaxPower1;
 }
 
+void Player::SetRaceAndFaction(uint8 race, uint32 factionTemplate) {
+  m_race = race;
+  m_factionTemplate = factionTemplate;
+}
+
+void Player::SetFactionTemplate(uint32 factionTemplate) {
+  m_factionTemplate = factionTemplate;
+}
+
 void Player::ApplyHealthDelta(int32 delta) {
-  int64 const sum =
+  int64 const next =
       static_cast<int64>(m_liveHealth) + static_cast<int64>(delta);
-  int64 clamped = sum;
+  int64 clamped = next;
   if (clamped < 0)
     clamped = 0;
   int64 const maxH = static_cast<int64>(m_liveMaxHealth);
@@ -39,9 +37,8 @@ void Player::ApplyHealthDelta(int32 delta) {
 }
 
 void Player::ApplyPower1Delta(int32 delta) {
-  int64 const sum =
-      static_cast<int64>(m_livePower1) + static_cast<int64>(delta);
-  int64 clamped = sum;
+  int64 const next = static_cast<int64>(m_livePower1) + static_cast<int64>(delta);
+  int64 clamped = next;
   if (clamped < 0)
     clamped = 0;
   int64 const maxP = static_cast<int64>(m_liveMaxPower1);
@@ -50,38 +47,32 @@ void Player::ApplyPower1Delta(int32 delta) {
   m_livePower1 = static_cast<uint32>(clamped);
 }
 
-void Player::AddAura(const Aura& aura) {
-    m_auras.insert_or_assign(aura.GetSpellId(), aura);
+uint8 Player::AllocateAuraVisualSlot(uint32 spellId) {
+  return m_auraState.AllocateAuraVisualSlot(spellId);
 }
 
-void Player::RemoveAura(uint32 spellId) {
-    m_auras.erase(spellId);
+void Player::AddAura(Aura const &aura) { m_auraState.AddAura(aura); }
+
+void Player::RemoveAura(uint32 spellId) { m_auraState.RemoveAura(spellId); }
+
+std::optional<AuraRemoval> Player::TryRemoveAura(uint32 spellId) {
+  return m_auraState.TryRemoveAura(spellId);
 }
 
-bool Player::HasAura(uint32 spellId) const {
-    return m_auras.find(spellId) != m_auras.end();
-}
+bool Player::HasAura(uint32 spellId) const { return m_auraState.HasAura(spellId); }
 
 std::vector<Aura> Player::GetActiveAuras() const {
-    std::vector<Aura> activeAuras;
-    activeAuras.reserve(m_auras.size());
-    for (const auto& pair : m_auras) {
-        if (!pair.second.IsExpired()) {
-            activeAuras.push_back(pair.second);
-        }
-    }
-    return activeAuras;
+  return m_auraState.GetActiveAuras();
 }
 
-void Player::UpdateAuras() {
-    // Remove expired auras
-    for (auto it = m_auras.begin(); it != m_auras.end(); ) {
-        if (it->second.IsExpired()) {
-            it = m_auras.erase(it);
-        } else {
-            ++it;
-        }
-    }
+std::vector<AuraRemoval> Player::UpdateAuras(
+    std::chrono::steady_clock::time_point now) {
+  return m_auraState.UpdateAuras(now);
+}
+
+std::vector<AuraPeriodicTick> Player::TickPeriodicAuras(
+    std::chrono::steady_clock::time_point now) {
+  return m_auraState.TickPeriodicAuras(now);
 }
 
 } // namespace Firelands

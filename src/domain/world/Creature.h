@@ -1,6 +1,11 @@
 #pragma once
 
+#include <domain/world/Aura.h>
+#include <domain/world/UnitAuraState.h>
 #include <domain/world/WorldObject.h>
+#include <chrono>
+#include <optional>
+#include <vector>
 #include <shared/Common.h>
 
 namespace Firelands {
@@ -32,6 +37,14 @@ public:
   uint32 GetLiveMaxHealth() const { return m_liveMaxHealth; }
   void ApplyHealthDelta(int32 delta);
 
+  void AddAura(Aura const &aura);
+  std::optional<AuraRemoval> TryRemoveAura(uint32 spellId);
+  bool HasAura(uint32 spellId) const;
+  std::vector<AuraRemoval> UpdateAuras(std::chrono::steady_clock::time_point now);
+  std::vector<AuraPeriodicTick> TickPeriodicAuras(
+      std::chrono::steady_clock::time_point now);
+  uint8 AllocateAuraVisualSlot(uint32 spellId);
+
 private:
   uint32 m_entry;
   uint32 m_displayId;
@@ -40,6 +53,7 @@ private:
   uint8 m_level = 1;
   uint32 m_liveHealth = 1;
   uint32 m_liveMaxHealth = 1;
+  UnitAuraState m_auraState;
 };
 
 } // namespace Firelands
