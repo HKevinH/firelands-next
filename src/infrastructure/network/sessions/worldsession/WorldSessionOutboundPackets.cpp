@@ -1,5 +1,6 @@
 #include <domain/models/Character.h>
 #include <infrastructure/network/sessions/WorldSession.h>
+#include <infrastructure/network/sessions/worldsession/GossipPackets.h>
 #include <shared/Config.h>
 #include <shared/game/StarterOpeningCinematic.h>
 #include <shared/network/BitWriter.h>
@@ -310,6 +311,18 @@ void WorldSession::SendInitialFactions() {
 
 void WorldSession::SendLoginVerifyWorld(uint32 mapId, float x, float y, float z, float o) {
   SendPacket(new Firelands::WorldPackets::Login::VerifyWorld(mapId, x, y, z, o));
+}
+
+void WorldSession::SendGossipMessage(uint64_t npcGuid, uint32_t menuId, uint32_t textId,
+                                     std::vector<GossipMenuItem> const &items) {
+  _gossipMenuSent = true;
+  auto data = gossip::BuildGossipMessage(npcGuid, menuId, textId, items);
+  SendPacket(data);
+}
+
+void WorldSession::SendGossipComplete() {
+  auto data = gossip::BuildGossipComplete();
+  SendPacket(data);
 }
 
 } // namespace Firelands

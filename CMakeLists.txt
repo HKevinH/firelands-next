@@ -9,6 +9,8 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -91,11 +93,18 @@ set(FTXUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ftxui)
 
 # MariaDB Connector/C
-FetchContent_Declare(mariadb-connector-c URL https://github.com/mariadb-corporation/mariadb-connector-c/archive/refs/tags/v3.3.8.zip)
 set(WITH_SSL "OPENSSL" CACHE STRING "" FORCE)
 set(WITH_EXTERNAL_ZLIB ON CACHE BOOL "" FORCE)
 set(CONC_WITH_UNIT_TESTS OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(mariadb-connector-c)
+FetchContent_Declare(mariadb-connector-c URL https://github.com/mariadb-corporation/mariadb-connector-c/archive/refs/tags/v3.3.8.zip)
+FetchContent_Populate(mariadb-connector-c)
+
+set(_plugin_file "${mariadb-connector-c_SOURCE_DIR}/cmake/install_plugins.cmake")
+file(READ "${_plugin_file}" _content)
+string(REPLACE "DESTINATION \${INSTALL_PLUGINDIR}" "RUNTIME DESTINATION lib/mariadb/plugin LIBRARY DESTINATION lib/mariadb/plugin" _content "${_content}")
+file(WRITE "${_plugin_file}" "${_content}")
+
+add_subdirectory(${mariadb-connector-c_SOURCE_DIR} ${mariadb-connector-c_BINARY_DIR})
 
 # JSON
 FetchContent_Declare(json URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.2.zip)
@@ -116,6 +125,9 @@ FetchContent_Populate(mariadb-connector-cpp)
 
 set(MARIADB_CLIENT_LIBS mariadbclient CACHE STRING "" FORCE)
 set(USE_SYSTEM_INSTALLED_LIB TRUE CACHE BOOL "" FORCE)
+set(WITH_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTS_ONLY OFF CACHE BOOL "" FORCE)
 include_directories(SYSTEM ${mariadb-connector-c_SOURCE_DIR}/include ${mariadb-connector-c_BINARY_DIR}/include)
 add_subdirectory(${mariadb-connector-cpp_SOURCE_DIR} ${mariadb-connector-cpp_BINARY_DIR})
 
@@ -131,6 +143,8 @@ add_subdirectory(src/shared)
 add_subdirectory(src/domain)
 add_subdirectory(src/application)
 add_subdirectory(src/infrastructure)
+add_subdirectory(tools/extractors)
+add_subdirectory(tools/vmap)
 
 # --- Executables ---
 
@@ -177,6 +191,19 @@ target_link_libraries(world
     PRIVATE Boost::thread
 )
 
+# DEVTOOLS CLI
+add_executable(FirelandsDevTools
+    src/tools/DevTools.cpp
+)
+
+target_precompile_headers(FirelandsDevTools PRIVATE ${PROJECT_PCH_HEADERS})
+
+target_link_libraries(FirelandsDevTools
+    PRIVATE FirelandsInfrastructure
+    PRIVATE OpenSSL::SSL
+    PRIVATE OpenSSL::Crypto
+)
+
 # --- Python Tools ---
 find_program(FIRELANDS_PYTHON3 python3)
 if(FIRELANDS_PYTHON3)
@@ -189,3 +216,6 @@ if(FIRELANDS_PYTHON3)
 endif()
 
 message(STATUS "Firelands WoW Emulator (arm64/macOS) project initialized.")
+
+# --- Tests ---
+add_subdirectory(tests)

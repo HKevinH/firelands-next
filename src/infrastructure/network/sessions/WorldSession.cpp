@@ -16,7 +16,8 @@ WorldSession::WorldSession(
     std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix,
     std::shared_ptr<SpellManager> spellManager,
     std::shared_ptr<INpcTemplateSearchRepository const> npcTemplateSearch,
-    std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc)
+    std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc,
+    std::shared_ptr<IGossipRepository> gossipRepo)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
@@ -29,7 +30,8 @@ WorldSession::WorldSession(
       _itemDbHotfix(std::move(itemDbHotfix)),
       _spellManager(std::move(spellManager)),
       _npcTemplateSearch(std::move(npcTemplateSearch)),
-      _factionTemplateDbc(std::move(factionTemplateDbc)), _serverSeed(0),
+      _factionTemplateDbc(std::move(factionTemplateDbc)),
+      _gossipRepo(std::move(gossipRepo)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()),
       _pendingSpellCastTimer(_socket.get_executor()) {}
 

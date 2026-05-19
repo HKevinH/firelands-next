@@ -23,6 +23,7 @@
 #include <shared/dbc/LanguagesDbc.h>
 #include <shared/game/AccessLevel.h>
 #include <shared/game/PlayerGmAppearance.h>
+#include <domain/models/GossipMenu.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
 #include <array>
@@ -52,6 +53,7 @@ class OnlineCharacterSessionRegistry;
 class GmTicketService;
 class ISpellDefinitionStore;
 class FactionTemplateDbc;
+class IGossipRepository;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -73,7 +75,8 @@ public:
       std::shared_ptr<SpellManager> spellManager = nullptr,
       std::shared_ptr<INpcTemplateSearchRepository const> npcTemplateSearch =
           nullptr,
-      std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc = nullptr);
+       std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc = nullptr,
+       std::shared_ptr<IGossipRepository> gossipRepo = nullptr);
 
   ~WorldSession();
 
@@ -186,6 +189,7 @@ public:
   void HandleRequestAccountData(WorldPacket &packet);
   void HandleGossipHello(WorldPacket &packet);
   void HandleGossipSelectOption(WorldPacket &packet);
+  void HandleNpcTextQuery(WorldPacket &packet);
   void HandleQueryNextMailTime(WorldPacket &packet);
   void HandleMailGetList(WorldPacket &packet);
   void HandleCalendarGetNumPending(WorldPacket &packet);
@@ -260,6 +264,13 @@ public:
   void SendMailListToClient(uint32_t characterGuid);
   void SendQueryTimeResponse();
 
+  // Gossip
+  void SendGossipMessage(uint64_t npcGuid, uint32_t menuId, uint32_t textId,
+                         std::vector<GossipMenuItem> const &items);
+  void SendGossipComplete();
+  std::optional<uint32_t> TryResolveCreatureTemplateEntry(uint64_t npcGuid) const;
+  bool TrySendDatabaseGossipMenu(uint64_t npcGuid, uint32_t templateEntry);
+
   // Helpers
   /// Trinity schedules the next time-sync ~5s after SendTimeSync; never chains on
   /// every CMSG_TIME_SYNC_RESP (that floods the client and breaks map loading).
@@ -331,6 +342,7 @@ public:
   std::shared_ptr<SpellManager> _spellManager;
   std::shared_ptr<INpcTemplateSearchRepository const> _npcTemplateSearch;
   std::shared_ptr<FactionTemplateDbc const> _factionTemplateDbc;
+  std::shared_ptr<IGossipRepository> _gossipRepo;
 
   /// Filled when the character is registered for console targeting; empty at
   /// character select / disconnected.
@@ -411,6 +423,9 @@ public:
 
   /// Faction.dbc id → forced `ReputationRank` for `SMSG_SET_FORCED_REACTIONS` (quest/script overrides).
   std::map<uint32, uint32> _forcedFactionReactions;
+
+  /// Set when this session sends `SMSG_GOSSIP_MESSAGE` (Lua may add APIs later).
+  bool _gossipMenuSent = false;
 };
 
 } // namespace Firelands

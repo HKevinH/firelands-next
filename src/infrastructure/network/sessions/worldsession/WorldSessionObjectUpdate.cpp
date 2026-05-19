@@ -552,6 +552,7 @@ void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
 uint64 ReadClientTargetGuid(WorldPacket &packet) {
   const size_t rem = packet.Size() - packet.GetReadPos();
   if (rem >= sizeof(uint64)) {
+    // CMSG_GOSSIP_HELLO / SELECT: Cataclysm 4.3.4 sends a full ObjectGuid (8 bytes).
     return packet.Read<uint64>();
   }
   if (rem > 0) {

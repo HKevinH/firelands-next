@@ -51,7 +51,7 @@ void Player::ApplyPower1Delta(int32 delta) {
 }
 
 void Player::AddAura(const Aura& aura) {
-    m_auras[aura.GetSpellId()] = aura;
+    m_auras.insert_or_assign(aura.GetSpellId(), aura);
 }
 
 void Player::RemoveAura(uint32 spellId) {

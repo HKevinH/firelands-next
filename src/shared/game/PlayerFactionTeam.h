@@ -29,7 +29,7 @@ enum class PlayableFactionSide : uint8_t {
   Horde = 2,
 };
 
-inline PlayableFactionSide FactionSideFromPlayableRace(uint8 race) {
+inline PlayableFactionSide FactionSideFromPlayableRace(uint8_t race) {
   switch (race) {
   case 1:  // Human
   case 3:  // Dwarf
@@ -52,7 +52,7 @@ inline PlayableFactionSide FactionSideFromPlayableRace(uint8 race) {
 
 /// Spell-range band hints when both units are players. Unknown races leave `outSameTeam`
 /// unset and return false.
-inline bool TrySpellRangeFriendlyTeamHint(uint8 casterRace, uint8 targetRace,
+inline bool TrySpellRangeFriendlyTeamHint(uint8_t casterRace, uint8_t targetRace,
                                           bool *outSameTeam) {
   if (!outSameTeam)
     return false;

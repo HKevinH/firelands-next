@@ -23,6 +23,14 @@ inline uint64_t MakeCreatureObjectGuid(uint32_t creatureEntry,
          (kHighGuidUnit << 52);
 }
 
+/// Inverse of `MakeCreatureObjectGuid` for the template entry field (spawn counter ignored).
+/// Entry occupies bits 32–51; `kHighGuidUnit` uses 52+ (mask required).
+inline uint32_t ExtractCreatureEntryFromUnitObjectGuid(uint64_t objectGuid) noexcept {
+  if (objectGuid == 0)
+    return 0;
+  return static_cast<uint32_t>((objectGuid >> 32) & 0x000FFFFFu);
+}
+
 /// Player `ObjectGuid` on the wire (`HighGuid::Player == 0` in Trinity 4.3.4): raw uint64 counter.
 inline uint64_t MakePlayerObjectGuid(uint32_t playerLowGuid) noexcept {
   return playerLowGuid != 0 ? static_cast<uint64_t>(playerLowGuid) : 0u;

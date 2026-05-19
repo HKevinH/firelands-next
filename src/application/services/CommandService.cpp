@@ -584,20 +584,33 @@ static bool HelpChunkVisible(HelpChunkAudience aud, PrivilegeOrigin origin) {
 }
 
 static constexpr StaffHelpChunk kStaffHelpChunks[] = {
-    {HelpChunkAudience::Both, 0,
+    {HelpChunkAudience::Console, 0,
+     "|cffFCE566=== Firelands - console commands ===|r\n"
+     "|cffAAAAAAEvery command starts with|r |cffffffff.|r\n"
+     "|cffAAAAAAOnly commands you may use are listed|r |cff888888(privileges).|r\n"
+     "|cffAAAAAAPlayers receive no response from staff dot-commands.|r",
+     R"H0(================================================================================
+Firelands - console command reference
+================================================================================
+
+Every command starts with a dot (.). This list is filtered to your effective
+privileges on the server console.
+
+)H0"},
+    {HelpChunkAudience::Game, 0,
      "|cffFCE566=== Firelands - staff command help ===|r\n"
      "|cffAAAAAAEvery command starts with|r |cffffffff.|r\n"
      "|cffAAAAAAOnly commands you may use are listed|r |cff888888(privileges and "
      "where the command may run).|r\n"
      "|cffAAAAAAPlayers receive no response from staff dot-commands.|r",
-     R"H0(================================================================================
+     R"H0G(================================================================================
 Firelands - staff command reference
 ================================================================================
 
 Every command starts with a dot (.). This list omits in-game-only commands and
 is filtered to your effective privileges on the server console.
 
-)H0"},
+)H0G"},
     {HelpChunkAudience::Both, 0,
      "|cffFFD200· Help|r\n"
      "|cffCCCCCC.help|r |cff888888—|r Show this filtered guide.  |cff666666e.g.|r "
@@ -724,7 +737,7 @@ Items  (GM)
 
   .delitem   same targeting; main backpack only (not equipped).
 )H7"},
-    {HelpChunkAudience::Both, ToMask(Permission::CommandGmTools),
+    {HelpChunkAudience::Game, ToMask(Permission::CommandGmTools),
      "|cffFFD200· Tags & movement|r\n"
      "|cffCCCCCC.gm on|r |cff888888/|r |cffCCCCCC.gm off|r  "
      "|cffCCCCCC.dnd on|r|cff888888/|r|cffCCCCCC.dnd off|r  "
@@ -739,28 +752,42 @@ Tags & movement
   .gm on | off    .dnd on | off    .dev on | off    .visible on | off
   .fly on | off   .speed <n> | .speed reset
 )H8"},
-    {HelpChunkAudience::Both, ToMask(Permission::ServerControl),
-     "|cffFFD200· NPC & server|r |cff666666(Administrator)|r\n"
-     "|cffCCCCCC.npc search|r |cff888888—|r |cff666666Console:|r "
+    {HelpChunkAudience::Console, ToMask(Permission::ServerControl),
+     "|cffFFD200· NPC & server|r |cff666666(console)|r\n"
+     "|cffCCCCCC.npc search|r |cff888888—|r |cff666666e.g.|r "
      "|cffffffff.npc Char search wolf|r\n"
      "|cffCCCCCC.npc add|r |cff888888—|r |cff666666e.g.|r |cffffffff.npc add 2575 "
      "[displayId] [factionTemplate]|r\n"
-     "|cffCCCCCC.npc del|r |cff888888—|r |cff666666Console:|r "
+     "|cffCCCCCC.npc del|r |cff888888—|r |cff666666e.g.|r "
      "|cffffffff.npc CharName del <guid>|r\n"
      "|cffCCCCCC.server restart|r |cff888888—|r Delay |cffffffff30s|r / "
      "|cffffffff5m|r|cff666666; last 10s countdown lines.|r",
      R"H9(--------------------------------------------------------------------------------
-NPC & server  (Administrator)
+NPC & server  (console)
 --------------------------------------------------------------------------------
 
   .npc search <fragment>   (console: .npc <CharName> search <fragment>)
   .npc add <entry> [displayId] [factionTemplate]
-  .faction forced set <factionDbcId> <0-7> | forced clear <id> | forced clearall
-  .faction template self|target <factionTemplate>
-  .npc del   (in-game: select NPC; console: .npc <CharName> del <guid>)
+  .npc del   (console: .npc <CharName> del <guid>)
 
   .server restart <delay>   e.g. 30s, 5m
 )H9"},
+    {HelpChunkAudience::Game, ToMask(Permission::ServerControl),
+     "|cffFFD200· NPC & faction|r |cff666666(in-game)|r\n"
+     "|cffCCCCCC.npc add|r |cff888888—|r |cff666666e.g.|r |cffffffff.npc add 2575 "
+     "[displayId] [factionTemplate]|r\n"
+     "|cffCCCCCC.faction forced set|r |cff888888—|r "
+     "|cffffffff.faction forced set <id> <0-7>|r\n"
+     "|cffCCCCCC.faction template|r |cff888888—|r "
+     "|cffffffff.faction template self|target <template>|r",
+     R"H9G(--------------------------------------------------------------------------------
+NPC & faction  (in-game)
+--------------------------------------------------------------------------------
+
+  .npc add <entry> [displayId] [factionTemplate]
+  .faction forced set <factionDbcId> <0-7> | forced clear <id> | forced clearall
+  .faction template self|target <factionTemplate>
+)H9G"},
     {HelpChunkAudience::Console, ToMask(Permission::ManageAccounts),
      "|cffFFD200· Auth DB|r |cff666666(console only)|r\n"
      "|cffCCCCCC.account create|r ... |cffCCCCCC.account delete|r ... "

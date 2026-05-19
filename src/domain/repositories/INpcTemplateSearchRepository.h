@@ -14,12 +14,16 @@ struct NpcTemplateSearchRow {
   std::string subname;
   /// `creature_template.faction` (FactionTemplate.dbc); 0 if column null / missing.
   uint32_t factionTemplate = 0;
+  /// `creature_template.gossip_menu_id` → `gossip_menu.MenuID`; 0 uses default menu.
+  uint32_t gossipMenuId = 0;
+  /// `creature_template.npcflag` — gossip option filter and UNIT_NPC_FLAGS on spawn.
+  uint64_t npcFlags = 0;
   /// For `SMSG_CREATURE_QUERY_RESPONSE` model slots; slot 0 derived from
   /// `creature.modelid` when present, otherwise a safe client fallback.
   std::array<uint32_t, 4> displayIds{};
 };
 
-/// Read-only lookup for GM tooling (e.g. `.npc search`). Backed by
+/// Read-only `creature_template` lookups (GM search, creature query, gossip). Backed by
 /// `firelands_world.creature_template` when populated from client data.
 class INpcTemplateSearchRepository {
 public:

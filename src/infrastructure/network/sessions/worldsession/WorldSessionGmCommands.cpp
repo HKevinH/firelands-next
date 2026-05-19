@@ -1,3 +1,4 @@
+#include <application/logic/CreatureSpawnLogic.h>
 #include <application/services/WorldService.h>
 #include <domain/repositories/INpcTemplateSearchRepository.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
@@ -27,17 +28,21 @@ namespace ws_obj = WorldSessionObjectUpdate;
 
 std::atomic<uint32_t> g_nextGmSpawnCreatureLow{0x70000000u};
 
+/// Matches `CommandService` default when `.npc add` omits displayId.
+constexpr uint32_t kGmNpcPlaceholderDisplayId = 15688u;
+
 uint64_t AllocateGmSpawnCreatureGuid(uint32_t creatureEntry) {
   uint32_t const low =
       g_nextGmSpawnCreatureLow.fetch_add(1u, std::memory_order_relaxed);
   return MakeCreatureObjectGuid(creatureEntry, low);
 }
 
-void BroadcastGmCreatureCreate(uint32 mapId, uint64 creatureGuid,
-                               MovementInfo const &move, uint32 entry,
-                               uint32 displayId, uint32 hp, uint32 maxHp,
-                               uint8 level, uint32 npcFlags = 0,
-                               uint32 factionTemplate = Creature::kDefaultFactionTemplate) {
+void SendGmCreatureCreateVisibility(WorldSession &session, uint32 mapId,
+                                    uint64 creatureGuid, MovementInfo const &move,
+                                    uint32 entry, uint32 displayId, uint32 hp,
+                                    uint32 maxHp, uint8 level, uint32 npcFlags = 0,
+                                    uint32 factionTemplate =
+                                        Creature::kDefaultFactionTemplate) {
   auto fields = WorldSessionObjectUpdate::BuildMinimalNpcUnitCreateFields(
       creatureGuid, entry, displayId, hp, maxHp, level, npcFlags,
       factionTemplate);
@@ -45,17 +50,22 @@ void BroadcastGmCreatureCreate(uint32 mapId, uint64 creatureGuid,
   update.AddCreateObject(creatureGuid, TYPEID_UNIT, move, fields);
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
   update.Build(pkt);
-  WorldService::Instance().GetMap(mapId)->BroadcastPacketToNearby(creatureGuid, pkt,
-                                                                  false);
+  // Always notify the spawner (login uses the same pattern; creature-centered
+  // BroadcastPacketToNearby can miss the initiating session).
+  session.SendPacket(pkt);
+  if (auto map = WorldService::Instance().GetMap(mapId))
+    map->BroadcastPacketToNearby(session.GetGuid(), pkt, false);
 }
 
-void BroadcastGmCreatureDespawn(uint32 mapId, uint64 creatureGuid) {
+void SendGmCreatureDespawnVisibility(WorldSession &session, uint32 mapId,
+                                     uint64 creatureGuid) {
   UpdateData update(static_cast<uint16>(mapId));
   update.AddOutOfRangeObjects({creatureGuid});
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
   update.Build(pkt);
-  WorldService::Instance().GetMap(mapId)->BroadcastPacketToNearby(creatureGuid, pkt,
-                                                                  false);
+  session.SendPacket(pkt);
+  if (auto map = WorldService::Instance().GetMap(mapId))
+    map->BroadcastPacketToNearby(session.GetGuid(), pkt, false);
 }
 
 } // namespace
@@ -104,11 +114,19 @@ bool WorldSession::GmSpawnNpc(uint32 creatureEntry, uint32 displayId,
   if (_playerGuid == 0 || creatureEntry == 0 || displayId == 0)
     return false;
 
+  uint32 resolvedDisplay = displayId;
   uint32 factionForCreature = factionTemplateOrZeroDefault;
-  if (factionForCreature == 0 && _npcTemplateSearch) {
+  uint32 npcFlagsForSpawn = 0;
+  if (_npcTemplateSearch) {
     if (auto const tpl = _npcTemplateSearch->TryGetByEntry(creatureEntry)) {
-      if (tpl->factionTemplate != 0)
+      if (displayId == kGmNpcPlaceholderDisplayId) {
+        resolvedDisplay = ResolveCreatureDisplayId(
+            0, tpl->displayIds[0], tpl->displayIds[1], tpl->displayIds[2],
+            tpl->displayIds[3]);
+      }
+      if (factionForCreature == 0 && tpl->factionTemplate != 0)
         factionForCreature = tpl->factionTemplate;
+      npcFlagsForSpawn = static_cast<uint32_t>(tpl->npcFlags);
     }
   }
   if (factionForCreature != 0 && _factionTemplateDbc &&
@@ -121,8 +139,8 @@ bool WorldSession::GmSpawnNpc(uint32 creatureEntry, uint32 displayId,
 
   uint64 const guid = AllocateGmSpawnCreatureGuid(creatureEntry);
   constexpr uint32_t kSeedHp = 100u;
-  auto spawned = std::make_shared<Creature>(guid, creatureEntry, displayId, kSeedHp, 1u,
-                                              factionForCreature);
+  auto spawned = std::make_shared<Creature>(guid, creatureEntry, resolvedDisplay, kSeedHp,
+                                            1u, factionForCreature);
   spawned->SetPosition(_position);
   WorldService::Instance().AddCreatureToMap(_mapId, std::move(spawned));
 
@@ -131,11 +149,12 @@ bool WorldSession::GmSpawnNpc(uint32 creatureEntry, uint32 displayId,
   if (!cr)
     return false;
 
-  BroadcastGmCreatureCreate(_mapId, guid, cr->GetPosition(), creatureEntry, displayId,
-                            cr->GetLiveHealth(), cr->GetLiveMaxHealth(),
-                            cr->GetLevel(), 0u, cr->GetFactionTemplate());
+  SendGmCreatureCreateVisibility(*this, _mapId, guid, cr->GetPosition(), creatureEntry,
+                                 resolvedDisplay, cr->GetLiveHealth(),
+                                 cr->GetLiveMaxHealth(), cr->GetLevel(), npcFlagsForSpawn,
+                                 cr->GetFactionTemplate());
   SendNotification("Spawned NPC entry=" + std::to_string(creatureEntry) +
-                   " display=" + std::to_string(displayId) + " guid=" +
+                   " display=" + std::to_string(resolvedDisplay) + " guid=" +
                    std::to_string(guid) +
                    " factionTemplate=" + std::to_string(cr->GetFactionTemplate()) + ".");
   return true;
@@ -252,7 +271,7 @@ bool WorldSession::GmDeleteNpcByObjectGuid(uint64 objectGuid) {
     return false;
   }
 
-  BroadcastGmCreatureDespawn(_mapId, objectGuid);
+  SendGmCreatureDespawnVisibility(*this, _mapId, objectGuid);
   map->RemoveObject(objectGuid);
   SendNotification("Removed NPC guid=" + std::to_string(objectGuid) + ".");
   return true;

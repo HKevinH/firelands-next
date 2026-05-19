@@ -1,7 +1,9 @@
+#include <application/logic/GossipLogic.h>
 #include <application/services/WorldService.h>
+#include <domain/repositories/IGossipRepository.h>
+#include <domain/repositories/INpcTemplateSearchRepository.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
-#include <domain/repositories/INpcTemplateSearchRepository.h>
 #include <shared/game/WowGuid.h>
 #include <shared/Logger.h>
 #include <shared/game/InventorySlots.h>
@@ -12,6 +14,7 @@
 #include <shared/network/packets/server/PongPacket.h>
 #include <shared/network/packets/server/SimpleOutboundPackets.h>
 #include <shared/network/UpdateData.h>
+#include <infrastructure/network/sessions/worldsession/NpcTextPackets.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
 #include <array>
@@ -502,9 +505,41 @@ bool WorldSession::GmNpcSearchPrintResults(std::string const &nameQuery) {
 
 void WorldSession::HandleGossipHello(WorldPacket &packet) {
   const uint64 npcGuid = ws_obj::ReadClientTargetGuid(packet);
-  if (auto host = WorldService::Instance().GetScriptHost()) {
+  if (npcGuid == 0 || _playerGuid == 0)
+    return;
+
+  _gossipMenuSent = false;
+
+  if (auto host = WorldService::Instance().GetScriptHost())
     host->FireGossipHello(npcGuid);
+
+  if (!_gossipMenuSent) {
+    if (!_gossipRepo) {
+      LOG_WARN("Gossip hello guid={:#x}: world DB gossip repository not configured",
+               npcGuid);
+    } else if (auto const entry = TryResolveCreatureTemplateEntry(npcGuid)) {
+      if (TrySendDatabaseGossipMenu(npcGuid, *entry))
+        return;
+      LOG_DEBUG("Gossip hello entry={} guid={:#x}: no menu to send", *entry, npcGuid);
+    } else {
+      LOG_DEBUG("Gossip hello guid={:#x}: could not resolve creature template entry",
+                npcGuid);
+    }
   }
+
+  SendGossipComplete();
+}
+
+void WorldSession::HandleNpcTextQuery(WorldPacket &packet) {
+  if (packet.Size() < sizeof(uint32_t) + sizeof(uint64_t))
+    return;
+
+  uint32_t const textId = packet.Read<uint32_t>();
+  uint64_t const guid = packet.Read<uint64_t>();
+
+  LOG_DEBUG("CMSG_NPC_TEXT_QUERY textId={} guid={:#x}", textId, guid);
+  auto npcText = gossip::BuildNpcTextUpdate(textId);
+  SendPacket(npcText);
 }
 
 void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
@@ -514,9 +549,24 @@ void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
   }
   const uint32 menuId = packet.Read<uint32>();
   const uint32 listId = packet.Read<uint32>();
-  if (auto host = WorldService::Instance().GetScriptHost()) {
+
+  if (auto host = WorldService::Instance().GetScriptHost())
     host->FireGossipSelect(npcGuid, menuId, listId);
+
+  if (_gossipRepo) {
+    auto const options = _gossipRepo->GetMenuOptions(menuId);
+    if (auto const *item = FindGossipMenuItem(options, listId)) {
+      if (item->actionMenuId != 0) {
+        auto const chainedOptions = _gossipRepo->GetMenuOptions(item->actionMenuId);
+        auto const textId = _gossipRepo->GetMenuTextId(item->actionMenuId);
+        SendGossipMessage(npcGuid, item->actionMenuId, textId.value_or(0),
+                          chainedOptions);
+        return;
+      }
+    }
   }
+
+  SendGossipComplete();
 }
 
 void WorldSession::OpenGmMailboxUi() {

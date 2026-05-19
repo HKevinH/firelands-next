@@ -120,6 +120,9 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_GOSSIP_SELECT_OPTION:
     HandleGossipSelectOption(packet);
     break;
+  case CMSG_NPC_TEXT_QUERY:
+    HandleNpcTextQuery(packet);
+    break;
   case CMSG_NAME_QUERY:
     HandleNameQuery(packet);
     break;

@@ -525,7 +525,7 @@ void RunAuthFtxuiConsoleImpl(
     Element const log_title = hbox({
         text(" ") | bgcolor(kAccent),
         text(" log ") | bold | color(Color::RGB(210, 200, 190)),
-        text(" · PgUp/PgDn · rueda · arrastrar = copiar") |
+        text(" · PgUp/PgDn · scroll · drag = copy") |
             dim | color(Color::RGB(160, 150, 140)),
         filler() | bgcolor(Color::RGB(40, 36, 34)),
     });
