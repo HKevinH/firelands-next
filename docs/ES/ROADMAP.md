@@ -159,6 +159,10 @@ Living section: actualizar **Status** y **Next criterion** al cerrar hitos.
 
 **Extractores / colisión (4.3.4):** plan maestro en [`docs/EN/VMAP_EXTRACTION_PLAN.md`](../EN/VMAP_EXTRACTION_PLAN.md); resumen ES en [`docs/ES/VMAP_EXTRACTION_PLAN.md`](VMAP_EXTRACTION_PLAN.md) (herramientas 1–4 + runtime + cierre).
 
+### Toolchain (baja prioridad)
+
+- **C++20:** plan en inglés [`docs/EN/CPP20_MIGRATION_PLAN.md`](../EN/CPP20_MIGRATION_PLAN.md) — **no iniciado**; el repo sigue en **C++17** (`CMakeLists.txt`). Prioridad **después** de estabilidad del cliente (Objetivo 0).
+
 ---
 
 ## Próximos pasos (orden sugerido)
