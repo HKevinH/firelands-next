@@ -92,6 +92,23 @@ docker-compose up -d db
 - Adapters tested against real database
 - Use docker-compose MySQL for integration tests
 
+## Cursor Rules (Auto-loaded)
+
+Project rules live in `.cursor/rules/` and load automatically in Cursor:
+
+| Rule | Scope |
+|------|-------|
+| `firelands-core.mdc` | Always — mandates, build policy, delegation |
+| `firelands-architecture.mdc` | Always — hexagonal architecture |
+| `firelands-tdd.mdc` | Always — TDD workflow |
+| `firelands-cpp.mdc` | C++ sources under `src/`, `tests/` |
+| `firelands-cmake.mdc` | `CMakeLists.txt`, `cmake/` |
+| `firelands-sql.mdc` | `sql/` |
+| `firelands-auth.mdc` | `src/auth/` |
+| `firelands-world.mdc` | `src/world/`, `src/shared/network/` |
+
+Deep workflow detail remains in `.agent/skills/` (read on demand).
+
 ## Skills (Agent Constraints)
 
 ### Location
@@ -157,7 +174,7 @@ target_precompile_headers(<target_name> PRIVATE ${PROJECT_PCH_HEADERS})
 
 - Documentation: `docs/EN/README.md`
 - Module guides: `docs/EN/modules/README.md`
-- Reference implementation (local clone, not vendored): `firelands-cata-ref/` or `firelands-core-ref/` (local clone names)
+- Reference implementation (local clone, not vendored): `firelands-cata-ref/`.
 
 ## Logs
 
