@@ -15,6 +15,10 @@ add_library(FirelandsShared STATIC
     dbc/ChrRacesDbc.cpp
     game/EquipmentCache.cpp
     game/ChatLanguages.cpp
+    game/StarterSpellFilters.cpp
+    game/StarterSkillFilters.cpp
+    game/PlayerItemProficiency.cpp
+    game/SkillLineCategories.cpp
     game/ItemEquipSlots.cpp
     game/PlayerGmAppearance.cpp
     game/StatFormulas.cpp

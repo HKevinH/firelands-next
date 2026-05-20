@@ -1,5 +1,6 @@
 add_library(FirelandsApplication STATIC
     spell/SpellHitEffects.cpp
+    spell/PassiveSpellAuras.cpp
     spell/SpellManager.cpp
     services/PlayerCreateInfoService.cpp
     services/PlayerSpellbook.cpp
