@@ -42,6 +42,7 @@ public:
   FtxuiLogSinkPtr const &sink() const { return sink_; }
 
   int view_first() const { return view_first_; }
+  int view_col() const { return view_col_; }
 
   int DisplayStart(int log_viewport_height,
                    std::vector<std::string> const &lines) const;
@@ -55,10 +56,15 @@ public:
 
 private:
   bool ApplyScrollDelta(int delta, int log_viewport_height);
+  bool ApplyHorizontalScrollDelta(int delta, int log_viewport_height);
+
+  int LogBodyViewportWidth() const;
+  void ClampViewCol(int log_viewport_height) const;
 
   FtxuiLogViewLayout layout_;
   FtxuiLogSinkPtr sink_;
   int view_first_ = -1;
+  mutable int view_col_ = 0;
   bool select_drag_ = false;
   FtxuiLogCell select_anchor_{};
   FtxuiLogCell select_extent_{};

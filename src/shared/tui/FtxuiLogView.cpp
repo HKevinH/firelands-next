@@ -21,7 +21,7 @@ bool LogCellLess(FtxuiLogCell const &a, FtxuiLogCell const &b) {
 }
 
 std::optional<FtxuiLogCell> HitLogBodyCell(FtxuiLogViewLayout const &layout,
-                                           int mx, int my,
+                                           int view_col, int mx, int my,
                                            std::vector<std::string> const &lines,
                                            int display_start, int visible) {
   int const n = static_cast<int>(lines.size());
@@ -39,15 +39,17 @@ std::optional<FtxuiLogCell> HitLogBodyCell(FtxuiLogViewLayout const &layout,
   }
   std::string const row =
       StripTerminalAnsi(lines[static_cast<std::size_t>(line_index)]);
-  int col = mx - layout.log_text_left_screen_x;
+  int col = mx - layout.log_text_left_screen_x + view_col;
   col = std::clamp(col, 0, static_cast<int>(row.size()));
   return FtxuiLogCell{line_index, col};
 }
 
-FtxuiLogCell PickExtentLogCell(FtxuiLogViewLayout const &layout, int mx, int my,
+FtxuiLogCell PickExtentLogCell(FtxuiLogViewLayout const &layout, int view_col,
+                               int mx, int my,
                                std::vector<std::string> const &lines,
                                int display_start, int visible, int n) {
-  if (auto h = HitLogBodyCell(layout, mx, my, lines, display_start, visible)) {
+  if (auto h = HitLogBodyCell(layout, view_col, mx, my, lines, display_start,
+                              visible)) {
     return *h;
   }
   int const y0 = layout.LogBodyFirstScreenY();
@@ -68,9 +70,21 @@ FtxuiLogCell PickExtentLogCell(FtxuiLogViewLayout const &layout, int mx, int my,
   li = std::clamp(li, 0, n - 1);
   std::string const row =
       StripTerminalAnsi(lines[static_cast<std::size_t>(li)]);
-  int col =
-      std::clamp(mx - layout.log_text_left_screen_x, 0, static_cast<int>(row.size()));
+  int col = std::clamp(mx - layout.log_text_left_screen_x + view_col, 0,
+                       static_cast<int>(row.size()));
   return FtxuiLogCell{li, col};
+}
+
+int MaxViewCol(std::vector<std::string> const &lines, int display_start,
+               int visible, int viewport_width) {
+  int max_row_len = 0;
+  for (int i = 0; i < visible; ++i) {
+    int const li = display_start + i;
+    std::string const row =
+        StripTerminalAnsi(lines[static_cast<std::size_t>(li)]);
+    max_row_len = std::max(max_row_len, static_cast<int>(row.size()));
+  }
+  return std::max(0, max_row_len - viewport_width);
 }
 
 std::string BuildLogSelectionText(std::vector<std::string> const &lines,
@@ -171,6 +185,38 @@ int FtxuiLogView::DisplayStart(int log_viewport_height,
                            : std::clamp(view_first_, 0, max_start);
 }
 
+int FtxuiLogView::LogBodyViewportWidth() const {
+  Dimensions const term = Terminal::Size();
+  int const term_w = (term.dimx > 2) ? term.dimx : 80;
+  return std::max(1, term_w - layout_.log_text_left_screen_x - 1);
+}
+
+void FtxuiLogView::ClampViewCol(int log_viewport_height) const {
+  std::vector<std::string> lines = sink_->CopyRecentLines(kLogRenderBufferLines);
+  int const n = static_cast<int>(lines.size());
+  int const display_start = DisplayStart(log_viewport_height, lines);
+  int const visible = std::min(log_viewport_height, n - display_start);
+  int const max_col =
+      MaxViewCol(lines, display_start, visible, LogBodyViewportWidth());
+  view_col_ = std::clamp(view_col_, 0, max_col);
+}
+
+bool FtxuiLogView::ApplyHorizontalScrollDelta(int delta,
+                                              int log_viewport_height) {
+  std::vector<std::string> lines = sink_->CopyRecentLines(kLogRenderBufferLines);
+  int const n = static_cast<int>(lines.size());
+  int const display_start = DisplayStart(log_viewport_height, lines);
+  int const visible = std::min(log_viewport_height, n - display_start);
+  int const max_col =
+      MaxViewCol(lines, display_start, visible, LogBodyViewportWidth());
+  int const next = std::clamp(view_col_ + delta, 0, max_col);
+  if (next == view_col_) {
+    return false;
+  }
+  view_col_ = next;
+  return true;
+}
+
 bool FtxuiLogView::ApplyScrollDelta(int delta, int log_viewport_height) {
   int const n = static_cast<int>(sink_->LineCount());
   int const max_s = std::max(0, n - log_viewport_height);
@@ -202,11 +248,19 @@ bool FtxuiLogView::HandleEvent(ftxui::Event &event,
   int const n = static_cast<int>(lines.size());
   int const display_start = DisplayStart(log_viewport_height, lines);
   int const visible = std::min(log_viewport_height, n - display_start);
+  ClampViewCol(log_viewport_height);
 
   if (event.is_mouse()) {
     Mouse const &m = event.mouse();
     if (m.button == Mouse::WheelUp) {
       select_drag_ = false;
+      if (m.shift) {
+        if (ApplyHorizontalScrollDelta(-3, log_viewport_height)) {
+          request_animation_frame();
+          return true;
+        }
+        return false;
+      }
       if (ApplyScrollDelta(-3, log_viewport_height)) {
         request_animation_frame();
         return true;
@@ -215,6 +269,13 @@ bool FtxuiLogView::HandleEvent(ftxui::Event &event,
     }
     if (m.button == Mouse::WheelDown) {
       select_drag_ = false;
+      if (m.shift) {
+        if (ApplyHorizontalScrollDelta(3, log_viewport_height)) {
+          request_animation_frame();
+          return true;
+        }
+        return false;
+      }
       if (ApplyScrollDelta(3, log_viewport_height)) {
         request_animation_frame();
         return true;
@@ -223,13 +284,13 @@ bool FtxuiLogView::HandleEvent(ftxui::Event &event,
     }
     if (m.button == Mouse::Left && m.motion == Mouse::Pressed) {
       if (select_drag_) {
-        select_extent_ = PickExtentLogCell(layout_, m.x, m.y, lines,
+        select_extent_ = PickExtentLogCell(layout_, view_col_, m.x, m.y, lines,
                                            display_start, visible, n);
         request_animation_frame();
         return true;
       }
-      if (auto hit = HitLogBodyCell(layout_, m.x, m.y, lines, display_start,
-                                    visible)) {
+      if (auto hit = HitLogBodyCell(layout_, view_col_, m.x, m.y, lines,
+                                    display_start, visible)) {
         select_drag_ = true;
         select_anchor_ = *hit;
         select_extent_ = *hit;
@@ -238,8 +299,8 @@ bool FtxuiLogView::HandleEvent(ftxui::Event &event,
       }
     }
     if (select_drag_ && m.motion == Mouse::Released) {
-      select_extent_ = PickExtentLogCell(layout_, m.x, m.y, lines, display_start,
-                                         visible, n);
+      select_extent_ = PickExtentLogCell(layout_, view_col_, m.x, m.y, lines,
+                                         display_start, visible, n);
       std::string const clip =
           BuildLogSelectionText(lines, select_anchor_, select_extent_);
       select_drag_ = false;
@@ -252,8 +313,8 @@ bool FtxuiLogView::HandleEvent(ftxui::Event &event,
     if (select_drag_ && m.motion == Mouse::Pressed &&
         m.button != Mouse::WheelUp && m.button != Mouse::WheelDown &&
         m.button != Mouse::Left) {
-      select_extent_ = PickExtentLogCell(layout_, m.x, m.y, lines, display_start,
-                                         visible, n);
+      select_extent_ = PickExtentLogCell(layout_, view_col_, m.x, m.y, lines,
+                                         display_start, visible, n);
       request_animation_frame();
       return true;
     }
@@ -269,6 +330,20 @@ bool FtxuiLogView::HandleEvent(ftxui::Event &event,
   if (event == Event::PageDown) {
     if (ApplyScrollDelta(std::max(1, log_viewport_height - 1),
                          log_viewport_height)) {
+      request_animation_frame();
+      return true;
+    }
+    return false;
+  }
+  if (event == Event::ArrowLeft || event == Event::ArrowLeftCtrl) {
+    if (ApplyHorizontalScrollDelta(-3, log_viewport_height)) {
+      request_animation_frame();
+      return true;
+    }
+    return false;
+  }
+  if (event == Event::ArrowRight || event == Event::ArrowRightCtrl) {
+    if (ApplyHorizontalScrollDelta(3, log_viewport_height)) {
       request_animation_frame();
       return true;
     }
@@ -327,14 +402,17 @@ ftxui::Elements FtxuiLogView::BuildRows(int log_viewport_height) const {
 ftxui::Element FtxuiLogView::Window(int log_viewport_height) const {
   using namespace ftxui;
 
+  ClampViewCol(log_viewport_height);
+
   Color const kAccent = FtxuiServerPalette::Accent();
   Color const kLogBg = FtxuiServerPalette::LogBg();
 
-  Element const log_body = vbox(BuildRows(log_viewport_height)) | bgcolor(kLogBg);
+  Element const log_body = vbox(BuildRows(log_viewport_height)) |
+                         focusPosition(view_col_, 0) | xframe | bgcolor(kLogBg);
   Element const log_title = hbox({
       text(" ") | bgcolor(kAccent),
       text(" log ") | bold | color(Color::RGB(210, 200, 190)),
-      text(" · PgUp/PgDn · scroll · drag = copy") |
+      text(" · PgUp/PgDn · ←/→ · Shift+wheel · drag = copy") |
           dim | color(Color::RGB(160, 150, 140)),
       filler() | bgcolor(Color::RGB(40, 36, 34)),
   });
