@@ -65,6 +65,7 @@ public:
   virtual bool SaveCharacterCooldowns(uint32_t characterGuid,
                                     CharacterCooldownState const &state) = 0;
   virtual bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) = 0;
+  virtual bool RemoveCharacterSpell(uint32_t characterGuid, uint32_t spellId) = 0;
   /// True if `itemEntry` resolves from `item_template`, item DB2 hotfix, or CharStartOutfit DBC.
   virtual bool HasItemTemplate(uint32_t itemEntry) const = 0;
   /// Creates `item_instance` + `character_inventory` row in bag 0 (equipment or backpack).

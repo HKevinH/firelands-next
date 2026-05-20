@@ -1281,6 +1281,25 @@ bool MySqlCharacterRepository::AddCharacterSpell(uint32_t characterGuid,
   }
 }
 
+bool MySqlCharacterRepository::RemoveCharacterSpell(uint32_t characterGuid,
+                                                    uint32_t spellId) {
+  if (spellId == 0)
+    return false;
+  if (!EnsureCharacterSpellTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "DELETE FROM character_spell WHERE guid = ? AND spell = ?"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spellId);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("RemoveCharacterSpell failed: {}", e.what());
+    return false;
+  }
+}
+
 bool MySqlCharacterRepository::HasItemTemplate(uint32_t itemEntry) const {
   if (itemEntry == 0)
     return false;

@@ -46,6 +46,7 @@ namespace Firelands {
         bool SaveCharacterCooldowns(uint32_t characterGuid,
                                     CharacterCooldownState const &state) override;
         bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) override;
+        bool RemoveCharacterSpell(uint32_t characterGuid, uint32_t spellId) override;
         bool HasItemTemplate(uint32_t itemEntry) const override;
         bool GrantItemToBag0(uint32_t characterGuid, uint32_t itemEntry, uint32_t count,
                              uint32_t *outItemGuidLow = nullptr,

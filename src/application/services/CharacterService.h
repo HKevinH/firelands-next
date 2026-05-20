@@ -241,6 +241,10 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
     return m_repository->AddCharacterSpell(characterGuid, spellId);
   }
 
+  bool RemoveCharacterSpell(uint32_t characterGuid, uint32_t spellId) {
+    return m_repository->RemoveCharacterSpell(characterGuid, spellId);
+  }
+
   bool HasItemTemplate(uint32_t itemEntry) const {
     return m_repository->HasItemTemplate(itemEntry);
   }
