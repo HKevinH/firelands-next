@@ -3,7 +3,9 @@
 #include <domain/repositories/ISpellCastTables.h>
 #include <shared/dbc/DbcReader.h>
 #include <shared/game/SpellAuraTypes.h>
+#include <shared/game/StarterSpellFilters.h>
 #include <shared/game/SpellEffectMagnitude.h>
+#include <shared/game/StarterSpellFilters.h>
 #include <shared/Logger.h>
 
 #include <algorithm>
@@ -343,6 +345,11 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
         effect == SPELL_EFFECT_HEALTH_LEECH ||
         effect == SPELL_EFFECT_ENVIRONMENTAL_DAMAGE)
       polarityBySpell[spellId].second = true;
+    if (effect == kSpellEffectSkill) {
+      auto it = m_byId.find(spellId);
+      if (it != m_byId.end())
+        it->second.grantsSkillLine = true;
+    }
 
     if (effect != SPELL_EFFECT_SCHOOL_DAMAGE && effect != SPELL_EFFECT_HEAL)
       continue;
@@ -466,6 +473,11 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
   for (AuraCandidateRow const &row : auraCandidates) {
     if (row.effectIndex < 3u)
       activeEffectMaskBySpell[row.spellId] |= static_cast<uint8>(1u << row.effectIndex);
+    if (IsMountOrVehicleAuraType(row.auraType)) {
+      auto it = m_byId.find(row.spellId);
+      if (it != m_byId.end())
+        it->second.hasMountOrVehicleAura = true;
+    }
   }
 
   std::unordered_map<uint32_t, AuraCandidateRow> bestAuraBySpell;

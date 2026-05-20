@@ -31,20 +31,40 @@ void SetPackedShort(std::map<uint16, uint32> &fields, uint16 field, uint8 slot,
     packed = (packed & 0x0000FFFFu) | (static_cast<uint32>(value) << 16);
 }
 
+/// Cataclysm 4.3.4: each skill slot uses its own update-field index (Size 64
+/// TWO_SHORT arrays are 64 entries, not 32 packed pairs).
+void SetPlayerSkillSlot(std::map<uint16, uint32> &fields, uint16 baseField,
+                        uint8 slot, uint16 value) {
+  if (slot >= 64)
+    return;
+  fields[static_cast<uint16>(baseField + slot)] =
+      static_cast<uint32>(value) & 0xFFFFu;
+}
+
 void AddPlayerSkillFields(std::map<uint16, uint32> &fields,
                           std::vector<StarterSkillGrant> const &skills) {
-  for (size_t i = 0; i < skills.size() && i < 64; ++i) {
+  size_t const used = std::min(skills.size(), size_t{64});
+  for (size_t i = 0; i < used; ++i) {
     uint8 const slot = static_cast<uint8>(i);
     uint16 const skill = static_cast<uint16>(skills[i].skillId);
     uint16 const rank = skills[i].rank > 0 ? skills[i].rank : 1;
     uint16 const maxRank =
         skills[i].maxRank > 0 ? skills[i].maxRank : rank;
-    SetPackedShort(fields, PLAYER_SKILL_LINEID_0, slot, skill);
-    SetPackedShort(fields, PLAYER_SKILL_STEP_0, slot, 0);
-    SetPackedShort(fields, PLAYER_SKILL_RANK_0, slot, rank);
-    SetPackedShort(fields, PLAYER_SKILL_MAX_RANK_0, slot, maxRank);
-    SetPackedShort(fields, PLAYER_SKILL_MODIFIER_0, slot, 0);
-    SetPackedShort(fields, PLAYER_SKILL_TALENT_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_LINEID_0, slot, skill);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_STEP_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_RANK_0, slot, rank);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_MAX_RANK_0, slot, maxRank);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_MODIFIER_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_TALENT_0, slot, 0);
+  }
+  for (size_t i = used; i < 64; ++i) {
+    uint8 const slot = static_cast<uint8>(i);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_LINEID_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_STEP_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_RANK_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_MAX_RANK_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_MODIFIER_0, slot, 0);
+    SetPlayerSkillSlot(fields, PLAYER_SKILL_TALENT_0, slot, 0);
   }
 }
 
@@ -465,6 +485,9 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
   AddBaselineMeleeFields(fields, character);
   AddBaselineSpellFields(fields, character, statGameTables);
   AddBaselineDefenseAndResistanceFields(fields, character, statGameTables);
+
+  fields[PLAYER_PROFESSION_SKILL_LINE_1] = 0;
+  fields[static_cast<uint16>(PLAYER_PROFESSION_SKILL_LINE_1 + 1)] = 0;
 
   if (!starterSkills.empty())
     AddPlayerSkillFields(fields, starterSkills);

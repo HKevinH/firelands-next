@@ -62,6 +62,11 @@ struct SpellDefinition {
   /// Signed HP change per periodic tick (negative = damage).
   int32 auraPeriodicHealthDeltaPerTick = 0;
 
+  /// Any `SpellEffect.dbc` apply-aura row uses a mount/vehicle aura (not shapeshift).
+  bool hasMountOrVehicleAura = false;
+  /// Any `SpellEffect.dbc` row uses `SPELL_EFFECT_SKILL` (118) — profession trainers.
+  bool grantsSkillLine = false;
+
   bool isPassiveSpell() const { return (attributes & SpellAttr0::kPassive) != 0u; }
 
   bool sendsAuraEffectAmountOnWire() const {

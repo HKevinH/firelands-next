@@ -42,6 +42,7 @@
 #include <shared/Config.h>
 #include <shared/Logger.h>
 #include <shared/dbc/FactionTemplateDbc.h>
+#include <shared/game/SkillLineCategories.h>
 #include <shared/dbc/ItemDbHotfixStore.h>
 #include <shared/dbc/EmotesTextDbc.h>
 #include <shared/dbc/LanguagesDbc.h>
@@ -152,6 +153,10 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     }
 
     auto spellEntryStore = std::make_shared<SpellEntryDbcStore>();
+    if (!LoadSkillLineCategories(dbcBasePath + "/SkillLine.dbc")) {
+      LOG_WARN("SkillLine.dbc not loaded; starter skill filter uses legacy IDs only.");
+    }
+
     bool const spellDbcOk = spellEntryStore->Load(dbcBasePath + "/Spell.dbc");
     if (!spellDbcOk) {
       LOG_WARN("Spell.dbc not loaded from {}; definitions come only from "
