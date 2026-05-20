@@ -28,6 +28,7 @@
 #include <shared/game/AccessLevel.h>
 #include <shared/game/PlayerGmAppearance.h>
 #include <domain/models/GossipMenu.h>
+#include <domain/models/PlayerCreateInfo.h>
 #include <domain/models/NpcText.h>
 #include <domain/models/GmTicket.h>
 #include <shared/network/WorldOpcodes.h>
@@ -355,6 +356,7 @@ public:
   /// CMSG_PLAYER_LOGIN sub-steps (keeps `HandlePlayerLogin` readable).
   void LoginSendAccountDataAndPreMapPackets(uint64 guid, Character const &character);
   void LoginBuildKnownSpellsAndSendSpellbook(Character const &character);
+  void RefreshKnownSpellsForCharacter(Character const &character);
   void LoginSendMotdAndMetaPackets();
   void LoginResolveMapPosition(uint64 guid, Character const &character,
                                 MovementInfo &outMove);
@@ -496,6 +498,7 @@ public:
   std::vector<uint32> _knownSpells;
   /// Same ids as `_knownSpells` for O(1) lookups (`SpellManager`, GM helpers).
   std::unordered_set<uint32> _knownSpellIds;
+  std::vector<StarterSkillGrant> _knownSkills;
   std::chrono::steady_clock::time_point _gcdReady{};
   /// Phase E: per-spell recovery (`SpellCooldowns.dbc` RecoveryTime) until instant.
   std::unordered_map<uint32, std::chrono::steady_clock::time_point> _spellCooldownUntil;

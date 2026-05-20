@@ -1,4 +1,6 @@
 #include <application/logic/CreatureSpawnLogic.h>
+#include <application/services/PlayerSpellbook.h>
+#include <application/services/PlayerCreateInfoService.h>
 #include <application/services/WorldService.h>
 #include <domain/repositories/INpcTemplateSearchRepository.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
@@ -444,6 +446,15 @@ bool WorldSession::GmSetLevel(uint8 level) {
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
   update.Build(pkt);
   SendPacket(pkt);
+  if (PlayerCreateInfoService const *pci =
+          _charService->GetPlayerCreateInfoService()) {
+    _knownSpells = PlayerSpellbook::BuildKnownSpells(
+        _playerRace, _playerClass, lv, *pci, _spellDefinitions.get(),
+        _charService->GetCharacterSpellIds(static_cast<uint32_t>(_playerGuid)));
+    _knownSpellIds.clear();
+    _knownSpellIds.insert(_knownSpells.begin(), _knownSpells.end());
+    SendKnownSpells(true, _knownSpells);
+  }
   SendNotification("Level set to " + std::to_string(static_cast<int>(lv)) + ".");
   return true;
 }

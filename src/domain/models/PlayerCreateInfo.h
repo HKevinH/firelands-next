@@ -29,4 +29,11 @@ struct PlayerCreateVisualItem {
   uint32 displayEnchantId = 0;
 };
 
+/// Starter skill from `playercreateinfo_skill` (Trinity `playercreateinfo_skills`).
+struct StarterSkillGrant {
+  uint32 skillId = 0;
+  uint16 rank = 0;
+  uint16 maxRank = 0;
+};
+
 } // namespace Firelands

@@ -2,6 +2,7 @@ add_library(FirelandsApplication STATIC
     spell/SpellHitEffects.cpp
     spell/SpellManager.cpp
     services/PlayerCreateInfoService.cpp
+    services/PlayerSpellbook.cpp
     services/RealmListService.cpp
     services/CommandService.cpp
     services/GmTicketService.cpp

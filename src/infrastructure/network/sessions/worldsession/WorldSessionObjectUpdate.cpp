@@ -1,4 +1,5 @@
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <domain/models/PlayerCreateInfo.h>
 #include <shared/network/UpdateData.h>
 #include <shared/network/UpdateFields.h>
 #include <shared/game/ChatLanguages.h>
@@ -30,17 +31,18 @@ void SetPackedShort(std::map<uint16, uint32> &fields, uint16 field, uint8 slot,
     packed = (packed & 0x0000FFFFu) | (static_cast<uint32>(value) << 16);
 }
 
-void AddLanguageSkillFields(std::map<uint16, uint32> &fields, uint8 race) {
-  std::vector<uint32> skills;
-  AppendRacialLanguageSkills(race, skills);
-  constexpr uint16 kRank = 300;
+void AddPlayerSkillFields(std::map<uint16, uint32> &fields,
+                          std::vector<StarterSkillGrant> const &skills) {
   for (size_t i = 0; i < skills.size() && i < 64; ++i) {
     uint8 const slot = static_cast<uint8>(i);
-    uint16 const skill = static_cast<uint16>(skills[i]);
+    uint16 const skill = static_cast<uint16>(skills[i].skillId);
+    uint16 const rank = skills[i].rank > 0 ? skills[i].rank : 1;
+    uint16 const maxRank =
+        skills[i].maxRank > 0 ? skills[i].maxRank : rank;
     SetPackedShort(fields, PLAYER_SKILL_LINEID_0, slot, skill);
     SetPackedShort(fields, PLAYER_SKILL_STEP_0, slot, 0);
-    SetPackedShort(fields, PLAYER_SKILL_RANK_0, slot, kRank);
-    SetPackedShort(fields, PLAYER_SKILL_MAX_RANK_0, slot, kRank);
+    SetPackedShort(fields, PLAYER_SKILL_RANK_0, slot, rank);
+    SetPackedShort(fields, PLAYER_SKILL_MAX_RANK_0, slot, maxRank);
     SetPackedShort(fields, PLAYER_SKILL_MODIFIER_0, slot, 0);
     SetPackedShort(fields, PLAYER_SKILL_TALENT_0, slot, 0);
   }
@@ -309,7 +311,7 @@ std::vector<uint32> BuildDefaultKnownSpells(uint8 classId) {
   case 2: // Paladin
     return {465, 635, 20154, 20271, 19740, 498, 633, 82242};
   case 3: // Hunter
-    return {75, 13165, 1978, 3044, 56641, 781, 1130, 2973};
+    return {75, 13165, 1978, 2643, 56641, 781, 1130, 2973};
   case 4: // Rogue
     return {1784, 2098, 53, 1752, 921, 1766, 1776, 82245};
   case 5: // Priest
@@ -317,7 +319,7 @@ std::vector<uint32> BuildDefaultKnownSpells(uint8 classId) {
   case 6: // Death Knight
     return {48263, 45524, 49998, 47528, 48721, 45529, 48792};
   case 7: // Shaman
-    return {331, 8042, 8017, 8050, 324, 51730, 5185, 52127};
+    return {331, 8042, 8017, 8050, 324, 51730, 8004, 52127};
   case 8: // Mage
     return {116, 133, 2136, 1459, 130, 1953, 118};
   case 9: // Warlock
@@ -398,7 +400,8 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
     GtPlayerStatGameTables const *statGameTables,
     uint32_t nextLevelXpFromWorld,
     std::optional<std::pair<uint32, uint32>> const &healthOverride,
-    std::optional<std::pair<uint32, uint32>> const &power1Override) {
+    std::optional<std::pair<uint32, uint32>> const &power1Override,
+    std::vector<StarterSkillGrant> const &starterSkills) {
   std::map<uint16, uint32> fields;
   fields[OBJECT_FIELD_GUID] = (uint32)(guid & 0xFFFFFFFF);
   fields[OBJECT_FIELD_GUID + 1] = (uint32)(guid >> 32);
@@ -463,7 +466,21 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
   AddBaselineSpellFields(fields, character, statGameTables);
   AddBaselineDefenseAndResistanceFields(fields, character, statGameTables);
 
-  AddLanguageSkillFields(fields, character.GetRace());
+  if (!starterSkills.empty())
+    AddPlayerSkillFields(fields, starterSkills);
+  else {
+    std::vector<StarterSkillGrant> langOnly;
+    std::vector<uint32> langIds;
+    AppendRacialLanguageSkills(character.GetRace(), langIds);
+    for (uint32 sid : langIds) {
+      StarterSkillGrant g;
+      g.skillId = sid;
+      g.rank = 300;
+      g.maxRank = 300;
+      langOnly.push_back(g);
+    }
+    AddPlayerSkillFields(fields, langOnly);
+  }
 
   {
     uint64 const coin = character.GetMoney();

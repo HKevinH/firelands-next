@@ -47,12 +47,13 @@ public:
     return {};
   }
 
-  /// Starter spells from `playercreateinfo_spell` (world DB), merged with
-  /// wildcard rows (`race`/`class` = 0) like Trinity reference data.
-  std::vector<uint32_t> GetStarterSpells(uint8_t race, uint8_t klass) const {
+  /// All class spells from `playercreateinfo_spell` (world DB); caller applies level filter.
+  std::vector<uint32_t> GetStarterSpells(uint8_t race, uint8_t klass) const;
+
+  std::vector<StarterSkillGrant> GetStarterSkills(uint8_t race, uint8_t klass) const {
     if (!m_repository)
       return {};
-    return m_repository->GetStarterSpells(race, klass);
+    return m_repository->GetStarterSkills(race, klass);
   }
 
   std::vector<StarterItemGrant>

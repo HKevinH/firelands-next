@@ -2,7 +2,6 @@
 #include <domain/models/Character.h>
 #include <shared/game/PlayerPowerType.h>
 #include <shared/Logger.h>
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -33,6 +32,19 @@ PlayerCreateInfoService::PlayerCreateInfoService(
   }
   if (!clientGameTablesDbcDir.empty())
     m_statGameTables.Load(clientGameTablesDbcDir);
+}
+
+std::vector<uint32_t> PlayerCreateInfoService::GetStarterSpells(uint8_t race,
+                                                              uint8_t klass) const {
+  if (m_repository) {
+    auto fromDb = m_repository->GetStarterSpells(race, klass);
+    if (!fromDb.empty())
+      return fromDb;
+  }
+  LOG_WARN("playercreateinfo_spell empty for race={} class={}; apply world "
+           "migrations (45_world_playercreateinfo_restore_data.sql).",
+           static_cast<uint32_t>(race), static_cast<uint32_t>(klass));
+  return {};
 }
 
 uint32_t PlayerCreateInfoService::GetXpToNextLevelForLevel(uint8_t level) const {

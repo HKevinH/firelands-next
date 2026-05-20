@@ -352,6 +352,10 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
                                      : nullptr;
   }
 
+  PlayerCreateInfoService const *GetPlayerCreateInfoService() const {
+    return m_playerCreateInfoService.get();
+  }
+
   /// XP to reach `level+1` from `level` (1..84). World DB `player_xp_for_level`; else 400.
   uint32_t GetXpToNextLevelForLevel(uint8_t level) const {
     constexpr uint8_t kMaxLevel = 85;

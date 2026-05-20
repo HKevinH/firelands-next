@@ -22,10 +22,13 @@ public:
   virtual std::vector<StarterItemGrant>
   GetExtraCreateItems(uint8 race, uint8 klass) = 0;
 
-  /// Spell IDs from `playercreateinfo_spell` (race/class wildcards 0), same merge
-  /// rules as Trinity `playercreateinfo_spell` / `PlayerCreateInfo`.
+  /// Spell IDs from `playercreateinfo_spell` (`raceMask`/`classMask`, 0 = all).
   virtual std::vector<uint32_t> GetStarterSpells(uint8_t race,
                                                  uint8_t klass) = 0;
+
+  /// Skills from `playercreateinfo_skill` (`raceMask`/`classMask`, 0 = all).
+  virtual std::vector<StarterSkillGrant> GetStarterSkills(uint8_t race,
+                                                          uint8_t klass) = 0;
 
   /// Trinity-style `player_classlevelstats`; empty when row missing.
   virtual std::optional<PlayerClassLevelStats>

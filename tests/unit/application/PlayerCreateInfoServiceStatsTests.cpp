@@ -18,6 +18,8 @@ public:
               (override));
   MOCK_METHOD(std::vector<uint32_t>, GetStarterSpells, (uint8_t, uint8_t),
               (override));
+  MOCK_METHOD(std::vector<StarterSkillGrant>, GetStarterSkills, (uint8_t, uint8_t),
+              (override));
   MOCK_METHOD(std::optional<PlayerClassLevelStats>, GetClassLevelStats,
               (uint8_t, uint8_t), (override));
   MOCK_METHOD(std::optional<PlayerRaceStats>, GetRaceStats, (uint8_t),

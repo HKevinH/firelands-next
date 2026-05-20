@@ -101,6 +101,7 @@ void WorldSession::FinalizeWorldExit() {
   _tutorialInts.fill(0);
   _knownSpells.clear();
   _knownSpellIds.clear();
+  _knownSkills.clear();
   _gcdReady = {};
   _spellCooldownUntil.clear();
   _spellCategoryCooldownUntil.clear();

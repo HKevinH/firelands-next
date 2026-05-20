@@ -1,4 +1,5 @@
 #include <infrastructure/persistence/MySqlPlayerCreateInfoRepository.h>
+#include <shared/game/QuestMask.h>
 #include <shared/Logger.h>
 #include <cstdint>
 #include <unordered_set>
@@ -134,12 +135,15 @@ std::vector<uint32_t> MySqlPlayerCreateInfoRepository::GetStarterSpells(
     uint8_t race, uint8_t klass) {
   std::vector<uint32_t> out;
   std::unordered_set<uint32_t> seen;
+  uint32_t const raceMask = PlayerRaceMask(race);
+  uint32_t const classMask = PlayerClassMask(klass);
   try {
     std::unique_ptr<sql::PreparedStatement> stmt(m_connection->prepareStatement(
         "SELECT spellId FROM firelands_world.playercreateinfo_spell "
-        "WHERE (race = ? OR race = 0) AND (class = ? OR class = 0)"));
-    stmt->setUInt(1, static_cast<unsigned>(race));
-    stmt->setUInt(2, static_cast<unsigned>(klass));
+        "WHERE (raceMask = 0 OR (raceMask & ?) != 0) "
+        "  AND (classMask = 0 OR (classMask & ?) != 0)"));
+    stmt->setUInt(1, raceMask);
+    stmt->setUInt(2, classMask);
     std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery());
     while (rs->next()) {
       uint32_t const sid = rs->getUInt("spellId");
@@ -149,6 +153,38 @@ std::vector<uint32_t> MySqlPlayerCreateInfoRepository::GetStarterSpells(
   } catch (sql::SQLException &e) {
     if (!IsMissingTableError(e))
       LOG_ERROR("GetStarterSpells query failed: {}", e.what());
+  }
+  return out;
+}
+
+std::vector<StarterSkillGrant> MySqlPlayerCreateInfoRepository::GetStarterSkills(
+    uint8_t race, uint8_t klass) {
+  std::vector<StarterSkillGrant> out;
+  std::unordered_set<uint32_t> seen;
+  uint32_t const raceMask = PlayerRaceMask(race);
+  uint32_t const classMask = PlayerClassMask(klass);
+  try {
+    std::unique_ptr<sql::PreparedStatement> stmt(m_connection->prepareStatement(
+        "SELECT skillId, `rank` FROM firelands_world.playercreateinfo_skill "
+        "WHERE (raceMask = 0 OR (raceMask & ?) != 0) "
+        "  AND (classMask = 0 OR (classMask & ?) != 0)"));
+    stmt->setUInt(1, raceMask);
+    stmt->setUInt(2, classMask);
+    std::unique_ptr<sql::ResultSet> rs(stmt->executeQuery());
+    while (rs->next()) {
+      uint32_t const skillId = rs->getUInt("skillId");
+      if (skillId == 0u || skillId > 0xFFFFu || !seen.insert(skillId).second)
+        continue;
+      StarterSkillGrant g;
+      g.skillId = skillId;
+      uint16_t const rank = static_cast<uint16_t>(rs->getUInt("rank"));
+      g.rank = rank;
+      g.maxRank = rank > 0 ? rank : 300;
+      out.push_back(g);
+    }
+  } catch (sql::SQLException &e) {
+    if (!IsMissingTableError(e))
+      LOG_ERROR("GetStarterSkills query failed: {}", e.what());
   }
   return out;
 }

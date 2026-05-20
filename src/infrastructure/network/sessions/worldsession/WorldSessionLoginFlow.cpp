@@ -1,5 +1,6 @@
 #include <application/ports/IMapNotifier.h>
 #include <application/services/OnlineCharacterSessionRegistry.h>
+#include <application/services/PlayerSpellbook.h>
 #include <application/services/WorldService.h>
 #include <infrastructure/persistence/MySqlAccountDataRepository.h>
 #include <domain/models/Character.h>
@@ -150,67 +151,19 @@ void WorldSession::LoginSendAccountDataAndPreMapPackets(
 
 void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &character) {
   {
-    // Language passives must appear early in `SMSG_SEND_KNOWN_SPELLS`. Some 4.3.4
-    // clients stop applying the list if an early spell id is unknown to the
-    // client DB, which leaves language passives unlearned and blocks `/say`
-    // before `CMSG_MESSAGECHAT_SAY` is ever sent.
-    std::vector<uint32> spells;
-    AppendRacialLanguageSpells(character.GetRace(), spells);
-    std::vector<uint32_t> const fromDb = _charService->GetStarterSpells(
-        static_cast<uint8_t>(character.GetRace()),
-        static_cast<uint8_t>(character.GetClass()));
-    auto pushUnique = [&spells](uint32 sid) {
-      if (sid == 0)
-        return;
-      if (std::find(spells.begin(), spells.end(), sid) == spells.end())
-        spells.push_back(sid);
-    };
-    if (!fromDb.empty()) {
-      spells.reserve(spells.size() + fromDb.size());
-      for (uint32_t sid : fromDb)
-        pushUnique(static_cast<uint32>(sid));
+    PlayerCreateInfoService const *pci = _charService->GetPlayerCreateInfoService();
+    if (pci) {
+      _knownSpells = PlayerSpellbook::BuildKnownSpells(
+          character.GetRace(), character.GetClass(), character.GetLevel(), *pci,
+          _spellDefinitions.get(),
+          _charService->GetCharacterSpellIds(character.GetGuid()));
+      _knownSkills = PlayerSpellbook::BuildStarterSkills(
+          character.GetRace(), character.GetClass(), *pci);
     } else {
-      for (uint32 sid : ws_obj::BuildDefaultKnownSpells(character.GetClass()))
-        pushUnique(sid);
+      _knownSpells.clear();
+      AppendRacialLanguageSpells(character.GetRace(), _knownSpells);
+      _knownSkills.clear();
     }
-    // Strip ids from wrong client eras that break spellbook application on 4.3.4.
-    for (auto it = spells.begin(); it != spells.end();) {
-      uint32 const sid = *it;
-      if (sid >= 86450u && sid <= 86550u)
-        it = spells.erase(it);
-      else
-        ++it;
-    }
-    if (_spellDefinitions) {
-      for (auto it = spells.begin(); it != spells.end();) {
-        uint32 const sid = *it;
-        // Never drop passive "Language *" spells: wrong-era DBC would break /say.
-        if (!IsLanguagePassiveSpell(sid) && !_spellDefinitions->HasSpell(sid)) {
-          LOG_WARN(
-              "Spell id {} not in Spell.dbc; omitted from known spells (race={} "
-              "class={})",
-              sid, static_cast<uint32>(character.GetRace()),
-              static_cast<uint32>(character.GetClass()));
-          it = spells.erase(it);
-        } else
-          ++it;
-      }
-    }
-    for (uint32_t sid : _charService->GetCharacterSpellIds(character.GetGuid())) {
-      uint32 const u = static_cast<uint32>(sid);
-      if (u == 0)
-        continue;
-      if (_spellDefinitions && !IsLanguagePassiveSpell(u) &&
-          !_spellDefinitions->HasSpell(u)) {
-        continue;
-      }
-      if (std::find(spells.begin(), spells.end(), u) == spells.end())
-        spells.push_back(u);
-    }
-    EnsureRacialLanguageSpells(static_cast<uint8>(character.GetRace()), spells);
-    PrioritizeDefaultLanguageSpell(static_cast<uint8>(character.GetRace()),
-                                   spells);
-    _knownSpells = std::move(spells);
     RebuildKnownSpellIdSet(_knownSpells, _knownSpellIds);
     uint32 const defaultLang = DefaultLanguageForRace(character.GetRace());
     uint32 const defaultLangSpell = LanguageSpellIdForLang(defaultLang);
@@ -248,6 +201,18 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
   SendAllAchievementDataEmpty();
   SendLoginSetTimeSpeed();
   SendEquipmentSetListEmpty();
+}
+
+void WorldSession::RefreshKnownSpellsForCharacter(Character const &character) {
+  PlayerCreateInfoService const *pci = _charService->GetPlayerCreateInfoService();
+  if (!pci)
+    return;
+  _knownSpells = PlayerSpellbook::BuildKnownSpells(
+      character.GetRace(), character.GetClass(), character.GetLevel(), *pci,
+      _spellDefinitions.get(),
+      _charService->GetCharacterSpellIds(character.GetGuid()));
+  RebuildKnownSpellIdSet(_knownSpells, _knownSpellIds);
+  SendKnownSpells(true, _knownSpells);
 }
 
 void WorldSession::LoginSendMotdAndMetaPackets() {
@@ -377,7 +342,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
   UpdateData update(_mapId);
   auto selfFields = ws_obj::BuildPlayerUpdateFields(
       guid, character, statGt, selfNextXp, TryLivePlayerHealth(_mapId, guid),
-      TryLivePlayerPower1(_mapId, guid));
+      TryLivePlayerPower1(_mapId, guid), _knownSkills);
   MergeGmAppearanceIntoPlayerFields(selfFields, GetGmAppearanceForPlayerUpdates());
   ws_obj::ApplyMovementHintsToPlayerCreateFields(selfFields, move);
   update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields);

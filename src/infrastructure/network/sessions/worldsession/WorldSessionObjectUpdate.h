@@ -3,6 +3,7 @@
 
 #include <application/ports/IMapNotifier.h>
 #include <domain/models/Character.h>
+#include <domain/models/PlayerCreateInfo.h>
 #include <domain/world/Creature.h>
 #include <shared/game/PlayerGmAppearance.h>
 #include <shared/network/MovementInfo.h>
@@ -42,7 +43,8 @@ std::map<uint16, uint32> BuildPlayerUpdateFields(
     GtPlayerStatGameTables const *statGameTables = nullptr,
     uint32_t nextLevelXpFromWorld = 0,
     std::optional<std::pair<uint32, uint32>> const &healthOverride = std::nullopt,
-    std::optional<std::pair<uint32, uint32>> const &power1Override = std::nullopt);
+    std::optional<std::pair<uint32, uint32>> const &power1Override = std::nullopt,
+    std::vector<StarterSkillGrant> const &starterSkills = {});
 
 /// `UNIT_FLAG_CAN_SWIM` + `UNIT_FIELD_BYTES_1` anim tier from movement (call after GM merge).
 void ApplyMovementHintsToPlayerCreateFields(std::map<uint16, uint32> &fields,

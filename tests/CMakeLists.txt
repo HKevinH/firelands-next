@@ -16,6 +16,7 @@ add_executable(FirelandsUnitTests
     unit/shared/ItemDb2Wdb2Tests.cpp
     unit/shared/FactionTemplateDbcTests.cpp
     unit/shared/EmotesTextDbcTests.cpp
+    unit/shared/StarterSpellsDbcTests.cpp
     unit/shared/FactionTemplateHelpersTests.cpp
     unit/shared/PlayerRaceFactionTemplateTests.cpp
     unit/shared/ChrRacesDbcTests.cpp
@@ -33,6 +34,7 @@ add_executable(FirelandsUnitTests
     unit/application/SpellHitEffectsTests.cpp
     unit/application/SpellManagerTests.cpp
     unit/application/PlayerCreateInfoServiceStatsTests.cpp
+    unit/application/PlayerSpellbookTests.cpp
     unit/application/WorldServiceCreatureScriptTests.cpp
     unit/application/CreatureSpawnLogicTests.cpp
     unit/application/GossipLogicTests.cpp

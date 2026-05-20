@@ -15,6 +15,9 @@ class SpellEntryDbcStore final : public ISpellDefinitionStore {
 public:
   bool Load(std::string const &path);
 
+  /// Loads `SpellLevels.dbc` and fills `SpellDefinition::requiredLevel` from `LevelsID`.
+  bool LoadSpellLevels(std::string const &path);
+
   /// After `Load()` and optional `MergeSpellDbcRows()`, reads client `SpellEffect.dbc` and
   /// fills `immediateHealthEffectDelta` (lowest `EffectIndex` among school damage / heal with
   /// non-zero derived magnitude) plus `spellEffectHasHealKind` / `spellEffectHasHarmKind`
@@ -40,8 +43,11 @@ public:
   std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override;
 
 private:
+  void ApplySpellLevelsToDefinitions();
+
   bool m_loaded = false;
   std::unordered_map<uint32, SpellDefinition> m_byId;
+  std::unordered_map<uint32, uint8> m_requiredLevelByLevelsId;
 };
 
 } // namespace Firelands

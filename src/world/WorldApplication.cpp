@@ -181,6 +181,11 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     spellEntryStore->MergeImmediateHealthFromSpellEffect(dbcBasePath +
                                                          "/SpellEffect.dbc");
     spellEntryStore->ApplySpellPowerManaFromTables(*spellCastTables);
+    if (!spellEntryStore->LoadSpellLevels(dbcBasePath + "/SpellLevels.dbc")) {
+      LOG_WARN("SpellLevels.dbc not loaded from {}; spell level gates use "
+               "permissive defaults.",
+               dbcBasePath + "/SpellLevels.dbc");
+    }
 
     std::shared_ptr<ISpellDefinitionStore const> spellDefinitions;
     if (spellDbcOk || spellEntryStore->DefinitionCount() > 0u)

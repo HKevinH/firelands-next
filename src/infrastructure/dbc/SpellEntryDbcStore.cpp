@@ -58,6 +58,11 @@ constexpr uint32_t kFieldCategoriesId = 35;
 constexpr uint32_t kFieldCooldownsId = 37;
 /// SpellEntry::PowerDisplayID — row id in `SpellPower.dbc` (SpellInfo::SpellPowerId).
 constexpr uint32_t kFieldSpellPowerId = 42;
+/// `SpellEntry::LevelsID` → `SpellLevels.dbc`.
+constexpr uint32_t kFieldLevelsId = 41;
+
+constexpr std::string_view kSpellLevelsFmt = "diii";
+constexpr uint32_t kSpellLevelsFieldSpellLevel = 3;
 
 static size_t LastFieldSizeBytes(char lastFmt) {
   return ((lastFmt == 'b') || (lastFmt == 'X')) ? 1u : 4u;
@@ -194,11 +199,50 @@ bool SpellEntryDbcStore::Load(std::string const &path) {
     def.categoriesId = reader.ReadUInt32(rec, kFieldCategoriesId, offsets);
     def.cooldownsId = reader.ReadUInt32(rec, kFieldCooldownsId, offsets);
     def.spellPowerId = reader.ReadUInt32(rec, kFieldSpellPowerId, offsets);
+    def.levelsId = reader.ReadUInt32(rec, kFieldLevelsId, offsets);
     m_byId.emplace(id, def);
   }
 
   m_loaded = true;
   LOG_DEBUG("Spell.dbc: {} spell definitions from {}.", m_byId.size(), path);
+  return true;
+}
+
+void SpellEntryDbcStore::ApplySpellLevelsToDefinitions() {
+  for (auto &kv : m_byId) {
+    SpellDefinition &d = kv.second;
+    if (d.levelsId == 0u)
+      continue;
+    auto it = m_requiredLevelByLevelsId.find(d.levelsId);
+    if (it != m_requiredLevelByLevelsId.end())
+      d.requiredLevel = it->second;
+  }
+}
+
+bool SpellEntryDbcStore::LoadSpellLevels(std::string const &path) {
+  m_requiredLevelByLevelsId.clear();
+  DbcReader reader;
+  if (!reader.Load(path))
+    return false;
+  std::vector<uint32_t> const offsets = DbcBuildFieldByteOffsets(kSpellLevelsFmt);
+  if (!reader.VerifyFormat(kSpellLevelsFmt)) {
+    LOG_WARN("SpellLevels.dbc: field count mismatch (path={})", path);
+    return false;
+  }
+  uint32_t const n = reader.GetRecordCount();
+  for (uint32_t rec = 0; rec < n; ++rec) {
+    uint32_t const levelsId = reader.ReadUInt32(rec, 0, offsets);
+    if (levelsId == 0u)
+      continue;
+    uint32_t const spellLevel =
+        reader.ReadUInt32(rec, kSpellLevelsFieldSpellLevel, offsets);
+    uint8_t const lvl =
+        spellLevel > 255u ? 255u : static_cast<uint8_t>(spellLevel);
+    m_requiredLevelByLevelsId[levelsId] = lvl;
+  }
+  ApplySpellLevelsToDefinitions();
+  LOG_DEBUG("SpellLevels.dbc: {} rows from {}.", m_requiredLevelByLevelsId.size(),
+            path);
   return true;
 }
 

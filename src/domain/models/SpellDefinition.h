@@ -27,6 +27,10 @@ struct SpellDefinition {
   uint32 cooldownsId = 0;
   /// `Spell.dbc` field 42 (PowerDisplayID): row id in `SpellPower.dbc` for base mana.
   uint32 spellPowerId = 0;
+  /// `Spell.dbc` `LevelsID` → `SpellLevels.dbc` row (0 = no level gate).
+  uint32 levelsId = 0;
+  /// Required character level from `SpellLevels.dbc` (`SpellLevel`); 0 = always allowed.
+  uint8 requiredLevel = 0;
   /// Resource1 cost from `SpellPower.dbc` via `spellPowerId` (after merge loads ids).
   uint32 manaCost = 0;
   /// First spell-hit immediate HP delta from `SpellEffect.dbc` (school damage / generic heal).
