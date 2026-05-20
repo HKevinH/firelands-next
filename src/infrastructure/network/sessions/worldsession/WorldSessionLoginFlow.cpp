@@ -9,6 +9,7 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionMovementChecks.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 #include <shared/Logger.h>
 #include <shared/dbc/GtPlayerStatGameTables.h>
 #include <shared/game/ChatLanguages.h>
@@ -305,6 +306,9 @@ void WorldSession::LoginSpawnInWorld(uint64 guid, Character const &character,
   player->InitCombatResources(character.GetHealth(), character.GetMaxHealth(),
                                character.GetPower1(), character.GetMaxPower1());
   WorldService::Instance().AddPlayerToMap(_mapId, player);
+
+  if (auto map = WorldService::Instance().GetMap(_mapId))
+    SendActiveAurasOnMap(map, guid, std::chrono::steady_clock::now());
 
   SendLoginVerifyWorld(_mapId, move.x, move.y, move.z, move.orientation);
 

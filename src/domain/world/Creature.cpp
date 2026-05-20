@@ -33,11 +33,15 @@ void Creature::ApplyHealthDelta(int32 delta) {
 
 void Creature::AddAura(Aura const &aura) { m_auraState.AddAura(aura); }
 
-std::optional<AuraRemoval> Creature::TryRemoveAura(uint32 spellId) {
-  return m_auraState.TryRemoveAura(spellId);
+std::optional<AuraRemoval> Creature::TryRemoveAura(uint32 spellId, uint64 casterGuid) {
+  return m_auraState.TryRemoveAura(spellId, casterGuid);
 }
 
 bool Creature::HasAura(uint32 spellId) const { return m_auraState.HasAura(spellId); }
+
+std::vector<Aura> Creature::GetActiveAuras() const {
+  return m_auraState.GetActiveAuras();
+}
 
 std::vector<AuraRemoval> Creature::UpdateAuras(
     std::chrono::steady_clock::time_point now) {
@@ -47,6 +51,10 @@ std::vector<AuraRemoval> Creature::UpdateAuras(
 std::vector<AuraPeriodicTick> Creature::TickPeriodicAuras(
     std::chrono::steady_clock::time_point now) {
   return m_auraState.TickPeriodicAuras(now);
+}
+
+UnitAuraTickResult Creature::TickAuras(std::chrono::steady_clock::time_point now) {
+  return m_auraState.Tick(now);
 }
 
 uint8 Creature::AllocateAuraVisualSlot(uint32 spellId) {

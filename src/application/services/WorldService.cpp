@@ -41,6 +41,27 @@ std::shared_ptr<IMapCollisionQueries> WorldService::GetCollisionQueries() {
   return m_collisionQueries;
 }
 
+void WorldService::SetSpellCastTables(std::shared_ptr<ISpellCastTables const> tables) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_spellCastTables = std::move(tables);
+}
+
+std::shared_ptr<ISpellCastTables const> WorldService::GetSpellCastTables() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_spellCastTables;
+}
+
+void WorldService::SetSpellDefinitions(
+    std::shared_ptr<ISpellDefinitionStore const> definitions) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_spellDefinitions = std::move(definitions);
+}
+
+std::shared_ptr<ISpellDefinitionStore const> WorldService::GetSpellDefinitions() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_spellDefinitions;
+}
+
 void WorldService::ForEachMap(
     std::function<void(uint32 mapId, std::shared_ptr<Map> const &)> const &fn) {
   std::lock_guard<std::mutex> lock(m_worldMutex);
@@ -60,6 +81,8 @@ void WorldService::ResetForShutdown() {
     std::lock_guard<std::mutex> lock(m_auxMutex);
     m_scriptHost.reset();
     m_collisionQueries.reset();
+    m_spellCastTables.reset();
+    m_spellDefinitions.reset();
   }
   mapsToDestroy.clear();
 }

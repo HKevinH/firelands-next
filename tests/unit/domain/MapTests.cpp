@@ -172,3 +172,21 @@ TEST_F(MapTests, BroadcastPacketToNearby_DoesNotSendToFarPlayers) {
     
     map->BroadcastPacketToNearby(1, packet, false);
 }
+
+TEST_F(MapTests, ForEachPlayer_CallbackCanBroadcastWithoutDeadlock) {
+  auto map = std::make_shared<Map>(1);
+  auto notifier1 = std::make_shared<MockNotifier>();
+  auto player1 = std::make_shared<Player>(1, notifier1);
+  auto notifier2 = std::make_shared<MockNotifier>();
+  auto player2 = std::make_shared<Player>(2, notifier2);
+  map->AddObject(player1);
+  map->AddObject(player2);
+
+  EXPECT_CALL(*notifier2, SendPacket(_)).Times(1);
+  map->ForEachPlayer([&](std::shared_ptr<Player> const &p) {
+    if (p->GetGuid() != 1)
+      return;
+    WorldPacket packet(0x4707, 0);
+    map->BroadcastPacket(1, packet, false);
+  });
+}

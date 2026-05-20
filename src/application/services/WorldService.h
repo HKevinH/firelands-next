@@ -2,6 +2,8 @@
 
 #include <application/ports/IGameScriptHost.h>
 #include <application/ports/IMapCollisionQueries.h>
+#include <domain/repositories/ISpellCastTables.h>
+#include <domain/repositories/ISpellDefinitionStore.h>
 #include <domain/world/Creature.h>
 #include <domain/world/GameObject.h>
 #include <domain/world/Map.h>
@@ -59,6 +61,11 @@ public:
 
   void SetCollisionQueries(std::shared_ptr<IMapCollisionQueries> queries);
   std::shared_ptr<IMapCollisionQueries> GetCollisionQueries();
+
+  void SetSpellCastTables(std::shared_ptr<ISpellCastTables const> tables);
+  std::shared_ptr<ISpellCastTables const> GetSpellCastTables();
+  void SetSpellDefinitions(std::shared_ptr<ISpellDefinitionStore const> definitions);
+  std::shared_ptr<ISpellDefinitionStore const> GetSpellDefinitions();
   /// Explicit teardown hook for process shutdown. Releases map-held objects
   /// (players/sessions) while core services (io_context, logger) are still alive.
   void ResetForShutdown();
@@ -76,6 +83,8 @@ private:
   std::mutex m_auxMutex;
   std::shared_ptr<IGameScriptHost> m_scriptHost;
   std::shared_ptr<IMapCollisionQueries> m_collisionQueries;
+  std::shared_ptr<ISpellCastTables const> m_spellCastTables;
+  std::shared_ptr<ISpellDefinitionStore const> m_spellDefinitions;
 };
 
 } // namespace Firelands

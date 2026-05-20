@@ -5,29 +5,24 @@
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
-#include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
 
 namespace Firelands {
 
 namespace {
 
-namespace ws_obj = WorldSessionObjectUpdate;
-
 template <typename UnitPtr>
 void TickUnitAuras(uint32 mapId, std::shared_ptr<Map> const &map, uint64 guid,
                    UnitPtr const &unit, std::chrono::steady_clock::time_point now) {
-  for (AuraRemoval const &removal : unit->UpdateAuras(now))
-    SendAuraRemoveOnMap(map, guid, removal.visualSlot);
+  UnitAuraTickResult const tick = unit->TickAuras(now);
 
-  for (AuraPeriodicTick const &tick : unit->TickPeriodicAuras(now)) {
-    if (tick.healthDelta == 0)
+  for (AuraRemoval const &removal : tick.removals)
+    SendAuraRemovalOnMap(map, guid, removal);
+
+  for (AuraPeriodicTick const &periodic : tick.periodicTicks) {
+    if (periodic.healthDelta == 0)
       continue;
-    unit->ApplyHealthDelta(tick.healthDelta);
-    WorldPacket hpUpdate;
-    ws_obj::BuildPlayerHealthValuesUpdate(static_cast<uint16>(mapId), guid,
-                                          unit->GetLiveHealth(), unit->GetLiveMaxHealth(),
-                                          hpUpdate);
-    map->BroadcastPacketToNearby(guid, hpUpdate, true);
+    unit->ApplyHealthDelta(periodic.healthDelta);
+    SendPeriodicHealTickOnMap(mapId, map, guid, periodic);
   }
 }
 

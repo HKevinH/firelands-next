@@ -37,7 +37,7 @@ public:
   void AddAura(Aura const &aura);
   void RemoveAura(uint32 spellId);
   /// Removes by spell id when present; returns visual slot for `SMSG_AURA_UPDATE` remove.
-  std::optional<AuraRemoval> TryRemoveAura(uint32 spellId);
+  std::optional<AuraRemoval> TryRemoveAura(uint32 spellId, uint64 casterGuid = 0);
   bool HasAura(uint32 spellId) const;
   std::vector<Aura> GetActiveAuras() const;
   /// Removes expired auras; returns spell id + visual slot for wire remove packets.
@@ -45,6 +45,8 @@ public:
   /// Applies due periodic ticks; advances each aura's next tick time.
   std::vector<AuraPeriodicTick> TickPeriodicAuras(
       std::chrono::steady_clock::time_point now);
+  /// Expires finished auras, then periodic ticks on active ones.
+  UnitAuraTickResult TickAuras(std::chrono::steady_clock::time_point now);
   /// Reuses slot for the same spell id when refreshing.
   uint8 AllocateAuraVisualSlot(uint32 spellId);
 

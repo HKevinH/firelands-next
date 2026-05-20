@@ -38,11 +38,13 @@ public:
   void ApplyHealthDelta(int32 delta);
 
   void AddAura(Aura const &aura);
-  std::optional<AuraRemoval> TryRemoveAura(uint32 spellId);
+  std::optional<AuraRemoval> TryRemoveAura(uint32 spellId, uint64 casterGuid = 0);
   bool HasAura(uint32 spellId) const;
+  std::vector<Aura> GetActiveAuras() const;
   std::vector<AuraRemoval> UpdateAuras(std::chrono::steady_clock::time_point now);
   std::vector<AuraPeriodicTick> TickPeriodicAuras(
       std::chrono::steady_clock::time_point now);
+  UnitAuraTickResult TickAuras(std::chrono::steady_clock::time_point now);
   uint8 AllocateAuraVisualSlot(uint32 spellId);
 
 private:

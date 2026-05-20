@@ -27,4 +27,11 @@ namespace SpellAttr2 {
 constexpr uint32 kIgnoreLineOfSight = 0x00000004u;
 
 } // namespace SpellAttr2
+
+/// `Spell.dbc` field `AttributesEx8` (wowdev SpellAttributesEx8).
+namespace SpellAttr8 {
+/// Client requires `AFLAG_ANY_EFFECT_AMOUNT_SENT` and per-effect `int32` amounts.
+constexpr uint32 kAuraSendAmount = 0x00001000u;
+} // namespace SpellAttr8
+
 } // namespace Firelands

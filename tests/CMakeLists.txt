@@ -23,6 +23,7 @@ add_executable(FirelandsUnitTests
     unit/shared/SpellCastWireTests.cpp
     unit/shared/AuraUpdateWireTests.cpp
     unit/shared/SpellCooldownWireTests.cpp
+    unit/shared/SpellPeriodicAuraLogWireTests.cpp
     unit/shared/SpellEffectMagnitudeTests.cpp
     unit/shared/MovementStateQueriesTests.cpp
     unit/application/SRPServiceTests.cpp

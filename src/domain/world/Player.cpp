@@ -55,8 +55,8 @@ void Player::AddAura(Aura const &aura) { m_auraState.AddAura(aura); }
 
 void Player::RemoveAura(uint32 spellId) { m_auraState.RemoveAura(spellId); }
 
-std::optional<AuraRemoval> Player::TryRemoveAura(uint32 spellId) {
-  return m_auraState.TryRemoveAura(spellId);
+std::optional<AuraRemoval> Player::TryRemoveAura(uint32 spellId, uint64 casterGuid) {
+  return m_auraState.TryRemoveAura(spellId, casterGuid);
 }
 
 bool Player::HasAura(uint32 spellId) const { return m_auraState.HasAura(spellId); }
@@ -73,6 +73,10 @@ std::vector<AuraRemoval> Player::UpdateAuras(
 std::vector<AuraPeriodicTick> Player::TickPeriodicAuras(
     std::chrono::steady_clock::time_point now) {
   return m_auraState.TickPeriodicAuras(now);
+}
+
+UnitAuraTickResult Player::TickAuras(std::chrono::steady_clock::time_point now) {
+  return m_auraState.Tick(now);
 }
 
 } // namespace Firelands

@@ -105,8 +105,25 @@ TEST(SpellHitEffectsTests, ApplyAuraPropagatesPeriodicHealTickFromDefinition) {
                                            std::chrono::steady_clock::now(), nullptr,
                                            &out);
   ASSERT_TRUE(out.hasAuraApply);
+  EXPECT_EQ(out.auraDurationMs, 0u);
   EXPECT_EQ(out.auraPeriodicPeriodMs, 3000u);
   EXPECT_EQ(out.auraPeriodicHealthDeltaPerTick, 4);
+}
+
+TEST(SpellHitEffectsTests, ResolveAuraDurationMs_ReplacesLegacyOneHourFallback) {
+  SpellDefinition def{};
+  def.durationIndex = 5;
+  DurationTablesStub tables(15000);
+  EXPECT_EQ(SpellHitEffects::ResolveAuraDurationMs(774, 80, 3600000u, &def, &tables),
+            15000u);
+}
+
+TEST(SpellHitEffectsTests, ResolveAuraDurationMs_KeepsValidOutcomeDuration) {
+  SpellDefinition def{};
+  def.durationIndex = 5;
+  DurationTablesStub tables(15000);
+  EXPECT_EQ(SpellHitEffects::ResolveAuraDurationMs(774, 80, 12000u, &def, &tables),
+            12000u);
 }
 
 TEST(SpellHitEffectsTests, ApplyAuraPeriodicHealUsesRealPointsPerLevelAtCasterLevel) {

@@ -55,6 +55,7 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
     // Optional post-resolution survey; not implemented.
     break;
   case CMSG_SET_ACTIVE_MOVER:
+  case CMSG_SET_ACTION_BUTTON:
   case CMSG_SET_ACTIONBAR_TOGGLES:
   case CMSG_REQUEST_RAID_INFO:
   case CMSG_GROUP_INVITE_RESPONSE:

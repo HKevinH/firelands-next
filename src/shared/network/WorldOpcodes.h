@@ -222,6 +222,8 @@ enum WorldOpcode : uint32 {
   SMSG_GM_TICKET_UPDATE_TEXT = 0x6535,
   SMSG_GM_TICKET_STATUS_UPDATE = 0x2C25,
 
+  /// Reference: WowPacketParser V4_3_4_15595 / Trinity `Opcodes.h` (build 15595).
+  CMSG_SET_ACTION_BUTTON = 0x6F06,
   /// Reference: WowPacketParser V4_3_4_15595 Opcodes.cs
   CMSG_CAST_SPELL = 0x4C07,
   /// Right-click remove buff (WowPacketParser V4_3_4_15595: uint32 spell id).
@@ -232,6 +234,10 @@ enum WorldOpcode : uint32 {
   SMSG_SPELL_GO = 0x6E16,
   SMSG_SPELL_FAILURE = 0x4535,
   SMSG_AURA_UPDATE = 0x4707,
+  /// Trinity Cataclysm — replaces the unit's visible aura list (used on login / resync).
+  SMSG_AURA_UPDATE_ALL = 0x6916,
+  /// Trinity Cataclysm `SMSG_PERIODICAURALOG` — HoT/DoT tick combat log.
+  SMSG_PERIODICAURALOG = 0x0416,
   /// WowPacketParser `V4_3_4_15595` — per-spell recovery on unit guid.
   SMSG_SPELL_COOLDOWN = 0x4B16,
   /// Shared category recovery (login / `CMSG_REQUEST_CATEGORY_COOLDOWNS`).

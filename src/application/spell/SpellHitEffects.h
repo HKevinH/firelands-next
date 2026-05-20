@@ -27,6 +27,12 @@ void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 
                                uint8 casterLevel, std::chrono::steady_clock::time_point now,
                                ISpellCastTables const *castTables, SpellCastOutcome *out);
 
+/// Resolves aura duration for server expiry and `SMSG_AURA_UPDATE` (ms). Re-looks-up
+/// `SpellDuration.dbc` when `outcomeDurationMs` is missing or the legacy 1h fallback.
+uint32 ResolveAuraDurationMs(uint32 spellId, uint8 casterLevel, uint32 outcomeDurationMs,
+                             SpellDefinition const *def,
+                             ISpellCastTables const *castTables);
+
 } // namespace SpellHitEffects
 
 } // namespace Firelands

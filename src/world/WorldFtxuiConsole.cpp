@@ -1,5 +1,7 @@
 #include "WorldFtxuiConsole.h"
 
+#include <infrastructure/world/MapAuraTicker.h>
+
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/component_options.hpp>
 #include <ftxui/component/event.hpp>
@@ -154,6 +156,9 @@ void RunWorldFtxuiConsoleImpl(
 
   std::atomic<bool> run_ticks{true};
   std::thread ticker([&, runtime] {
+    auto const auraTickInterval = std::chrono::milliseconds(100);
+    auto lastAuraTick = std::chrono::steady_clock::now();
+
     while (run_ticks.load()) {
       bool failed = false;
       bool ready = false;
@@ -179,6 +184,11 @@ void RunWorldFtxuiConsoleImpl(
         }
         if (cs) {
           cs->PollScheduledRestart();
+        }
+        auto const tickNow = std::chrono::steady_clock::now();
+        if (tickNow - lastAuraTick >= auraTickInterval) {
+          TickMapAuras(tickNow);
+          lastAuraTick = tickNow;
         }
         if (ic && ic->ShutdownRequested()) {
           screen.ExitLoopClosure()();

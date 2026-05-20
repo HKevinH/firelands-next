@@ -106,8 +106,8 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
     combat.auraPeriodicHealthDeltaPerTick = finish.auraPeriodicHealthDeltaPerTick;
     combat.auraIsNegative = finish.auraIsNegative;
     combat.auraCasterLevel = finish.auraCasterLevel;
-    ApplySpellCastAuraOnMap(map, combat, nowGo);
     map->BroadcastPacketToNearby(finish.casterGuid, spellGo, true);
+    ApplySpellCastAuraOnMap(map, combat, nowGo);
     ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, combat, nowGo);
     if (finish.spellCategoryCooldownGroup > 0 &&
         finish.spellCategoryCooldownDurationMs > 0) {
@@ -210,9 +210,9 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
     return;
   case SpellCastOutcome::Kind::SpellStartAndGo:
     if (auto map = WorldService::Instance().GetMap(_mapId)) {
-      ApplySpellCastAuraOnMap(map, out, now);
       map->BroadcastPacketToNearby(_playerGuid, out.spellStart, true);
       map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
+      ApplySpellCastAuraOnMap(map, out, now);
       ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, out, now);
       CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);
     } else {
@@ -260,7 +260,8 @@ void WorldSession::HandleCancelAura(WorldPacket &packet) {
   if (!map)
     return;
 
-  (void)RemovePlayerAuraOnMap(map, _playerGuid, spellId);
+  if (!RemovePlayerAuraOnMap(map, _playerGuid, spellId))
+    (void)RemoveAuraOnMapBySpellId(map, spellId, _playerGuid);
 }
 
 void WorldSession::HandleCancelCast(WorldPacket &packet) {

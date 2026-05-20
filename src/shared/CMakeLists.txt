@@ -22,6 +22,7 @@ add_library(FirelandsShared STATIC
     network/SpellCastWire.cpp
     network/AuraUpdateWire.cpp
     network/SpellCooldownWire.cpp
+    network/SpellPeriodicAuraLogWire.cpp
 )
 
 target_include_directories(FirelandsShared PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

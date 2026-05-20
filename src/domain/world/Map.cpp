@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <vector>
 #include <domain/world/Creature.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
@@ -79,22 +80,34 @@ bool Map::TryGetObjectWorldPosition(uint64 guid, float &outX, float &outY,
 
 void Map::ForEachPlayer(
     std::function<void(std::shared_ptr<Player> const &)> const &fn) {
-  std::lock_guard<std::mutex> lock(m_mapMutex);
-  for (auto const &[id, obj] : m_objects) {
-    (void)id;
-    if (auto pl = std::dynamic_pointer_cast<Player>(obj))
-      fn(pl);
+  std::vector<std::shared_ptr<Player>> players;
+  {
+    std::lock_guard<std::mutex> lock(m_mapMutex);
+    players.reserve(m_objects.size());
+    for (auto const &[id, obj] : m_objects) {
+      (void)id;
+      if (auto pl = std::dynamic_pointer_cast<Player>(obj))
+        players.push_back(pl);
+    }
   }
+  for (auto const &pl : players)
+    fn(pl);
 }
 
 void Map::ForEachCreature(
     std::function<void(std::shared_ptr<Creature> const &)> const &fn) {
-  std::lock_guard<std::mutex> lock(m_mapMutex);
-  for (auto const &[id, obj] : m_objects) {
-    (void)id;
-    if (auto cr = std::dynamic_pointer_cast<Creature>(obj))
-      fn(cr);
+  std::vector<std::shared_ptr<Creature>> creatures;
+  {
+    std::lock_guard<std::mutex> lock(m_mapMutex);
+    creatures.reserve(m_objects.size());
+    for (auto const &[id, obj] : m_objects) {
+      (void)id;
+      if (auto cr = std::dynamic_pointer_cast<Creature>(obj))
+        creatures.push_back(cr);
+    }
   }
+  for (auto const &cr : creatures)
+    fn(cr);
 }
 
 std::shared_ptr<Player> Map::TryGetPlayer(uint64 guid) {

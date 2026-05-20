@@ -1,12 +1,22 @@
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 
+#include <application/spell/SpellHitEffects.h>
+#include <application/services/WorldService.h>
 #include <domain/world/Aura.h>
 #include <domain/world/Creature.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <shared/Logger.h>
+#include <shared/game/SpellAttributes.h>
+#include <shared/game/SpellAuraTypes.h>
 #include <shared/network/AuraUpdateWire.h>
+#include <shared/network/SpellPeriodicAuraLogWire.h>
 #include <shared/network/WorldPacket.h>
+
+#include <functional>
+#include <optional>
+#include <vector>
 
 namespace Firelands {
 
@@ -14,9 +24,64 @@ namespace {
 
 namespace ws_obj = WorldSessionObjectUpdate;
 
-void BroadcastUnitAuraPacket(std::shared_ptr<Map> const &map, uint64 unitGuid,
-                             WorldPacket &pkt) {
-  map->BroadcastPacket(unitGuid, pkt, true);
+void BroadcastAuraPacket(std::shared_ptr<Map> const &map, uint64 unitGuid,
+                         std::function<void(WorldPacket &)> const &buildPacket) {
+  if (!map || unitGuid == 0)
+    return;
+  WorldPacket pkt;
+  buildPacket(pkt);
+  map->BroadcastPacketToNearby(unitGuid, pkt, true);
+}
+
+AuraUpdateWire::AuraApplyParams ParamsFromAura(Aura const &aura,
+                                             std::chrono::steady_clock::time_point now) {
+  AuraClientWireMeta const &wire = aura.GetClientWireMeta();
+  AuraUpdateWire::AuraApplyParams params{};
+  params.visualSlot = aura.GetVisualSlot();
+  params.spellId = aura.GetSpellId();
+  params.effectIndex = wire.effectIndex;
+  params.activeEffectMask = wire.activeEffectMask != 0u
+                                ? wire.activeEffectMask
+                                : static_cast<uint8>(1u << wire.effectIndex);
+  params.casterLevel = wire.casterLevel;
+  params.casterGuid = wire.casterGuid;
+  params.durationMs = wire.maxDurationMs;
+  params.remainingMs = static_cast<uint32>(aura.GetRemainingMs(now).count());
+  params.explicitRemaining = true;
+  params.isNegative = wire.isNegative;
+  params.effectAmount = wire.effectAmount;
+  params.sendEffectAmount = wire.sendEffectAmount;
+  return params;
+}
+
+template <typename Unit>
+std::vector<AuraUpdateWire::AuraApplyParams>
+CollectActiveAuraParams(Unit const &unit, std::chrono::steady_clock::time_point now) {
+  std::vector<AuraUpdateWire::AuraApplyParams> params;
+  for (Aura const &aura : unit.GetActiveAuras())
+    params.push_back(ParamsFromAura(aura, now));
+  return params;
+}
+
+void SendUnitAurasUpdateAll(std::shared_ptr<Map> const &map, uint64 unitGuid,
+                            std::chrono::steady_clock::time_point now) {
+  if (!map || unitGuid == 0)
+    return;
+
+  if (auto target = map->TryGetPlayer(unitGuid)) {
+    auto const params = CollectActiveAuraParams(*target, now);
+    BroadcastAuraPacket(map, unitGuid, [&](WorldPacket &pkt) {
+      AuraUpdateWire::BuildAuraUpdateAll(pkt, unitGuid, params);
+    });
+    return;
+  }
+
+  if (auto creature = map->TryGetCreature(unitGuid)) {
+    auto const params = CollectActiveAuraParams(*creature, now);
+    BroadcastAuraPacket(map, unitGuid, [&](WorldPacket &pkt) {
+      AuraUpdateWire::BuildAuraUpdateAll(pkt, unitGuid, params);
+    });
+  }
 }
 
 void BroadcastUnitHealthAfterDelta(uint32 mapId, std::shared_ptr<Map> const &map,
@@ -33,47 +98,106 @@ void ApplyAuraFromOutcome(std::shared_ptr<Map> const &map,
   if (!outcome.hasAuraApply || outcome.auraTargetGuid == 0)
     return;
 
+  SpellDefinition const *defPtr = nullptr;
+  std::optional<SpellDefinition> def;
+  if (auto defs = WorldService::Instance().GetSpellDefinitions()) {
+    def = defs->GetDefinition(outcome.auraSpellId);
+    if (def)
+      defPtr = &*def;
+  }
+  auto const tables = WorldService::Instance().GetSpellCastTables();
+  uint32 const durationMs = SpellHitEffects::ResolveAuraDurationMs(
+      outcome.auraSpellId, outcome.auraCasterLevel, outcome.auraDurationMs, defPtr,
+      tables.get());
+  if (durationMs == 0u) {
+    LOG_WARN("Aura spell {}: no duration from SpellDuration.dbc; not applying (client "
+             "timer would desync)",
+             outcome.auraSpellId);
+    return;
+  }
+
   uint8 slot = 0;
   if (auto target = map->TryGetPlayer(outcome.auraTargetGuid)) {
     slot = target->AllocateAuraVisualSlot(outcome.auraSpellId);
-    auto const expire = now + std::chrono::milliseconds(outcome.auraDurationMs);
-    auto nextTick = now;
-    if (outcome.auraPeriodicPeriodMs > 0u && outcome.auraPeriodicHealthDeltaPerTick != 0)
-      nextTick = now + std::chrono::milliseconds(outcome.auraPeriodicPeriodMs);
+    auto const expire = now + std::chrono::milliseconds(durationMs);
+    auto const nextTick = now;
 
+    uint8 const effectMask =
+        defPtr && defPtr->auraActiveEffectMask != 0u
+            ? defPtr->auraActiveEffectMask
+            : static_cast<uint8>(1u << outcome.auraEffectIndex);
+    bool const sendAmount = defPtr && defPtr->sendsAuraEffectAmountOnWire();
+
+    AuraClientWireMeta wire{};
+    wire.effectIndex = outcome.auraEffectIndex;
+    wire.activeEffectMask = effectMask;
+    wire.casterLevel = outcome.auraCasterLevel;
+    wire.casterGuid = outcome.auraCasterGuid;
+    wire.maxDurationMs = durationMs;
+    wire.isNegative = outcome.auraIsNegative;
+    if (sendAmount) {
+      wire.effectAmount = outcome.auraPeriodicHealthDeltaPerTick;
+      wire.sendEffectAmount = true;
+    }
     Aura aura(outcome.auraSpellId, outcome.auraEffectType, outcome.auraBasePoints,
               outcome.auraDieSides, outcome.auraCasterGuid, expire, slot,
               outcome.auraPeriodicPeriodMs, outcome.auraPeriodicHealthDeltaPerTick,
-              nextTick);
+              nextTick, wire);
     target->AddAura(aura);
   } else if (auto creature = map->TryGetCreature(outcome.auraTargetGuid)) {
     slot = creature->AllocateAuraVisualSlot(outcome.auraSpellId);
-    auto const expire = now + std::chrono::milliseconds(outcome.auraDurationMs);
-    auto nextTick = now;
-    if (outcome.auraPeriodicPeriodMs > 0u && outcome.auraPeriodicHealthDeltaPerTick != 0)
-      nextTick = now + std::chrono::milliseconds(outcome.auraPeriodicPeriodMs);
+    auto const expire = now + std::chrono::milliseconds(durationMs);
+    auto const nextTick = now;
 
+    uint8 const effectMask =
+        defPtr && defPtr->auraActiveEffectMask != 0u
+            ? defPtr->auraActiveEffectMask
+            : static_cast<uint8>(1u << outcome.auraEffectIndex);
+    bool const sendAmount = defPtr && defPtr->sendsAuraEffectAmountOnWire();
+
+    AuraClientWireMeta wire{};
+    wire.effectIndex = outcome.auraEffectIndex;
+    wire.activeEffectMask = effectMask;
+    wire.casterLevel = outcome.auraCasterLevel;
+    wire.casterGuid = outcome.auraCasterGuid;
+    wire.maxDurationMs = durationMs;
+    wire.isNegative = outcome.auraIsNegative;
+    if (sendAmount) {
+      wire.effectAmount = outcome.auraPeriodicHealthDeltaPerTick;
+      wire.sendEffectAmount = true;
+    }
     Aura aura(outcome.auraSpellId, outcome.auraEffectType, outcome.auraBasePoints,
               outcome.auraDieSides, outcome.auraCasterGuid, expire, slot,
               outcome.auraPeriodicPeriodMs, outcome.auraPeriodicHealthDeltaPerTick,
-              nextTick);
+              nextTick, wire);
     creature->AddAura(aura);
   } else {
     return;
   }
 
+  uint8 const effectMask =
+      defPtr && defPtr->auraActiveEffectMask != 0u
+          ? defPtr->auraActiveEffectMask
+          : static_cast<uint8>(1u << outcome.auraEffectIndex);
+  bool const sendAmount = defPtr && defPtr->sendsAuraEffectAmountOnWire();
+
   AuraUpdateWire::AuraApplyParams params{};
   params.visualSlot = slot;
   params.spellId = outcome.auraSpellId;
   params.effectIndex = outcome.auraEffectIndex;
+  params.activeEffectMask = effectMask;
   params.casterLevel = outcome.auraCasterLevel;
   params.casterGuid = outcome.auraCasterGuid;
-  params.durationMs = outcome.auraDurationMs;
-  params.remainingMs = outcome.auraDurationMs;
+  params.durationMs = durationMs;
+  params.remainingMs = durationMs;
   params.isNegative = outcome.auraIsNegative;
-  WorldPacket pkt;
-  AuraUpdateWire::BuildAuraApply(pkt, outcome.auraTargetGuid, params);
-  BroadcastUnitAuraPacket(map, outcome.auraTargetGuid, pkt);
+  if (sendAmount) {
+    params.effectAmount = outcome.auraPeriodicHealthDeltaPerTick;
+    params.sendEffectAmount = true;
+  }
+  BroadcastAuraPacket(map, outcome.auraTargetGuid, [&](WorldPacket &pkt) {
+    AuraUpdateWire::BuildAuraApply(pkt, outcome.auraTargetGuid, params);
+  });
 }
 
 } // namespace
@@ -86,13 +210,70 @@ void ApplySpellCastAuraOnMap(std::shared_ptr<Map> const &map,
   ApplyAuraFromOutcome(map, outcome, now);
 }
 
-void SendAuraRemoveOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
-                         uint8 visualSlot) {
+void SendActiveAurasOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
+                          std::chrono::steady_clock::time_point now) {
+  SendUnitAurasUpdateAll(map, unitGuid, now);
+}
+
+void SendAuraRemovalOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
+                          AuraRemoval const &removal) {
   if (!map || unitGuid == 0)
     return;
-  WorldPacket pkt;
-  AuraUpdateWire::BuildAuraRemove(pkt, unitGuid, visualSlot);
-  BroadcastUnitAuraPacket(map, unitGuid, pkt);
+
+  auto const now = std::chrono::steady_clock::now();
+
+  LOG_DEBUG("Aura remove: unit={:#x} slot={} spell={}", unitGuid, removal.visualSlot,
+            removal.spellId);
+
+  BroadcastAuraPacket(map, unitGuid, [&](WorldPacket &pkt) {
+    AuraUpdateWire::BuildAuraRemove(pkt, unitGuid, removal.visualSlot);
+  });
+
+  SendUnitAurasUpdateAll(map, unitGuid, now);
+}
+
+void SendPeriodicHealTickOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
+                               uint64 unitGuid, AuraPeriodicTick const &tick) {
+  if (!map || unitGuid == 0 || tick.healthDelta == 0)
+    return;
+
+  if (tick.auraEffectType == kSpellAuraPeriodicHeal && tick.casterGuid != 0u) {
+    uint32 const healAmount =
+        tick.healthDelta > 0 ? static_cast<uint32>(tick.healthDelta) : 0u;
+    BroadcastAuraPacket(map, unitGuid, [&](WorldPacket &pkt) {
+      SpellPeriodicAuraLogWire::BuildPeriodicHeal(pkt, unitGuid, tick.casterGuid,
+                                                  tick.spellId, healAmount);
+    });
+  }
+
+  if (tick.wire.maxDurationMs > 0u) {
+    AuraUpdateWire::AuraApplyParams refresh{};
+    refresh.visualSlot = tick.visualSlot;
+    refresh.spellId = tick.spellId;
+    refresh.effectIndex = tick.wire.effectIndex;
+    refresh.activeEffectMask = tick.wire.activeEffectMask != 0u
+                                   ? tick.wire.activeEffectMask
+                                   : static_cast<uint8>(1u << tick.wire.effectIndex);
+    refresh.casterLevel = tick.wire.casterLevel;
+    refresh.casterGuid = tick.wire.casterGuid;
+    refresh.durationMs = tick.wire.maxDurationMs;
+    refresh.remainingMs = tick.remainingMs;
+    refresh.explicitRemaining = true;
+    refresh.isNegative = tick.wire.isNegative;
+    refresh.effectAmount = tick.wire.effectAmount;
+    refresh.sendEffectAmount = tick.wire.sendEffectAmount;
+    BroadcastAuraPacket(map, unitGuid, [&](WorldPacket &pkt) {
+      AuraUpdateWire::BuildAuraApply(pkt, unitGuid, refresh);
+    });
+  }
+
+  if (auto target = map->TryGetPlayer(unitGuid)) {
+    BroadcastUnitHealthAfterDelta(mapId, map, unitGuid, target->GetLiveHealth(),
+                                  target->GetLiveMaxHealth());
+  } else if (auto creature = map->TryGetCreature(unitGuid)) {
+    BroadcastUnitHealthAfterDelta(mapId, map, unitGuid, creature->GetLiveHealth(),
+                                  creature->GetLiveMaxHealth());
+  }
 }
 
 bool RemovePlayerAuraOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
@@ -104,7 +285,7 @@ bool RemovePlayerAuraOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
     auto const removal = target->TryRemoveAura(spellId);
     if (!removal)
       return false;
-    SendAuraRemoveOnMap(map, unitGuid, removal->visualSlot);
+    SendAuraRemovalOnMap(map, unitGuid, *removal);
     return true;
   }
 
@@ -112,11 +293,36 @@ bool RemovePlayerAuraOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
     auto const removal = creature->TryRemoveAura(spellId);
     if (!removal)
       return false;
-    SendAuraRemoveOnMap(map, unitGuid, removal->visualSlot);
+    SendAuraRemovalOnMap(map, unitGuid, *removal);
     return true;
   }
 
   return false;
+}
+
+bool RemoveAuraOnMapBySpellId(std::shared_ptr<Map> const &map, uint32 spellId,
+                              uint64 casterGuid) {
+  if (!map || spellId == 0)
+    return false;
+
+  auto tryRemove = [&](uint64 guid, auto &unit) -> bool {
+    auto const removal = unit.TryRemoveAura(spellId, casterGuid);
+    if (!removal)
+      return false;
+    SendAuraRemovalOnMap(map, guid, *removal);
+    return true;
+  };
+
+  bool removed = false;
+  map->ForEachPlayer([&](std::shared_ptr<Player> const &player) {
+    if (tryRemove(player->GetGuid(), *player))
+      removed = true;
+  });
+  map->ForEachCreature([&](std::shared_ptr<Creature> const &creature) {
+    if (tryRemove(creature->GetGuid(), *creature))
+      removed = true;
+  });
+  return removed;
 }
 
 void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,

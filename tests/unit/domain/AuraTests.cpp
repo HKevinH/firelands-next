@@ -73,7 +73,7 @@ TEST(PlayerAuraTests, PlayerUpdatesAurasCorrectly) {
   player->AddAura(MakeAura(123, 4, 10, 6, 0x2000ULL, now - std::chrono::seconds(30)));
   player->AddAura(MakeAura(456, 5, 15, 8, 0x3000ULL, now + std::chrono::seconds(30)));
 
-  EXPECT_TRUE(player->HasAura(123));
+  EXPECT_FALSE(player->HasAura(123));
   EXPECT_TRUE(player->HasAura(456));
 
   auto const removed = player->UpdateAuras(now);
@@ -134,4 +134,37 @@ TEST(CreatureAuraTests, AddAuraAndRemoveBySpellId) {
   ASSERT_TRUE(removal.has_value());
   EXPECT_EQ(removal->visualSlot, 2u);
   EXPECT_FALSE(creature.HasAura(589));
+}
+
+TEST(AuraTests, GetRemainingMsZeroAtAndAfterExpiry) {
+  auto const now = std::chrono::steady_clock::now();
+  Aura const aura = MakeAura(1, 8, 0, 0, 0, now);
+  EXPECT_EQ(aura.GetRemainingMs(now).count(), 0);
+  EXPECT_TRUE(aura.IsExpired(now));
+  EXPECT_EQ(aura.GetRemainingMs(now + std::chrono::seconds(1)).count(), 0);
+}
+
+TEST(PlayerAuraTests, TickAurasRemovesExpiredBeforePeriodic) {
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  Aura aura = MakeAura(589, 3, 0, 0, 0, now, 0, 1000, -5);
+  aura.AdvancePeriodicTick(now - std::chrono::milliseconds(1));
+  player->AddAura(aura);
+
+  UnitAuraTickResult const result = player->TickAuras(now);
+  ASSERT_EQ(result.removals.size(), 1u);
+  EXPECT_EQ(result.removals[0].spellId, 589u);
+  EXPECT_TRUE(result.periodicTicks.empty());
+  EXPECT_FALSE(player->HasAura(589));
+}
+
+TEST(PlayerAuraTests, TickPeriodicAurasSkipsExpiredWithoutPriorUpdate) {
+  auto player = std::make_unique<Player>(0x1000ULL, nullptr);
+  auto const now = std::chrono::steady_clock::now();
+  Aura aura = MakeAura(77, 8, 0, 0, 0, now, 1, 500, 25);
+  aura.AdvancePeriodicTick(now - std::chrono::seconds(1));
+  player->AddAura(aura);
+
+  auto ticks = player->TickPeriodicAuras(now);
+  EXPECT_TRUE(ticks.empty());
 }

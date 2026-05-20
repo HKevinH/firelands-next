@@ -170,11 +170,12 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
                         dbcBasePath + "/SpellDuration.dbc")) {
         LOG_WARN("One or more spell DBCs were not loadable from {} (cast "
                  "times, range, cooldowns, "
-                 "power, categories); some lookups use defaults.",
+                 "power, categories, duration); timed auras may not expire.",
                  dbcBasePath);
       }
       spellCastTables = std::move(tables);
     }
+    WorldService::Instance().SetSpellCastTables(spellCastTables);
 
     spellEntryStore->MergeSpellDbcRows(worldConn);
     spellEntryStore->MergeImmediateHealthFromSpellEffect(dbcBasePath +
@@ -184,6 +185,7 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     std::shared_ptr<ISpellDefinitionStore const> spellDefinitions;
     if (spellDbcOk || spellEntryStore->DefinitionCount() > 0u)
       spellDefinitions = spellEntryStore;
+    WorldService::Instance().SetSpellDefinitions(spellDefinitions);
 
     SpellDifficultyDbc spellDifficultyDbc;
     if (spellDifficultyDbc.Load(dbcBasePath + "/SpellDifficulty.dbc")) {

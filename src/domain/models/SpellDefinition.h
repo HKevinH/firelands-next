@@ -14,6 +14,8 @@ struct SpellDefinition {
   uint32 attributesEx = 0;
   /// `Spell.dbc` `AttributesEx2` (SPELL_ATTR_EX2_* / wowdev AttributesExB).
   uint32 attributesEx2 = 0;
+  /// `Spell.dbc` `AttributesEx8` — e.g. `SPELL_ATTR8_AURA_SEND_AMOUNT`.
+  uint32 attributesEx8 = 0;
   uint32 castingTimeIndex = 0;
   uint32 durationIndex = 0;
   uint32 powerType = 0;
@@ -41,6 +43,8 @@ struct SpellDefinition {
   uint32 auraEffectType = 0;
   /// `SpellEffect.dbc` `EffectIndex` (0–2) for the chosen apply-aura row.
   uint8 auraEffectIndex = 0;
+  /// Bits 0–2 set for each `SpellEffect.dbc` apply-aura row on this spell (wire `AFLAG_EFF_INDEX_*`).
+  uint8 auraActiveEffectMask = 0;
   /// Base points from SpellEffect.dbc for the aura effect (used for aura magnitude).
   int32 auraBasePoints = 0;
   /// DieSides from SpellEffect.dbc for the aura effect (used for aura magnitude range).
@@ -55,6 +59,10 @@ struct SpellDefinition {
   int32 auraPeriodicHealthDeltaPerTick = 0;
 
   bool isPassiveSpell() const { return (attributes & SpellAttr0::kPassive) != 0u; }
+
+  bool sendsAuraEffectAmountOnWire() const {
+    return (attributesEx8 & SpellAttr8::kAuraSendAmount) != 0u;
+  }
 
   /// False when `SPELL_ATTR0_CANT_CANCEL` is set (right-click buff dismiss blocked).
   bool playerCanCancelAuraByClient() const {

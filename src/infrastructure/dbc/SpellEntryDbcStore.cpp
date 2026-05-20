@@ -48,6 +48,7 @@ constexpr uint32_t kFieldId = 0;
 constexpr uint32_t kFieldAttributes = 1;
 constexpr uint32_t kFieldAttributesEx = 2;
 constexpr uint32_t kFieldAttributesEx2 = 3;
+constexpr uint32_t kFieldAttributesEx8 = 9;
 constexpr uint32_t kFieldCastingTimeIndex = 12;
 constexpr uint32_t kFieldDurationIndex = 13;
 constexpr uint32_t kFieldPowerType = 14;
@@ -184,6 +185,7 @@ bool SpellEntryDbcStore::Load(std::string const &path) {
     def.attributes = reader.ReadUInt32(rec, kFieldAttributes, offsets);
     def.attributesEx = reader.ReadUInt32(rec, kFieldAttributesEx, offsets);
     def.attributesEx2 = reader.ReadUInt32(rec, kFieldAttributesEx2, offsets);
+    def.attributesEx8 = reader.ReadUInt32(rec, kFieldAttributesEx8, offsets);
     def.castingTimeIndex = reader.ReadUInt32(rec, kFieldCastingTimeIndex, offsets);
     def.durationIndex = reader.ReadUInt32(rec, kFieldDurationIndex, offsets);
     def.powerType = reader.ReadUInt32(rec, kFieldPowerType, offsets);
@@ -416,6 +418,12 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
     return candidate.effectIndex < current.effectIndex;
   };
 
+  std::unordered_map<uint32_t, uint8> activeEffectMaskBySpell;
+  for (AuraCandidateRow const &row : auraCandidates) {
+    if (row.effectIndex < 3u)
+      activeEffectMaskBySpell[row.spellId] |= static_cast<uint8>(1u << row.effectIndex);
+  }
+
   std::unordered_map<uint32_t, AuraCandidateRow> bestAuraBySpell;
   for (AuraCandidateRow const &row : auraCandidates) {
     if (m_byId.find(row.spellId) == m_byId.end())
@@ -434,6 +442,12 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
     it->second.auraEffectType = row.auraType;
     it->second.auraEffectIndex =
         static_cast<uint8>(std::min<uint32_t>(row.effectIndex, 2u));
+    if (auto maskIt = activeEffectMaskBySpell.find(spellId);
+        maskIt != activeEffectMaskBySpell.end())
+      it->second.auraActiveEffectMask = maskIt->second;
+    else
+      it->second.auraActiveEffectMask =
+          static_cast<uint8>(1u << it->second.auraEffectIndex);
     it->second.auraBasePoints = row.basePoints;
     it->second.auraDieSides = row.dieSides;
     it->second.auraRealPointsPerLevel = row.realPointsPerLevel;

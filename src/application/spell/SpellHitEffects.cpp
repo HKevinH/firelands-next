@@ -1,5 +1,6 @@
 #include <application/spell/SpellHitEffects.h>
 #include <application/spell/SpellManager.h>
+#include <shared/Logger.h>
 #include <shared/game/SpellAttributes.h>
 #include <shared/game/SpellAuraTypes.h>
 #include <shared/game/SpellEffectMagnitude.h>
@@ -8,6 +9,9 @@ namespace Firelands {
 namespace SpellHitEffects {
 
 namespace {
+
+/// Old fallback when `SpellDuration.dbc` was missing; treat as "unknown" and re-resolve.
+constexpr uint32 kLegacyUnknownAuraDurationMs = 3600000u;
 
 bool AuraIsNegative(SpellDefinition const &def) {
   if (def.auraEffectType == kSpellAuraPeriodicDamage)
@@ -50,9 +54,6 @@ void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 
         def->auraDurationIndex != 0u ? def->auraDurationIndex : def->durationIndex;
     durationMs = castTables->GetDurationMs(idx, casterLevel);
   }
-  if (durationMs == 0u)
-    durationMs = 3600000u;
-
   out->hasAuraApply = true;
   out->auraTargetGuid = hitGuid;
   out->auraCasterGuid = casterGuid;
@@ -61,7 +62,8 @@ void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 
   out->auraEffectIndex = def->auraEffectIndex;
   out->auraBasePoints = def->auraBasePoints;
   out->auraDieSides = def->auraDieSides;
-  out->auraDurationMs = durationMs;
+  out->auraDurationMs =
+      ResolveAuraDurationMs(def->id, casterLevel, durationMs, def, castTables);
   out->auraPeriodicPeriodMs = def->auraPeriodicPeriodMs;
   uint8 const level = casterLevel > 0 ? casterLevel : 1;
   if (def->auraEffectType == kSpellAuraPeriodicHeal) {
@@ -78,6 +80,30 @@ void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 
   out->auraIsNegative = AuraIsNegative(*def);
   out->auraCasterLevel = level;
   (void)now;
+}
+
+uint32 ResolveAuraDurationMs(uint32 spellId, uint8 casterLevel, uint32 outcomeDurationMs,
+                             SpellDefinition const *def,
+                             ISpellCastTables const *castTables) {
+  if (outcomeDurationMs > 0u && outcomeDurationMs != kLegacyUnknownAuraDurationMs)
+    return outcomeDurationMs;
+
+  if (!def || !castTables)
+    return outcomeDurationMs;
+
+  uint32 const idx =
+      def->auraDurationIndex != 0u ? def->auraDurationIndex : def->durationIndex;
+  if (idx == 0u)
+    return 0u;
+
+  uint32 const resolved = castTables->GetDurationMs(idx, casterLevel);
+  if (resolved == 0u) {
+    LOG_WARN("Spell {}: duration index {} not found in SpellDuration.dbc; aura timer "
+             "may desync client",
+             spellId, idx);
+    return 0u;
+  }
+  return resolved;
 }
 
 } // namespace SpellHitEffects
