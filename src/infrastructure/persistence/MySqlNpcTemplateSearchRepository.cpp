@@ -49,7 +49,9 @@ std::optional<NpcTemplateSearchRow> MySqlNpcTemplateSearchRepository::TryGetByEn
         "ct.`gossip_menu_id`, ct.`npcflag`, "
         "(SELECT MIN(NULLIF(c.`modelid`, 0)) FROM `creature` c WHERE c.`id` = "
         "ct.`entry`) AS `spawn_modelid`, "
-        "ct.`modelid1`, ct.`modelid2`, ct.`modelid3`, ct.`modelid4` "
+        "ct.`modelid1`, ct.`modelid2`, ct.`modelid3`, ct.`modelid4`, "
+        "ct.`spell1`, ct.`spell2`, ct.`spell3`, ct.`spell4`, "
+        "ct.`spell5`, ct.`spell6`, ct.`spell7`, ct.`spell8` "
         "FROM `creature_template` ct WHERE ct.`entry` = ? LIMIT 1"));
     pstmt->setUInt(1, entry);
     std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
@@ -71,6 +73,21 @@ std::optional<NpcTemplateSearchRow> MySqlNpcTemplateSearchRepository::TryGetByEn
     row.displayIds[0] = ResolveCreatureDisplayId(
         spawnModel, res->getUInt("modelid1"), res->getUInt("modelid2"),
         res->getUInt("modelid3"), res->getUInt("modelid4"));
+    auto appendSpell = [&](char const *col) {
+      if (res->isNull(col))
+        return;
+      uint32_t const id = res->getUInt(col);
+      if (id != 0)
+        row.combatSpells.push_back(id);
+    };
+    appendSpell("spell1");
+    appendSpell("spell2");
+    appendSpell("spell3");
+    appendSpell("spell4");
+    appendSpell("spell5");
+    appendSpell("spell6");
+    appendSpell("spell7");
+    appendSpell("spell8");
     return row;
   } catch (sql::SQLException &e) {
     LOG_WARN("NpcTemplateSearch TryGetByEntry failed: {}", e.what());

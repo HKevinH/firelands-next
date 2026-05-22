@@ -639,6 +639,19 @@ void BuildUnitNpcEmoteStateValuesUpdate(uint16 mapId, uint64 unitGuid,
   update.Build(outPacket);
 }
 
+void BuildUnitTargetValuesUpdate(uint16 mapId, uint64 unitGuid, uint64 targetGuid,
+                                 WorldPacket &outPacket) {
+  std::map<uint16, uint32> fields;
+  uint32 lo = 0;
+  uint32 hi = 0;
+  WriteGuidToTwoUint32(targetGuid, lo, hi);
+  fields[UNIT_FIELD_TARGET] = lo;
+  fields[static_cast<uint16>(UNIT_FIELD_TARGET + 1)] = hi;
+  UpdateData update(mapId);
+  update.AddValuesUpdate(unitGuid, fields);
+  update.Build(outPacket);
+}
+
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName) {
   dst.WriteString(ch.GetName());

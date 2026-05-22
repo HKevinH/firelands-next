@@ -2,11 +2,14 @@
 #include <application/combat/CombatHostility.h>
 #include <application/combat/CombatService.h>
 #include <application/combat/CreatureChaseMovement.h>
+#include <application/ports/IMapCollisionQueries.h>
 #include <application/services/WorldService.h>
+#include <application/spell/SpellManager.h>
 #include <algorithm>
 #include <boost/asio/redirect_error.hpp>
 #include <chrono>
 #include <cmath>
+#include <unordered_set>
 #include <vector>
 #include <domain/world/Creature.h>
 #include <domain/world/Map.h>
@@ -16,6 +19,7 @@
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 #include <shared/game/MeleeRange.h>
+#include <shared/network/SpellCastWire.h>
 #include <shared/network/MonsterMovePackets.h>
 #include <shared/network/MovementFlags.h>
 #include <shared/network/WorldPacket.h>
@@ -35,6 +39,14 @@ constexpr float kCreatureRunSpeedYardsPerSec = 7.0f;
 constexpr float kCreatureLeashDistanceFromHomeYards = 50.0f;
 /// Max distance to the chased player before the creature drops aggro.
 constexpr float kCreatureMaxChaseTargetDistanceYards = 45.0f;
+constexpr std::chrono::milliseconds kCreatureMeleeSwingInterval{2000};
+constexpr std::chrono::milliseconds kCreatureSpellTryInterval{2500};
+
+bool IsCreatureInMeleeRangeOfPlayer(Creature const &creature, WorldSession const &session) {
+  MovementInfo const &playerPos = session.GetPosition();
+  return IsWithinMeleeRangeAgainstNpc(playerPos.x, playerPos.y, playerPos.z,
+                                      creature.GetX(), creature.GetY(), creature.GetZ());
+}
 
 float DistanceSquared2d(float ax, float ay, float bx, float by) {
   float const dx = ax - bx;
@@ -114,15 +126,17 @@ void BroadcastCreatureChaseMove(std::shared_ptr<Map> const &map, uint64 creature
 }
 
 void BroadcastCreatureReturnMove(std::shared_ptr<Map> const &map, uint64 creatureGuid,
-                                 MovementInfo const &home, MovementInfo const &from,
-                                 MovementInfo const &to, int32_t splineId) {
+                                 MovementInfo const &from, MovementInfo const &to,
+                                 int32_t splineId) {
   if (!map)
     return;
   uint32_t const durationMs = monster_move_wire::MonsterMoveDurationMs(
       from.x, from.y, from.z, to.x, to.y, to.z, kCreatureRunSpeedYardsPerSec);
+  // Face along the spline (step orientation), not the final home spot — avoids
+  // snapping toward the player when they sit between the NPC and spawn.
   WorldPacket pkt = monster_move_wire::BuildMonsterMoveToPosition(
       creatureGuid, from.x, from.y, from.z, to.x, to.y, to.z, splineId, durationMs,
-      monster_move_wire::FacingSpot, 0.f, 0, home.x, home.y, home.z);
+      monster_move_wire::FacingAngle, to.orientation);
   map->BroadcastPacketToNearby(creatureGuid, pkt, true);
 }
 
@@ -182,9 +196,25 @@ bool StepCreatureReturnToward(std::shared_ptr<Map> const &map,
   map->UpdateObjectPosition(creature->GetGuid(), pos);
   if (step.moved) {
     int32_t const splineId = static_cast<int32_t>(++moveCounter);
-    BroadcastCreatureReturnMove(map, creature->GetGuid(), home, from, pos, splineId);
+    BroadcastCreatureReturnMove(map, creature->GetGuid(), from, pos, splineId);
   }
   return false;
+}
+
+bool FinalizeCreatureReturnAtHome(std::shared_ptr<Map> const &map, uint64_t creatureGuid,
+                                  MovementInfo const &home, uint32_t &moveCounter) {
+  if (!map)
+    return true;
+  auto creature = map->TryGetCreature(creatureGuid);
+  if (!creature)
+    return true;
+
+  MovementInfo snapped = home;
+  snapped.flags = MOVEMENTFLAG_NONE;
+  map->UpdateObjectPosition(creatureGuid, snapped);
+  int32_t const stopId = static_cast<int32_t>(++moveCounter);
+  BroadcastCreatureMonsterStop(map, creature, stopId);
+  return true;
 }
 
 void ChaseCreatureTowardPlayer(std::shared_ptr<Map> const &map,
@@ -221,15 +251,18 @@ void WorldSession::BeginCreatureReturnToHome(uint64_t creatureGuid,
   uint32_t moveCounter = initialMoveCounter;
   float const arriveSq = kCreatureHomeArrivalYards * kCreatureHomeArrivalYards;
   if (DistanceSquared2d(creature->GetX(), creature->GetY(), home.x, home.y) <= arriveSq) {
-    MovementInfo snapped = home;
-    snapped.flags = MOVEMENTFLAG_NONE;
-    map->UpdateObjectPosition(creatureGuid, snapped);
-    int32_t const stopId = static_cast<int32_t>(++moveCounter);
-    BroadcastCreatureMonsterStop(map, creature, stopId);
+    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, moveCounter);
     return;
   }
 
-  _creatureReturningHome.emplace(creatureGuid, CreatureCombatRuntime{home, moveCounter});
+  auto const emplaced = _creatureReturningHome.emplace(
+      creatureGuid, CreatureCombatRuntime{home, moveCounter});
+  uint32_t &returnCounter = emplaced.first->second.moveCounter;
+  if (StepCreatureReturnToward(map, creature, home, returnCounter)) {
+    _creatureReturningHome.erase(creatureGuid);
+    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter);
+    return;
+  }
   ScheduleCreatureCombatMovement();
 }
 
@@ -241,9 +274,6 @@ void WorldSession::StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopP
   MovementInfo const home = it->second.home;
   uint32_t const moveCounter = it->second.moveCounter;
   _creatureAggroed.erase(it);
-
-  if (_meleeVictimGuid == creatureGuid)
-    _creatureRetaliating = false;
 
   uint64_t const player = _playerGuid;
 
@@ -257,6 +287,10 @@ void WorldSession::StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopP
           combat_wire::BuildAttackStop(creatureGuid, player, false);
       map->BroadcastPacketToNearby(creatureGuid, stopCreature, true);
     }
+    WorldPacket clearTarget;
+    WorldSessionObjectUpdate::BuildUnitTargetValuesUpdate(
+        static_cast<uint16>(_mapId), creatureGuid, 0, clearTarget);
+    map->BroadcastPacketToNearby(creatureGuid, clearTarget, true);
     BeginCreatureReturnToHome(creatureGuid, home, moveCounter);
   }
 
@@ -299,9 +333,19 @@ void WorldSession::StartCreatureAggro(uint64_t creatureGuid) {
 
   bool const alreadyAggro = _creatureAggroed.find(creatureGuid) != _creatureAggroed.end();
   auto &runtime = _creatureAggroed[creatureGuid];
+  auto const now = std::chrono::steady_clock::now();
   if (!alreadyAggro) {
     runtime.home = victimCr->GetPosition();
     runtime.moveCounter = 0;
+    runtime.nextMeleeSwingAt = now;
+    runtime.nextSpellTryAt = now + std::chrono::milliseconds(500);
+    runtime.combatSpells.clear();
+    runtime.nextSpellIndex = 0;
+    runtime.spellCooldownUntil.clear();
+    if (_npcTemplateSearch) {
+      if (auto const tpl = _npcTemplateSearch->TryGetByEntry(victimCr->GetEntry()))
+        runtime.combatSpells = tpl->combatSpells;
+    }
   }
 
   application::adapters::CreatureCombatEntity creatureAttacker(victimCr);
@@ -312,6 +356,10 @@ void WorldSession::StartCreatureAggro(uint64_t creatureGuid) {
     WorldPacket creatureStart = combat_wire::BuildAttackStart(creatureGuid, _playerGuid);
     SendPacket(creatureStart);
     map->BroadcastPacketToNearby(creatureGuid, creatureStart, true);
+    WorldPacket targetUpdate;
+    WorldSessionObjectUpdate::BuildUnitTargetValuesUpdate(
+        static_cast<uint16>(_mapId), creatureGuid, _playerGuid, targetUpdate);
+    map->BroadcastPacketToNearby(creatureGuid, targetUpdate, true);
   }
 
   ScheduleCreatureCombatMovement();
@@ -332,7 +380,6 @@ void WorldSession::StopMeleeAutoAttack(bool sendStopPackets) {
 
   _meleeVictimGuid = 0;
   _meleeVictimIsCreature = false;
-  _creatureRetaliating = false;
 
   if (victimWasCreature && victim != 0)
     StopCreatureAggro(victim, sendStopPackets);
@@ -379,6 +426,116 @@ bool WorldSession::ShouldCreatureAbandonChase(std::shared_ptr<Map> const &map,
   return false;
 }
 
+void WorldSession::ProcessCreatureCombatAttack(std::shared_ptr<Map> const &map,
+                                               std::shared_ptr<Creature> const &creature,
+                                               std::shared_ptr<Player> const &target,
+                                               CreatureCombatRuntime &runtime) {
+  if (!map || !creature || !target || !_combatService)
+    return;
+  if (creature->GetLiveHealth() == 0 || target->GetLiveHealth() == 0)
+    return;
+
+  auto const now = std::chrono::steady_clock::now();
+
+  if (!runtime.combatSpells.empty() && now >= runtime.nextSpellTryAt) {
+    runtime.nextSpellTryAt = now + kCreatureSpellTryInterval;
+    size_t const spellCount = runtime.combatSpells.size();
+    for (size_t attempt = 0; attempt < spellCount; ++attempt) {
+      uint32_t const spellId =
+          runtime.combatSpells[runtime.nextSpellIndex % spellCount];
+      runtime.nextSpellIndex = (runtime.nextSpellIndex + 1) % spellCount;
+      if (TryCastCreatureCombatSpell(map, creature, target, runtime, spellId))
+        return;
+    }
+  }
+
+  if (now < runtime.nextMeleeSwingAt)
+    return;
+  if (!IsCreatureInMeleeRangeOfPlayer(*creature, *this))
+    return;
+
+  application::adapters::CreatureCombatEntity creatureAttacker(creature);
+  application::adapters::PlayerCombatEntity playerVictim(target);
+  uint32_t const playerHpBefore = target->GetLiveHealth();
+  if (_combatService->ApplyMeleeHit(creatureAttacker, playerVictim) !=
+      application::MeleeSwingResult::Success) {
+    return;
+  }
+
+  runtime.nextMeleeSwingAt = now + kCreatureMeleeSwingInterval;
+  uint32_t const playerDmg = HealthDamageDealt(playerHpBefore, target->GetLiveHealth());
+  BroadcastMeleeHit(map, _mapId, creature->GetGuid(), _playerGuid, playerDmg,
+                    target->GetLiveHealth(), target->GetLiveMaxHealth());
+}
+
+bool WorldSession::TryCastCreatureCombatSpell(std::shared_ptr<Map> const &map,
+                                              std::shared_ptr<Creature> const &creature,
+                                              std::shared_ptr<Player> const &target,
+                                              CreatureCombatRuntime &runtime,
+                                              uint32_t spellId) {
+  if (!map || !creature || !target || !_spellManager || spellId == 0)
+    return false;
+
+  auto const it = runtime.spellCooldownUntil.find(spellId);
+  auto const now = std::chrono::steady_clock::now();
+  if (it != runtime.spellCooldownUntil.end() && now < it->second)
+    return false;
+
+  static uint8_t s_creatureCastId = 0;
+  uint8_t const castId = ++s_creatureCastId;
+
+  std::unordered_set<uint32> knownSpells{spellId};
+  SpellCastRequest req{};
+  req.casterGuid = creature->GetGuid();
+  req.mapId = _mapId;
+  req.client.spellId = static_cast<int32_t>(spellId);
+  req.client.castId = castId;
+  req.client.targetFlags = SpellCastWire::TARGET_FLAG_UNIT;
+  req.client.unitTargetGuid = _playerGuid;
+  req.now = now;
+  req.gcdReady = now;
+  req.knownSpells = &knownSpells;
+  req.casterLevel = creature->GetLevel() > 0 ? creature->GetLevel() : 1;
+  req.hasCasterWorldPosition = true;
+  req.casterX = creature->GetX();
+  req.casterY = creature->GetY();
+  req.casterZ = creature->GetZ();
+  req.hasTargetWorldPosition = true;
+  req.targetX = _position.x;
+  req.targetY = _position.y;
+  req.targetZ = _position.z;
+  req.skipLineOfSight = true;
+  req.spellCooldownUntilBySpellId = &runtime.spellCooldownUntil;
+
+  if (std::shared_ptr<IMapCollisionQueries> collisionHeld =
+          WorldService::Instance().GetCollisionQueries())
+    req.collisionQueries = collisionHeld.get();
+
+  SpellCastOutcome out{};
+  _spellManager->ProcessCastRequest(req, &out);
+  if (out.kind != SpellCastOutcome::Kind::SpellStartAndGo)
+    return false;
+
+  map->BroadcastPacketToNearby(creature->GetGuid(), out.spellStart, true);
+  map->BroadcastPacketToNearby(creature->GetGuid(), out.spellGo, true);
+  ApplySpellCastAuraOnMap(_mapId, map, out, now);
+  ApplySpellCastOutcomeOnMap(_mapId, map, creature->GetGuid(), spellId, out, now);
+  ScheduleSpellImpactVisual(map, creature->GetGuid(), spellId, out.primaryHitTargetGuid,
+                            out.spellImpactDelayMs);
+
+  if (out.spellCooldownDurationMs > 0)
+    runtime.spellCooldownUntil[spellId] =
+        now + std::chrono::milliseconds(static_cast<int64_t>(out.spellCooldownDurationMs));
+  if (out.spellCategoryCooldownGroup > 0 && out.spellCategoryCooldownDurationMs > 0) {
+    // Category cooldowns share the per-creature spell map keyed by group for AI simplicity.
+    runtime.spellCooldownUntil[out.spellCategoryCooldownGroup] =
+        now + std::chrono::milliseconds(
+                  static_cast<int64_t>(out.spellCategoryCooldownDurationMs));
+  }
+
+  return true;
+}
+
 void WorldSession::ProcessCreatureCombatMovementTick() {
   if (_playerGuid == 0)
     return;
@@ -408,11 +565,7 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
     }
 
     if (StepCreatureReturnToward(map, creature, home, returnCounter)) {
-      MovementInfo snapped = home;
-      snapped.flags = MOVEMENTFLAG_NONE;
-      map->UpdateObjectPosition(creatureGuid, snapped);
-      int32_t const stopId = static_cast<int32_t>(returnCounter + 1u);
-      BroadcastCreatureMonsterStop(map, creature, stopId);
+      (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter);
       returnIt = _creatureReturningHome.erase(returnIt);
       continue;
     }
@@ -431,6 +584,7 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
       continue;
     }
     ChaseCreatureTowardPlayer(map, creature, attackerPl, *this, runtime.moveCounter);
+    ProcessCreatureCombatAttack(map, creature, attackerPl, runtime);
   }
 
   for (uint64_t const guid : evaded) {
@@ -509,21 +663,6 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimCr->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                         victimCr->GetLiveMaxHealth());
-
-    if (_creatureRetaliating && attackerPl->GetLiveHealth() > 0 &&
-        SessionPlayerInMeleeRangeOf(*this, attackerPl->GetX(), attackerPl->GetY(),
-                                    attackerPl->GetZ())) {
-      application::adapters::CreatureCombatEntity creatureAttacker(victimCr);
-      application::adapters::PlayerCombatEntity playerVictim(attackerPl);
-      uint32_t const playerHpBefore = attackerPl->GetLiveHealth();
-      if (_combatService->ApplyMeleeHit(creatureAttacker, playerVictim) ==
-          application::MeleeSwingResult::Success) {
-        uint32_t const playerDmg =
-            HealthDamageDealt(playerHpBefore, attackerPl->GetLiveHealth());
-        BroadcastMeleeHit(map, _mapId, victimGuid, _playerGuid, playerDmg,
-                          attackerPl->GetLiveHealth(), attackerPl->GetLiveMaxHealth());
-      }
-    }
 
     if (victimCr->GetLiveHealth() == 0)
       StopMeleeAutoAttack(true);
@@ -644,7 +783,6 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
 
     _meleeVictimGuid = victimGuid;
     _meleeVictimIsCreature = false;
-    _creatureRetaliating = false;
 
     WorldPacket attackStart = combat_wire::BuildAttackStart(_playerGuid, victimGuid);
     SendPacket(attackStart);
@@ -695,7 +833,6 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                       victimCr->GetLiveMaxHealth());
 
-    _creatureRetaliating = true;
     StartCreatureAggro(victimGuid);
 
     ScheduleMeleeAutoAttack();

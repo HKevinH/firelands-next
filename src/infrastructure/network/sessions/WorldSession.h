@@ -237,6 +237,17 @@ public:
   bool PrepareMeleeRetarget(uint64_t victimGuid);
   void ScheduleMeleeAutoAttack();
   void ProcessMeleeAutoAttackTick();
+
+  struct CreatureCombatRuntime {
+    MovementInfo home{};
+    uint32_t moveCounter = 0;
+    std::chrono::steady_clock::time_point nextMeleeSwingAt{};
+    std::chrono::steady_clock::time_point nextSpellTryAt{};
+    std::vector<uint32_t> combatSpells;
+    size_t nextSpellIndex = 0;
+    std::unordered_map<uint32_t, std::chrono::steady_clock::time_point> spellCooldownUntil;
+  };
+
   void StartCreatureAggro(uint64_t creatureGuid);
   void StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopPackets);
   void StopAllCreatureCombat(bool sendAttackStopPackets);
@@ -244,6 +255,14 @@ public:
                                uint32_t initialMoveCounter = 0);
   void ScheduleCreatureCombatMovement();
   void ProcessCreatureCombatMovementTick();
+  void ProcessCreatureCombatAttack(std::shared_ptr<Map> const &map,
+                                   std::shared_ptr<Creature> const &creature,
+                                   std::shared_ptr<Player> const &target,
+                                   CreatureCombatRuntime &runtime);
+  bool TryCastCreatureCombatSpell(std::shared_ptr<Map> const &map,
+                                  std::shared_ptr<Creature> const &creature,
+                                  std::shared_ptr<Player> const &target,
+                                  CreatureCombatRuntime &runtime, uint32_t spellId);
   void TryAggroCreatureFromSpellDamage(uint64_t targetGuid, int32_t healthDelta);
   void EvadeCreatureCombat(uint64_t creatureGuid);
   bool ShouldCreatureAbandonChase(std::shared_ptr<Map> const &map,
@@ -532,11 +551,6 @@ public:
   boost::asio::steady_timer _meleeAutoAttackTimer;
   boost::asio::steady_timer _creatureCombatMoveTimer;
 
-  struct CreatureCombatRuntime {
-    MovementInfo home{};
-    uint32_t moveCounter = 0;
-  };
-
   /// Hostile creatures actively chasing this player (multiple allowed).
   std::unordered_map<uint64_t, CreatureCombatRuntime> _creatureAggroed;
   /// Creatures walking back to `home` after dropping aggro.
@@ -544,7 +558,6 @@ public:
 
   uint64_t _meleeVictimGuid = 0;
   bool _meleeVictimIsCreature = false;
-  bool _creatureRetaliating = false;
   static constexpr uint32_t kDefaultMainhandSwingMs = 2000u;
   bool _pendingDeferredCastActive = false;
   uint8 _pendingCastId = 0;

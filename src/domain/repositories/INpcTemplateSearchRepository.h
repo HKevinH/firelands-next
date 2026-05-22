@@ -18,6 +18,8 @@ struct NpcTemplateSearchRow {
   uint32_t gossipMenuId = 0;
   /// `creature_template.npcflag` — gossip option filter and UNIT_NPC_FLAGS on spawn.
   uint64_t npcFlags = 0;
+  /// Non-zero `creature_template.spell1`..`spell8` entries (combat AI).
+  std::vector<uint32_t> combatSpells;
   /// For `SMSG_CREATURE_QUERY_RESPONSE` model slots; slot 0 derived from
   /// `creature.modelid` when present, otherwise a safe client fallback.
   std::array<uint32_t, 4> displayIds{};

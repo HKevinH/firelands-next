@@ -76,6 +76,10 @@ void BuildUnitFactionTemplateValuesUpdate(uint16 mapId, uint64 unitGuid,
 void BuildUnitNpcEmoteStateValuesUpdate(uint16 mapId, uint64 unitGuid,
                                         uint32 emoteState, WorldPacket &outPacket);
 
+/// `SMSG_UPDATE_OBJECT` values block for `UNIT_FIELD_TARGET` only (`targetGuid` 0 clears).
+void BuildUnitTargetValuesUpdate(uint16 mapId, uint64 unitGuid, uint64 targetGuid,
+                                 WorldPacket &outPacket);
+
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName);
 
