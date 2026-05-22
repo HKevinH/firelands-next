@@ -73,6 +73,9 @@ public:
     return false;
   }
 
+  /// Restores this session's character to full health and primary power (world client only).
+  virtual bool GmReviveSelf() { return false; }
+
   /// Spawns a creature at this session's map position and facing (world server).
   /// \param factionTemplateOrZeroDefault `FactionTemplate.dbc` id. `0` uses
   /// `creature_template.faction` for `creatureEntry` when the world DB has that column/row;

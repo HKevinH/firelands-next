@@ -387,6 +387,10 @@ CommandService::CommandService(
                  ToMask(Permission::CommandGameplay), CommandAvailability::Game,
                  ConsoleArgLayout::SameAsInGame});
   RegisterCommand(
+      "revive", {[this](auto s, auto a, auto o) { return HandleRevive(s, a, o); },
+                 ToMask(Permission::CommandGameplay), CommandAvailability::Game,
+                 ConsoleArgLayout::SameAsInGame});
+  RegisterCommand(
       "ban", {[this](auto s, auto a, auto o) { return HandleBan(s, a, o); },
               ToMask(Permission::ManageAccounts), CommandAvailability::Console,
               ConsoleArgLayout::SameAsInGame});
@@ -726,6 +730,8 @@ Online players
      "|cff666666Console:|r |cffffffff.cd CharName|r\n"
      "|cffCCCCCC.damage|r |cff888888—|r Damage selected unit "
      "|cff666666(in-game only)|r  |cff666666e.g.|r |cffffffff.damage 500|r\n"
+     "|cffCCCCCC.revive|r |cff888888—|r Full health and power "
+     "|cff666666(in-game)|r  |cff666666e.g.|r |cffffffff.revive|r\n"
      "|cffAAAAAAItems:|r |cffCCCCCC.additem|r |cff888888/|r |cffCCCCCC.delitem|r  "
      "|cffAAAAAAsee next block.|r",
      R"H6(--------------------------------------------------------------------------------
@@ -737,6 +743,7 @@ Gameplay  (GM)
   .level <1-85>                 (console: .level <CharName> <level>)
   .cd                          (console: .cd <CharName>)
   .damage <amount>              (in-game only; target a unit first)
+  .revive                      (in-game only; restore self to full health/power)
   .additem / .delitem           (see Items below)
 )H6"},
     {HelpChunkAudience::Both, ToMask(Permission::CommandGameplay),
@@ -1485,6 +1492,19 @@ bool CommandService::HandleDelitem(std::shared_ptr<ICommandSession> session,
     session->SendNotification("Invalid item id or count.");
     return false;
   }
+}
+
+bool CommandService::HandleRevive(std::shared_ptr<ICommandSession> session,
+                                  const std::vector<std::string> &args,
+                                  PrivilegeOrigin origin) {
+  (void)args;
+  (void)origin;
+  if (!session->GmReviveSelf()) {
+    session->SendNotification(
+        "Revive failed (you must be in world with an active character).");
+    return false;
+  }
+  return true;
 }
 
 bool CommandService::HandleDamage(std::shared_ptr<ICommandSession> session,

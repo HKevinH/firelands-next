@@ -93,6 +93,7 @@ All names are registered **without** the leading dot in `CommandService`’s con
 | `level` | `CommandGameplay` | BOTH | target first (console) | Clamps to supported range (e.g. 1–85). |
 | `cd` | `CommandGameplay` | BOTH | target first (console) | Clears GCD and all spell/category cooldowns via `SMSG_CLEAR_COOLDOWNS` + empty category sync (not `SMSG_SPELL_COOLDOWN` with 0 ms); persists empty state. |
 | `damage` | `CommandGameplay` | GAME | same | Target a player or NPC, then `.damage <amount>`. |
+| `revive` | `CommandGameplay` | GAME | same | Restores your character to full health and primary power (in-world). |
 | `account` | `ManageAccounts` | CONSOLE | same | `create`, `setaccess`, `delete` against `IAccountRepository`. |
 | `ban`, `unban` | `ManageAccounts` | CONSOLE | same | Toggles `account.locked` (login lock), not only a runtime kick. |
 | `ticket` | `ManageGmTickets` | GAME | same | GM queue: `queue`, `mine`, `ui`, `take <id>`, `reply <id> text`, `close <id>` (requires `account.id` on session; see [gm-tickets.md](gm-tickets.md)). |

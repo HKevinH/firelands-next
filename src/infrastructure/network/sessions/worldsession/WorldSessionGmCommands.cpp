@@ -379,6 +379,48 @@ bool WorldSession::GmRemoveItem(uint32 itemEntry, uint32 count) {
   return true;
 }
 
+bool WorldSession::GmReviveSelf() {
+  if (_playerGuid == 0)
+    return false;
+
+  auto map = WorldService::Instance().GetMap(_mapId);
+  if (!map)
+    return false;
+
+  auto pl = map->TryGetPlayer(_playerGuid);
+  if (!pl)
+    return false;
+
+  uint32 const maxHp = pl->GetLiveMaxHealth();
+  uint32 const maxPow = pl->GetLiveMaxPower1();
+  uint32 const hpBefore = pl->GetLiveHealth();
+  uint32 const powBefore = pl->GetLivePower1();
+
+  if (hpBefore < maxHp) {
+    pl->ApplyHealthDelta(static_cast<int32>(maxHp - hpBefore));
+    BroadcastUnitHealthOnMap(_mapId, map, _playerGuid, pl->GetLiveHealth(),
+                             pl->GetLiveMaxHealth());
+  }
+
+  if (powBefore < maxPow) {
+    pl->ApplyPower1Delta(static_cast<int32>(maxPow - powBefore));
+    WorldPacket pwUpdate;
+    ws_obj::BuildPlayerPower1ValuesUpdate(static_cast<uint16>(_mapId), _playerGuid,
+                                          pl->GetLivePower1(), pl->GetLiveMaxPower1(),
+                                          pwUpdate);
+    map->BroadcastPacketToNearby(_playerGuid, pwUpdate, true);
+  }
+
+  if (hpBefore == 0) {
+    SendNotification("Revived.");
+  } else if (hpBefore < maxHp || powBefore < maxPow) {
+    SendNotification("Health and power restored.");
+  } else {
+    SendNotification("Already at full health and power.");
+  }
+  return true;
+}
+
 bool WorldSession::GmDamageUnit(uint64 targetGuid, uint32 amount) {
   if (_playerGuid == 0 || targetGuid == 0 || amount == 0)
     return false;
