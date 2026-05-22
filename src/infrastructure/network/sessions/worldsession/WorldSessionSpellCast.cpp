@@ -22,6 +22,7 @@ void WorldSession::CancelPendingClientSpellCast() {
   _pendingDeferredCastActive = false;
   _pendingCastId = 0;
   _pendingSpellId = 0;
+  StopMeleeAutoAttack(true);
 }
 
 void WorldSession::ScheduleDeferredSpellCastCompletion(SpellCastOutcome const &out) {
@@ -118,7 +119,10 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
     combat.auraCasterLevel = finish.auraCasterLevel;
     map->BroadcastPacketToNearby(finish.casterGuid, spellGo, true);
     ApplySpellCastAuraOnMap(finish.mapId, map, combat, nowGo);
-    ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, combat, nowGo);
+    ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, finish.spellId, combat,
+                               nowGo);
+    TryAggroCreatureFromSpellDamage(combat.directHealthTargetGuid,
+                                    combat.directHealthDelta);
     ScheduleSpellImpactVisual(map, finish.casterGuid, finish.spellId, finish.hitGuid,
                               finish.spellImpactDelayMs);
     if (finish.spellCategoryCooldownGroup > 0 &&
@@ -257,7 +261,9 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       map->BroadcastPacketToNearby(_playerGuid, out.spellStart, true);
       map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
       ApplySpellCastAuraOnMap(_mapId, map, out, now);
-      ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, out, now);
+      ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, static_cast<uint32>(c.spellId), out,
+                                 now);
+      TryAggroCreatureFromSpellDamage(out.directHealthTargetGuid, out.directHealthDelta);
       ScheduleSpellImpactVisual(map, _playerGuid, static_cast<uint32>(c.spellId),
                                 out.primaryHitTargetGuid, out.spellImpactDelayMs);
       CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);

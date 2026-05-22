@@ -25,11 +25,51 @@ inline bool WsIsSaneWorldPosition(MovementInfo const &m) {
          std::fabs(m.z) <= kWsMapCoordLimit;
 }
 
-/// Only heartbeat uses the trusted position layout for X/Y/Z; other MSG_MOVE_* can
-/// mis-read coordinates — `WorldSession::HandleMovement` merges flags/time from those
-/// opcodes while keeping the last heartbeat position.
+/// Opcodes whose MSE layout reliably includes X/Y/Z (see `MovementStatusSequences.inc`).
+/// Other `MSG_MOVE_*` opcodes still only merge flags/time — never trust their coords.
 inline bool WsIsTrustedPositionOpcode(WorldOpcode opcode) {
-  return opcode == MSG_MOVE_HEARTBEAT;
+  switch (opcode) {
+  case MSG_MOVE_HEARTBEAT:
+  case MSG_MOVE_STOP:
+  case MSG_MOVE_SET_FACING:
+  case MSG_MOVE_FALL_LAND:
+    return true;
+  default:
+    return false;
+  }
+}
+
+/// Adopt X/Y/Z from a parsed non-heartbeat `MSG_MOVE_*` when the delta is plausible
+/// (keeps combat range in sync while the client walks between heartbeats).
+inline bool WsTryAdoptParsedMovementPosition(MovementInfo &current,
+                                             MovementInfo const &parsed,
+                                             float maxSpeedYardsPerSec) {
+  if (!WsIsSaneWorldPosition(parsed))
+    return false;
+
+  uint32_t dtMs = 500u;
+  if (parsed.time >= current.time)
+    dtMs = parsed.time - current.time;
+  dtMs = std::min(dtMs, 2000u);
+  if (dtMs < 50u)
+    dtMs = 50u;
+
+  float const dx = parsed.x - current.x;
+  float const dy = parsed.y - current.y;
+  float const dz = parsed.z - current.z;
+  float const dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+  float const speed = std::max(0.01f, maxSpeedYardsPerSec);
+  float const maxStep = speed * (static_cast<float>(dtMs) / 1000.0f) + 1.5f;
+  if (dist > maxStep)
+    return false;
+
+  current.x = parsed.x;
+  current.y = parsed.y;
+  current.z = parsed.z;
+  if (std::isfinite(parsed.orientation))
+    current.orientation = parsed.orientation;
+  current.time = parsed.time;
+  return true;
 }
 
 inline bool WsIsClientMovementOpcode(WorldOpcode opcode) {

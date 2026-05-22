@@ -15,6 +15,7 @@ WorldSession::WorldSession(
     std::shared_ptr<GmTicketService> gmTicketService,
     std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix,
     std::shared_ptr<SpellManager> spellManager,
+    std::shared_ptr<application::CombatService> combatService,
     std::shared_ptr<INpcTemplateSearchRepository const> npcTemplateSearch,
     std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc,
     std::shared_ptr<IGossipRepository> gossipRepo,
@@ -32,6 +33,7 @@ WorldSession::WorldSession(
       _gmTicketService(std::move(gmTicketService)),
       _itemDbHotfix(std::move(itemDbHotfix)),
       _spellManager(std::move(spellManager)),
+      _combatService(std::move(combatService)),
       _npcTemplateSearch(std::move(npcTemplateSearch)),
       _factionTemplateDbc(std::move(factionTemplateDbc)),
       _gossipRepo(std::move(gossipRepo)),
@@ -40,6 +42,8 @@ WorldSession::WorldSession(
       _emotesTextDbc(std::move(emotesTextDbc)), _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()),
       _pendingSpellCastTimer(_socket.get_executor()),
+      _meleeAutoAttackTimer(_socket.get_executor()),
+      _creatureCombatMoveTimer(_socket.get_executor()),
       _writeWakeTimer(_socket.get_executor()) {}
 
 WorldSession::~WorldSession() {

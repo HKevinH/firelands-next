@@ -37,6 +37,10 @@ add_executable(FirelandsUnitTests
     unit/shared/SpellPeriodicAuraLogWireTests.cpp
     unit/shared/SpellEffectMagnitudeTests.cpp
     unit/shared/MovementStateQueriesTests.cpp
+    unit/shared/CombatPacketsTest.cpp
+    unit/shared/MeleeRangeTest.cpp
+    unit/shared/WorldSessionMovementChecksTest.cpp
+    unit/shared/MonsterMovePacketsTest.cpp
     unit/application/SRPServiceTests.cpp
     unit/application/RealmListServiceTests.cpp
     unit/application/AuthServiceTests.cpp
@@ -62,6 +66,10 @@ add_executable(FirelandsUnitTests
     unit/domain/MapTests.cpp
     unit/domain/CreatureCombatTests.cpp
     unit/domain/PlayerCombatTests.cpp
+    unit/combat/CombatEngineTest.cpp
+    unit/combat/CombatHostilityTests.cpp
+    unit/combat/CreatureChaseMovementTest.cpp
+    integration/combat/CombatIntegrationTest.cpp
     unit/infrastructure/LuaGameScriptHostTests.cpp
     unit/infrastructure/MapCollisionQueriesStubTests.cpp
     unit/infrastructure/SpellCastTablesSpellPowerTests.cpp

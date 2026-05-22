@@ -1,4 +1,7 @@
 add_library(FirelandsInfrastructure STATIC
+    combat/InMemoryThreatManager.cpp
+    combat/MySqlThreatManager.cpp
+    combat/MySqlSpellProcessor.cpp
     dbc/SpellCastTablesDbc.cpp
     dbc/SpellEntryDbcStore.cpp
     persistence/MySqlAccountRepository.cpp
@@ -38,6 +41,7 @@ add_library(FirelandsInfrastructure STATIC
     network/sessions/worldsession/WorldSessionSpellCast.cpp
     network/sessions/worldsession/WorldSessionSpellCooldown.cpp
     network/sessions/worldsession/WorldSessionSpellEffects.cpp
+    network/sessions/worldsession/WorldSessionCombat.cpp
     world/MapAuraTicker.cpp
     network/sessions/worldsession/WorldSessionTimeMirror.cpp
     network/sessions/worldsession/WorldSessionWorldLifecycle.cpp

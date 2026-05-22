@@ -19,6 +19,7 @@
 #include <shared/network/PlaySpellVisualKitWire.h>
 #include <shared/network/SpellPeriodicAuraLogWire.h>
 #include <shared/network/WorldPacket.h>
+#include <shared/network/packets/server/CombatPackets.h>
 
 #include <functional>
 #include <optional>
@@ -88,14 +89,6 @@ void SendUnitAurasUpdateAll(std::shared_ptr<Map> const &map, uint64 unitGuid,
       AuraUpdateWire::BuildAuraUpdateAll(pkt, unitGuid, params);
     });
   }
-}
-
-void BroadcastUnitHealthAfterDelta(uint32 mapId, std::shared_ptr<Map> const &map,
-                                 uint64 unitGuid, uint32 health, uint32 maxHealth) {
-  WorldPacket hpUpdate;
-  ws_obj::BuildPlayerHealthValuesUpdate(static_cast<uint16>(mapId), unitGuid, health,
-                                        maxHealth, hpUpdate);
-  map->BroadcastPacketToNearby(unitGuid, hpUpdate, true);
 }
 
 int32 ResolveAuraWireEffectAmount(SpellCastOutcome const &outcome,
@@ -228,6 +221,14 @@ bool ApplyAuraFromOutcome(std::shared_ptr<Map> const &map,
 }
 
 } // namespace
+
+void BroadcastUnitHealthAfterDelta(uint32 mapId, std::shared_ptr<Map> const &map,
+                                 uint64 unitGuid, uint32 health, uint32 maxHealth) {
+  WorldPacket hpUpdate;
+  ws_obj::BuildPlayerHealthValuesUpdate(static_cast<uint16>(mapId), unitGuid, health,
+                                        maxHealth, hpUpdate);
+  map->BroadcastPacketToNearby(unitGuid, hpUpdate, true);
+}
 
 void BroadcastPlayerAuraStatBonusOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
                                      uint64 unitGuid, uint8 casterLevel) {
@@ -438,7 +439,8 @@ void BroadcastSpellImpactVisualOnMap(std::shared_ptr<Map> const &map,
 }
 
 void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
-                                uint64 casterGuid, SpellCastOutcome const &outcome,
+                                uint64 casterGuid, uint32 spellId,
+                                SpellCastOutcome const &outcome,
                                 std::chrono::steady_clock::time_point now) {
   (void)now;
   if (!map)
@@ -447,12 +449,28 @@ void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
   if (outcome.hasDirectHealthEffect && outcome.directHealthDelta != 0) {
     if (auto target = map->TryGetPlayer(outcome.directHealthTargetGuid)) {
       target->ApplyHealthDelta(outcome.directHealthDelta);
+      uint32_t const healthAfter = target->GetLiveHealth();
+      if (outcome.directHealthDelta < 0 && spellId != 0) {
+        uint32_t const damage =
+            static_cast<uint32_t>(-outcome.directHealthDelta);
+        WorldPacket dmgLog = combat_wire::BuildSpellNonMeleeDamageLog(
+            outcome.directHealthTargetGuid, casterGuid, spellId, damage, healthAfter);
+        map->BroadcastPacketToNearby(casterGuid, dmgLog, true);
+      }
       BroadcastUnitHealthAfterDelta(mapId, map, outcome.directHealthTargetGuid,
-                                    target->GetLiveHealth(), target->GetLiveMaxHealth());
+                                    healthAfter, target->GetLiveMaxHealth());
     } else if (auto cr = map->TryGetCreature(outcome.directHealthTargetGuid)) {
       cr->ApplyHealthDelta(outcome.directHealthDelta);
+      uint32_t const healthAfter = cr->GetLiveHealth();
+      if (outcome.directHealthDelta < 0 && spellId != 0) {
+        uint32_t const damage =
+            static_cast<uint32_t>(-outcome.directHealthDelta);
+        WorldPacket dmgLog = combat_wire::BuildSpellNonMeleeDamageLog(
+            outcome.directHealthTargetGuid, casterGuid, spellId, damage, healthAfter);
+        map->BroadcastPacketToNearby(casterGuid, dmgLog, true);
+      }
       BroadcastUnitHealthAfterDelta(mapId, map, outcome.directHealthTargetGuid,
-                                    cr->GetLiveHealth(), cr->GetLiveMaxHealth());
+                                    healthAfter, cr->GetLiveMaxHealth());
     }
   }
 

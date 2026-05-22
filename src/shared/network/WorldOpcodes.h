@@ -166,6 +166,8 @@ enum WorldOpcode : uint32 {
   MSG_MOVE_TELEPORT = 0x55A0,
   MSG_MOVE_TELEPORT_ACK = 0x390C,
   SMSG_MOVE_UPDATE_TELEPORT = 0x50B2,
+  /// Reference: WowPacketParser `V4_3_4_15595` — creature spline chase.
+  SMSG_ON_MONSTER_MOVE = 0x6E17,
   /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs` — client applies
   /// `SMSG_MOVE_SET_CAN_FLY` (movement blob, same family as heartbeat layout).
   CMSG_MOVE_SET_CAN_FLY = 0x720E,
@@ -233,12 +235,27 @@ enum WorldOpcode : uint32 {
   CMSG_MOVE_FORCE_FLIGHT_SPEED_CHANGE_ACK = 0x7314,
 
   CMSG_CAST_SPELL = 0x4C07,
+  /// WowPacketParser `V4_3_4_15595` — `CMSG_ATTACK_SWING` (packed victim guid).
+  CMSG_ATTACKSWING = 0x0926,
+  /// WowPacketParser `V4_3_4_15595` — stop auto-attack.
+  CMSG_ATTACKSTOP = 0x4106,
+  /// WowPacketParser `V4_3_4_15595` — melee engagement (packed attacker + victim guids).
+  SMSG_ATTACK_START = 0x2D15,
+  SMSG_ATTACKSTOP = 0x0934,
+  /// WowPacketParser `V4_3_4_15595` — melee hit damage (combat log / swing animation).
+  SMSG_ATTACKERSTATE_UPDATE = 0x0B25,
+  SMSG_ATTACKSWING_NOTINRANGE = 0x0B36,
+  SMSG_ATTACKSWING_BADFACING = 0x6C07,
+  SMSG_ATTACKSWING_DEADTARGET = 0x2B26,
+  SMSG_ATTACKSWING_CANT_ATTACK = 0x0016,
   /// Right-click remove buff (WowPacketParser V4_3_4_15595: uint32 spell id).
   CMSG_CANCEL_AURA = 0x0E26,
   /// WowPacketParser `V4_3_4_15595` — stop current cast (spell id + cast id).
   CMSG_CANCEL_CAST = 0x0115,
   SMSG_SPELL_START = 0x6415,
   SMSG_SPELL_GO = 0x6E16,
+  /// Cataclysm 4.3.4.15595 — spell damage floaters / combat log (ref `Unit::SendSpellNonMeleeDamageLog`).
+  SMSG_SPELLNONMELEEDAMAGELOG = 0x4315,
   /// Reference: WowPacketParser `V4_3_4_15595` — plays `SpellVisualKit` on a unit (impact VFX).
   SMSG_PLAY_SPELL_VISUAL_KIT = 0x55A5,
   SMSG_SPELL_FAILURE = 0x4535,

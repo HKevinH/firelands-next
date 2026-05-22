@@ -129,6 +129,12 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_CAST_SPELL:
     HandleCastSpell(packet);
     break;
+  case CMSG_ATTACKSWING:
+    HandleAttackSwing(packet);
+    break;
+  case CMSG_ATTACKSTOP:
+    HandleAttackStop(packet);
+    break;
   case CMSG_CANCEL_CAST:
     HandleCancelCast(packet);
     break;

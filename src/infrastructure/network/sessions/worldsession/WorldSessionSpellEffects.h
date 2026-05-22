@@ -33,7 +33,8 @@ void ApplyPassiveAurasForKnownSpellsOnMap(
 
 /// Applies direct health/power from `SpellCastOutcome` on `map` and broadcasts wire.
 void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
-                                uint64 casterGuid, SpellCastOutcome const &outcome,
+                                uint64 casterGuid, uint32 spellId,
+                                SpellCastOutcome const &outcome,
                                 std::chrono::steady_clock::time_point now);
 
 /// Broadcasts target impact VFX (`SMSG_PLAY_SPELL_VISUAL_KIT`) for a successful spell hit.
@@ -55,5 +56,9 @@ bool RemovePlayerAuraOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
 /// Removes `spellId` on any unit; when `casterGuid` is set, only that caster's aura.
 bool RemoveAuraOnMapBySpellId(uint32 mapId, std::shared_ptr<Map> const &map,
                               uint32 spellId, uint64 casterGuid = 0);
+
+/// Broadcasts `UNIT_FIELD_HEALTH` / max health after a combat or spell delta.
+void BroadcastUnitHealthAfterDelta(uint32 mapId, std::shared_ptr<Map> const &map,
+                                   uint64 unitGuid, uint32 health, uint32 maxHealth);
 
 } // namespace Firelands

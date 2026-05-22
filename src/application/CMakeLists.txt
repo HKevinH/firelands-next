@@ -1,4 +1,7 @@
 add_library(FirelandsApplication STATIC
+    combat/CombatService.cpp
+    combat/CombatHostility.cpp
+    combat/CreatureChaseMovement.cpp
     spell/SpellHitEffects.cpp
     spell/SpellImpactEffects.cpp
     spell/PassiveSpellAuras.cpp

@@ -7,6 +7,7 @@
 #include <application/ports/IMapNotifier.h>
 #include <application/services/AuthService.h>
 #include <application/services/CharacterService.h>
+#include <application/combat/CombatService.h>
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/INpcTemplateSearchRepository.h>
 #include <boost/asio.hpp>
@@ -67,6 +68,7 @@ class INpcTextRepository;
 class IQuestGossipRepository;
 class Creature;
 class Map;
+class Player;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -78,21 +80,20 @@ public:
       std::shared_ptr<CharacterService> charService,
       std::shared_ptr<ICommandService> commandService,
       std::shared_ptr<MySqlAccountDataRepository> accountDataRepo,
-      std::shared_ptr<LanguagesDbc const> languagesDbc = nullptr,
-      std::shared_ptr<ISpellDefinitionStore const> spellDefinitions = nullptr,
-      std::shared_ptr<IRealmRepository> realmRepo = nullptr,
-      std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry =
-          nullptr,
-      std::shared_ptr<GmTicketService> gmTicketService = nullptr,
-      std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix = nullptr,
-      std::shared_ptr<SpellManager> spellManager = nullptr,
-      std::shared_ptr<INpcTemplateSearchRepository const> npcTemplateSearch =
-          nullptr,
-       std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc = nullptr,
-       std::shared_ptr<IGossipRepository> gossipRepo = nullptr,
-       std::shared_ptr<INpcTextRepository> npcTextRepo = nullptr,
-       std::shared_ptr<IQuestGossipRepository> questGossipRepo = nullptr,
-       std::shared_ptr<EmotesTextDbc const> emotesTextDbc = nullptr);
+      std::shared_ptr<LanguagesDbc const> languagesDbc,
+      std::shared_ptr<ISpellDefinitionStore const> spellDefinitions,
+      std::shared_ptr<IRealmRepository> realmRepo,
+      std::shared_ptr<OnlineCharacterSessionRegistry> onlineCharRegistry,
+      std::shared_ptr<GmTicketService> gmTicketService,
+      std::shared_ptr<ItemDbHotfixStore const> itemDbHotfix,
+      std::shared_ptr<SpellManager> spellManager,
+      std::shared_ptr<application::CombatService> combatService,
+      std::shared_ptr<INpcTemplateSearchRepository const> npcTemplateSearch,
+      std::shared_ptr<FactionTemplateDbc const> factionTemplateDbc,
+      std::shared_ptr<IGossipRepository> gossipRepo,
+      std::shared_ptr<INpcTextRepository> npcTextRepo,
+      std::shared_ptr<IQuestGossipRepository> questGossipRepo,
+      std::shared_ptr<EmotesTextDbc const> emotesTextDbc);
 
   ~WorldSession();
 
@@ -134,6 +135,7 @@ public:
   bool GmSetLevel(uint8 level) override;
   bool GmResetAllCooldowns() override;
   bool GmDamageUnit(uint64 targetGuid, uint32 amount) override;
+  bool GmReviveSelf() override;
 
   bool GmSpawnNpc(uint32 creatureEntry, uint32 displayId,
                   uint32 factionTemplateOrZeroDefault = 0) override;
@@ -228,6 +230,26 @@ public:
   void HandleLfgLockInfoRequest(WorldPacket &packet);
   void HandleRequestCemeteryList(WorldPacket &packet);
   void HandleCastSpell(WorldPacket &packet);
+  void HandleAttackSwing(WorldPacket &packet);
+  void HandleAttackStop(WorldPacket &packet);
+  void StopMeleeAutoAttack(bool sendStopPackets = true);
+  /// Ends any in-progress melee on another target; returns false if already on `victimGuid`.
+  bool PrepareMeleeRetarget(uint64_t victimGuid);
+  void ScheduleMeleeAutoAttack();
+  void ProcessMeleeAutoAttackTick();
+  void StartCreatureAggro(uint64_t creatureGuid);
+  void StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopPackets);
+  void StopAllCreatureCombat(bool sendAttackStopPackets);
+  void BeginCreatureReturnToHome(uint64_t creatureGuid, MovementInfo const &home,
+                               uint32_t initialMoveCounter = 0);
+  void ScheduleCreatureCombatMovement();
+  void ProcessCreatureCombatMovementTick();
+  void TryAggroCreatureFromSpellDamage(uint64_t targetGuid, int32_t healthDelta);
+  void EvadeCreatureCombat(uint64_t creatureGuid);
+  bool ShouldCreatureAbandonChase(std::shared_ptr<Map> const &map,
+                                  std::shared_ptr<Creature> const &creature,
+                                  std::shared_ptr<Player> const &target,
+                                  MovementInfo const &home) const;
   void HandleCancelAura(WorldPacket &packet);
   void HandleCancelCast(WorldPacket &packet);
   void HandleRequestCategoryCooldowns(WorldPacket &packet);
@@ -444,6 +466,7 @@ public:
   std::shared_ptr<GmTicketService> _gmTicketService;
   std::shared_ptr<ItemDbHotfixStore const> _itemDbHotfix;
   std::shared_ptr<SpellManager> _spellManager;
+  std::shared_ptr<application::CombatService> _combatService;
   std::shared_ptr<INpcTemplateSearchRepository const> _npcTemplateSearch;
   std::shared_ptr<FactionTemplateDbc const> _factionTemplateDbc;
   std::shared_ptr<IGossipRepository> _gossipRepo;
@@ -506,6 +529,23 @@ public:
 
   boost::asio::steady_timer _timeSyncPeriodicTimer;
   boost::asio::steady_timer _pendingSpellCastTimer;
+  boost::asio::steady_timer _meleeAutoAttackTimer;
+  boost::asio::steady_timer _creatureCombatMoveTimer;
+
+  struct CreatureCombatRuntime {
+    MovementInfo home{};
+    uint32_t moveCounter = 0;
+  };
+
+  /// Hostile creatures actively chasing this player (multiple allowed).
+  std::unordered_map<uint64_t, CreatureCombatRuntime> _creatureAggroed;
+  /// Creatures walking back to `home` after dropping aggro.
+  std::unordered_map<uint64_t, CreatureCombatRuntime> _creatureReturningHome;
+
+  uint64_t _meleeVictimGuid = 0;
+  bool _meleeVictimIsCreature = false;
+  bool _creatureRetaliating = false;
+  static constexpr uint32_t kDefaultMainhandSwingMs = 2000u;
   bool _pendingDeferredCastActive = false;
   uint8 _pendingCastId = 0;
   uint32 _pendingSpellId = 0;

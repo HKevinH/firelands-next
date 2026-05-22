@@ -2,11 +2,14 @@
 
 #include "WorldFtxuiConsole.h"
 #include "WorldInteractiveConsole.h"
-#include <application/services/CharacterService.h>
-#include <application/services/CommandService.h>
+#include <infrastructure/combat/InMemoryThreatManager.h>
+#include <infrastructure/combat/MySqlSpellProcessor.h>
+#include <application/combat/CombatService.h>
+#include <domain/combat/CombatEngine.h>
 #include <application/services/GmTicketService.h>
 #include <application/services/OnlineCharacterSessionRegistry.h>
 #include <application/services/PlayerCreateInfoService.h>
+#include <application/services/CommandService.h>
 #include <application/services/WorldService.h>
 #include <application/spell/SpellManager.h>
 #include <infrastructure/world/MapAuraTicker.h>
@@ -251,17 +254,22 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     LoadDatabaseCreatureSpawns(*creatureSpawnRepo, *creatureStatsRepo,
                                factionTemplateDbc.get());
 
+    auto combatService = std::make_shared<application::CombatService>(
+        std::make_shared<combat::CombatEngine>(
+            std::make_shared<infrastructure::InMemoryThreatManager>(),
+            std::make_shared<infrastructure::MySqlSpellProcessor>()));
+
     auto sessionFactory =
         [authService, charService, commandService, accountDataRepo,
-         languagesDbc, emotesTextDbc, spellDefinitions, realmRepo,
+         languagesDbc, spellDefinitions, realmRepo,
          onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
-         npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
-         questGossipRepo](boost::asio::ip::tcp::socket socket) {
+         combatService, npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
+         questGossipRepo, emotesTextDbc](boost::asio::ip::tcp::socket socket) {
           std::make_shared<WorldSession>(
               std::move(socket), authService, charService, commandService,
               accountDataRepo, languagesDbc, spellDefinitions, realmRepo,
               onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
-              npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
+              combatService, npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
               questGossipRepo, emotesTextDbc)
               ->Start();
         };

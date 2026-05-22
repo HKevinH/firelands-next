@@ -1,4 +1,6 @@
 add_library(FirelandsDomain STATIC
+    combat/CombatEngine.cpp
+    combat/DamageCalculator.cpp
     models/Realm.cpp
     world/Map.cpp
     world/Player.cpp

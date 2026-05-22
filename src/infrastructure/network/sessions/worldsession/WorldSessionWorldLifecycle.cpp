@@ -17,6 +17,8 @@ void WorldSession::FinalizeWorldExit() {
   CancelPeriodicTimeSync();
   ResetBreathMirrorState();
   CancelPendingClientSpellCast();
+  StopAllCreatureCombat(true);
+  StopMeleeAutoAttack(true);
 
   if (_awaitingTeleportNear) {
     _position.x = _teleportPendingX;
