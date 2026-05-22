@@ -91,6 +91,7 @@ All names are registered **without** the leading dot in `CommandService`’s con
 | `money` | `CommandGameplay` | BOTH | target first (console) | Signed copper delta; persists `characters.money`. |
 | `additem` | `CommandGameplay` | BOTH | target first (console) | First free backpack slot. |
 | `level` | `CommandGameplay` | BOTH | target first (console) | Clamps to supported range (e.g. 1–85). |
+| `cd` | `CommandGameplay` | BOTH | target first (console) | Clears GCD and all spell/category cooldowns via `SMSG_CLEAR_COOLDOWNS` + empty category sync (not `SMSG_SPELL_COOLDOWN` with 0 ms); persists empty state. |
 | `damage` | `CommandGameplay` | GAME | same | Target a player or NPC, then `.damage <amount>`. |
 | `account` | `ManageAccounts` | CONSOLE | same | `create`, `setaccess`, `delete` against `IAccountRepository`. |
 | `ban`, `unban` | `ManageAccounts` | CONSOLE | same | Toggles `account.locked` (login lock), not only a runtime kick. |
