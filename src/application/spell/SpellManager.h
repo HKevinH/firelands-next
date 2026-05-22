@@ -49,8 +49,10 @@ struct SpellCastRequest {
   /// Per-caster category cooldown (`SpellCategories.Category` group → instant). Null = skip.
   std::unordered_map<uint32, std::chrono::steady_clock::time_point> const *
       spellCategoryCooldownUntilByGroup = nullptr;
-  /// When set with `manaCost` on the definition, `SpellManager` validates power1.
+  /// When set with `manaCost` on the definition, `SpellManager` validates POWER1.
   bool hasCasterPowerSnapshot = false;
+  /// `UnitBytes0` power type (see `PlayerPowerType`); must match `SpellDefinition::powerType`.
+  uint8 casterPrimaryPowerType = 0;
   uint32 casterPower1 = 0;
   uint32 casterMaxPower1 = 0;
   /// Player-vs-player team hint (Alliance/Horde by race). When false, beneficial spells on other

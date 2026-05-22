@@ -3,7 +3,34 @@
 #include <shared/Common.h>
 #include <shared/game/SpellAttributes.h>
 
+#include <vector>
+
 namespace Firelands {
+
+/// One `SpellEffect.dbc` apply-aura row for a spell (passive login, stats, wire).
+struct SpellAuraEffectRow {
+  uint8 effectIndex = 0;
+  uint32 auraType = 0;
+  int32 basePoints = 0;
+  int32 dieSides = 0;
+  float realPointsPerLevel = 0.f;
+  uint32 periodMs = 0;
+  int32 periodicHealthDeltaPerTick = 0;
+  /// `EffectMiscValue` — stat index, rating id, resistance school, etc.
+  int32 miscValue = 0;
+  uint32 miscValueB = 0;
+};
+
+/// Non-aura `SpellEffect.dbc` row (energize, damage, heal, …).
+struct SpellEffectRow {
+  uint8 effectIndex = 0;
+  uint32 effectKind = 0;
+  int32 basePoints = 0;
+  int32 dieSides = 0;
+  float realPointsPerLevel = 0.f;
+  int32 miscValue = 0;
+  uint32 miscValueB = 0;
+};
 
 /// Subset of client `Spell.dbc` (4.3.4) fields loaded for server-side spell logic.
 /// Field indices follow SpellEntryfmt / SpellEntry in DBCStructure.h.
@@ -31,7 +58,8 @@ struct SpellDefinition {
   uint32 levelsId = 0;
   /// Required character level from `SpellLevels.dbc` (`SpellLevel`); 0 = always allowed.
   uint8 requiredLevel = 0;
-  /// Resource1 cost from `SpellPower.dbc` via `spellPowerId` (after merge loads ids).
+  /// Primary-resource cost from `SpellPower.dbc` (`ManaCost` field) via `spellPowerId`.
+  /// Applies to POWER1 when `powerType` matches the caster's primary power.
   uint32 manaCost = 0;
   /// First spell-hit immediate HP delta from `SpellEffect.dbc` (school damage / generic heal).
   /// Negative removes HP (damage); positive restores HP (heal). Zero = none for Phase D simplification.
@@ -67,7 +95,28 @@ struct SpellDefinition {
   /// Any `SpellEffect.dbc` row uses `SPELL_EFFECT_SKILL` (118) — profession trainers.
   bool grantsSkillLine = false;
 
+  /// All apply-aura rows from `SpellEffect.dbc` (login passives, stat aggregation).
+  std::vector<SpellAuraEffectRow> auraEffects;
+  /// All effect rows (cast resolution: energize, extra heals, …).
+  std::vector<SpellEffectRow> effectRows;
+
   bool isPassiveSpell() const { return (attributes & SpellAttr0::kPassive) != 0u; }
+
+  /// Racials like Orc Blood Fury (20572): `PASSIVE` in DBC but `durationIndex` set — player
+  /// activates from the action bar; must not be login-applied or blocked as passive cast.
+  bool isActivatablePassiveSpell() const {
+    return isPassiveSpell() && durationIndex != 0u;
+  }
+
+  /// True passives (Hardiness, weapon spec, …) — infinite/login aura only.
+  bool isPermanentLoginPassiveSpell() const {
+    return isPassiveSpell() && durationIndex == 0u;
+  }
+
+  bool HasLoginPassiveAura() const {
+    return isPermanentLoginPassiveSpell() &&
+           (!auraEffects.empty() || hasAuraEffect);
+  }
 
   bool sendsAuraEffectAmountOnWire() const {
     return (attributesEx8 & SpellAttr8::kAuraSendAmount) != 0u;

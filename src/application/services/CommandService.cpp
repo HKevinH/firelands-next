@@ -98,6 +98,8 @@ public:
 
   bool GmSetLevel(uint8 level) override { return _subject->GmSetLevel(level); }
 
+  bool GmResetAllCooldowns() override { return _subject->GmResetAllCooldowns(); }
+
   bool GmDamageUnit(uint64 targetGuid, uint32 amount) override {
     return _subject->GmDamageUnit(targetGuid, amount);
   }
@@ -376,6 +378,10 @@ CommandService::CommandService(
       "level", {[this](auto s, auto a, auto o) { return HandleLevel(s, a, o); },
                ToMask(Permission::CommandGameplay), CommandAvailability::Both,
                ConsoleArgLayout::TargetOnlineCharacterFirst});
+  RegisterCommand(
+      "cd", {[this](auto s, auto a, auto o) { return HandleCd(s, a, o); },
+             ToMask(Permission::CommandGameplay), CommandAvailability::Both,
+             ConsoleArgLayout::TargetOnlineCharacterFirst});
   RegisterCommand(
       "damage", {[this](auto s, auto a, auto o) { return HandleDamage(s, a, o); },
                  ToMask(Permission::CommandGameplay), CommandAvailability::Game,
@@ -716,6 +722,8 @@ Online players
      "|cff666666Console:|r |cffffffff.money CharName 50000|r\n"
      "|cffCCCCCC.level|r |cff888888—|r Set level 1-85.  "
      "|cff666666Console:|r |cffffffff.level Char 60|r\n"
+     "|cffCCCCCC.cd|r |cff888888—|r Reset all spell/GCD/racial cooldowns.  "
+     "|cff666666Console:|r |cffffffff.cd CharName|r\n"
      "|cffCCCCCC.damage|r |cff888888—|r Damage selected unit "
      "|cff666666(in-game only)|r  |cff666666e.g.|r |cffffffff.damage 500|r\n"
      "|cffAAAAAAItems:|r |cffCCCCCC.additem|r |cff888888/|r |cffCCCCCC.delitem|r  "
@@ -727,6 +735,7 @@ Gameplay  (GM)
   .learn <spellId>              (console: .learn <CharName> <spellId>)
   .money <copper delta>         (console: .money <CharName> <copper>)
   .level <1-85>                 (console: .level <CharName> <level>)
+  .cd                          (console: .cd <CharName>)
   .damage <amount>              (in-game only; target a unit first)
   .additem / .delitem           (see Items below)
 )H6"},
@@ -1543,6 +1552,20 @@ bool CommandService::HandleLevel(std::shared_ptr<ICommandSession> session,
     session->SendNotification("Invalid level.");
     return false;
   }
+}
+
+bool CommandService::HandleCd(std::shared_ptr<ICommandSession> session,
+                              const std::vector<std::string> &args,
+                              PrivilegeOrigin origin) {
+  (void)args;
+  (void)origin;
+  if (!session->GmResetAllCooldowns()) {
+    session->SendNotification(
+        "Cooldown reset failed (not in world).  Console: .cd <OnlineCharName>");
+    return false;
+  }
+  session->SendNotification("All cooldowns reset (including racials).");
+  return true;
 }
 
 bool CommandService::HandleBan(std::shared_ptr<ICommandSession> session,

@@ -49,6 +49,8 @@ enum SpellFailedReason : uint8 {
   SPELL_FAILED_INTERRUPTED = 47,
   /// Client `SPELL_FAILED_SPELL_IS_PASSIVE` (4.3.4); passive spells are not castable.
   SPELL_FAILED_SPELL_IS_PASSIVE = 58,
+  /// Caster level below `SpellLevels.dbc` requirement (Trinity `SPELL_FAILED_LOW_CASTLEVEL`).
+  SPELL_FAILED_LOW_CASTLEVEL = 73,
 };
 
 /// Parses `CMSG_CANCEL_CAST` (spell id + cast id).

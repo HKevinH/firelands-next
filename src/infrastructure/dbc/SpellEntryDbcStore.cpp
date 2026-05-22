@@ -32,6 +32,9 @@ constexpr uint32_t kSpellEffectFieldBasePoints = 5;
 /// `EffectRealPointsPerLevel` (float) — field index 6 in 4.3.4 `SpellEffect.dbc`.
 constexpr uint32_t kSpellEffectFieldRealPointsPerLevel = 6;
 constexpr uint32_t kSpellEffectFieldDieSides = 9;
+/// `EffectMiscValue` / `EffectMiscValueB` (4.3.4 `SpellEffect.dbc` layout).
+constexpr uint32_t kSpellEffectFieldMiscValue = 16;
+constexpr uint32_t kSpellEffectFieldMiscValueB = 17;
 constexpr uint32_t kSpellEffectFieldSpellID = 24;
 constexpr uint32_t kSpellEffectFieldEffectIndex = 25;
 
@@ -410,6 +413,8 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
     int32_t basePoints;
     int32_t dieSides;
     float realPointsPerLevel = 0.f;
+    int32_t miscValue = 0;
+    uint32_t miscValueB = 0;
   };
   std::vector<AuraCandidateRow> auraCandidates;
   auraCandidates.reserve(static_cast<size_t>(n) / 8u + 8u);
@@ -430,7 +435,35 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
         reader.ReadUInt32(rec, kSpellEffectFieldAmplitude, offsets),
         reader.ReadInt32(rec, kSpellEffectFieldBasePoints, offsets),
         reader.ReadInt32(rec, kSpellEffectFieldDieSides, offsets),
-        reader.ReadFloat(rec, kSpellEffectFieldRealPointsPerLevel, offsets)});
+        reader.ReadFloat(rec, kSpellEffectFieldRealPointsPerLevel, offsets),
+        reader.ReadInt32(rec, kSpellEffectFieldMiscValue, offsets),
+        reader.ReadUInt32(rec, kSpellEffectFieldMiscValueB, offsets)});
+  }
+
+  for (uint32_t rec = 0; rec < n; ++rec) {
+    uint32_t const spellId =
+        reader.ReadUInt32(rec, kSpellEffectFieldSpellID, offsets);
+    if (spellId == 0u || m_byId.find(spellId) == m_byId.end())
+      continue;
+    uint32_t const effect =
+        reader.ReadUInt32(rec, kSpellEffectFieldEffect, offsets);
+    if (effect == SPELL_EFFECT_APPLY_AURA)
+      continue;
+    auto it = m_byId.find(spellId);
+    if (it == m_byId.end())
+      continue;
+    SpellEffectRow row{};
+    row.effectIndex =
+        static_cast<uint8>(std::min<uint32_t>(
+            reader.ReadUInt32(rec, kSpellEffectFieldEffectIndex, offsets), 2u));
+    row.effectKind = effect;
+    row.basePoints = reader.ReadInt32(rec, kSpellEffectFieldBasePoints, offsets);
+    row.dieSides = reader.ReadInt32(rec, kSpellEffectFieldDieSides, offsets);
+    row.realPointsPerLevel =
+        reader.ReadFloat(rec, kSpellEffectFieldRealPointsPerLevel, offsets);
+    row.miscValue = reader.ReadInt32(rec, kSpellEffectFieldMiscValue, offsets);
+    row.miscValueB = reader.ReadUInt32(rec, kSpellEffectFieldMiscValueB, offsets);
+    it->second.effectRows.push_back(row);
   }
 
   struct AuraRowScore {
@@ -489,33 +522,77 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
       bestAuraBySpell[row.spellId] = row;
   }
 
+  std::unordered_map<uint32_t, std::vector<AuraCandidateRow>> allAurasBySpell;
+  for (AuraCandidateRow const &row : auraCandidates) {
+    if (m_byId.find(row.spellId) == m_byId.end())
+      continue;
+    allAurasBySpell[row.spellId].push_back(row);
+  }
+
   uint32_t auraCount = 0;
-  for (auto const &[spellId, row] : bestAuraBySpell) {
+  for (auto &[spellId, rows] : allAurasBySpell) {
     auto it = m_byId.find(spellId);
     if (it == m_byId.end())
       continue;
+    std::sort(rows.begin(), rows.end(),
+              [](AuraCandidateRow const &a, AuraCandidateRow const &b) {
+                return a.effectIndex < b.effectIndex;
+              });
+    for (AuraCandidateRow const &row : rows) {
+      if (IsExcludedLoginAuraType(row.auraType))
+        continue;
+      SpellAuraEffectRow ar{};
+      ar.effectIndex =
+          static_cast<uint8>(std::min<uint32_t>(row.effectIndex, 2u));
+      ar.auraType = row.auraType;
+      ar.basePoints = row.basePoints;
+      ar.dieSides = row.dieSides;
+      ar.realPointsPerLevel = row.realPointsPerLevel;
+      ar.periodMs = row.periodMs;
+      ar.miscValue = row.miscValue;
+      ar.miscValueB = row.miscValueB;
+      if (row.auraType == kSpellAuraPeriodicDamage) {
+        ar.periodicHealthDeltaPerTick =
+            SpellEffectMagnitude::PeriodicDamageTick(row.basePoints, row.dieSides);
+      } else if (row.auraType == kSpellAuraPeriodicHeal) {
+        ar.periodicHealthDeltaPerTick =
+            SpellEffectMagnitude::PeriodicHealTick(row.basePoints, row.dieSides);
+      }
+      it->second.auraEffects.push_back(ar);
+    }
+    if (it->second.auraEffects.empty())
+      continue;
+
+    AuraCandidateRow const *primary = nullptr;
+    if (auto bestIt = bestAuraBySpell.find(spellId); bestIt != bestAuraBySpell.end())
+      primary = &bestIt->second;
+    if (!primary)
+      primary = &rows.front();
+
     it->second.hasAuraEffect = true;
-    it->second.auraEffectType = row.auraType;
+    it->second.auraEffectType = primary->auraType;
     it->second.auraEffectIndex =
-        static_cast<uint8>(std::min<uint32_t>(row.effectIndex, 2u));
+        static_cast<uint8>(std::min<uint32_t>(primary->effectIndex, 2u));
     if (auto maskIt = activeEffectMaskBySpell.find(spellId);
         maskIt != activeEffectMaskBySpell.end())
       it->second.auraActiveEffectMask = maskIt->second;
     else
       it->second.auraActiveEffectMask =
           static_cast<uint8>(1u << it->second.auraEffectIndex);
-    it->second.auraBasePoints = row.basePoints;
-    it->second.auraDieSides = row.dieSides;
-    it->second.auraRealPointsPerLevel = row.realPointsPerLevel;
+    it->second.auraBasePoints = primary->basePoints;
+    it->second.auraDieSides = primary->dieSides;
+    it->second.auraRealPointsPerLevel = primary->realPointsPerLevel;
     it->second.auraDurationIndex = it->second.durationIndex;
-    if (row.periodMs > 0u)
-      it->second.auraPeriodicPeriodMs = row.periodMs;
-    if (row.auraType == kSpellAuraPeriodicDamage) {
+    if (primary->periodMs > 0u)
+      it->second.auraPeriodicPeriodMs = primary->periodMs;
+    if (primary->auraType == kSpellAuraPeriodicDamage) {
       it->second.auraPeriodicHealthDeltaPerTick =
-          SpellEffectMagnitude::PeriodicDamageTick(row.basePoints, row.dieSides);
-    } else if (row.auraType == kSpellAuraPeriodicHeal) {
+          SpellEffectMagnitude::PeriodicDamageTick(primary->basePoints,
+                                                   primary->dieSides);
+    } else if (primary->auraType == kSpellAuraPeriodicHeal) {
       it->second.auraPeriodicHealthDeltaPerTick =
-          SpellEffectMagnitude::PeriodicHealTick(row.basePoints, row.dieSides);
+          SpellEffectMagnitude::PeriodicHealTick(primary->basePoints,
+                                                 primary->dieSides);
     }
     ++auraCount;
   }

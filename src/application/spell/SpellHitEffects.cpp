@@ -13,14 +13,81 @@ namespace {
 /// Old fallback when `SpellDuration.dbc` was missing; treat as "unknown" and re-resolve.
 constexpr uint32 kLegacyUnknownAuraDurationMs = 3600000u;
 
-bool AuraIsNegative(SpellDefinition const &def) {
-  if (def.auraEffectType == kSpellAuraPeriodicDamage)
+bool AuraIsNegative(SpellDefinition const &def, uint32 auraEffectType) {
+  if (auraEffectType == kSpellAuraPeriodicDamage)
     return true;
   if ((def.attributes & SpellAttr0::kNegativeSpell) != 0u)
     return true;
   if ((def.attributes & SpellAttr0::kAuraIsDebuff) != 0u)
     return true;
   return false;
+}
+
+SpellAuraEffectRow const *PickPrimaryAuraRowForCast(SpellDefinition const &def) {
+  if (!def.auraEffects.empty()) {
+    for (SpellAuraEffectRow const &row : def.auraEffects) {
+      if (row.auraType == kSpellAuraPeriodicHeal ||
+          row.auraType == kSpellAuraPeriodicDamage)
+        return &row;
+    }
+    return &def.auraEffects.front();
+  }
+  if (!def.hasAuraEffect)
+    return nullptr;
+  return nullptr;
+}
+
+void FillAuraOutcomeFromRow(SpellDefinition const &def, SpellAuraEffectRow const &row,
+                            uint64 hitGuid, uint64 casterGuid, uint8 casterLevel,
+                            ISpellCastTables const *castTables, SpellCastOutcome *out) {
+  if (!out)
+    return;
+
+  uint32 durationMs = 0;
+  if (castTables) {
+    uint32 const idx =
+        def.auraDurationIndex != 0u ? def.auraDurationIndex : def.durationIndex;
+    durationMs = castTables->GetDurationMs(idx, casterLevel);
+  }
+  uint8 const level = casterLevel > 0 ? casterLevel : 1;
+  out->hasAuraApply = true;
+  out->auraTargetGuid = hitGuid;
+  out->auraCasterGuid = casterGuid;
+  out->auraSpellId = def.id;
+  out->auraEffectType = row.auraType;
+  out->auraEffectIndex = row.effectIndex;
+  out->auraBasePoints = row.basePoints;
+  out->auraDieSides = row.dieSides;
+  out->auraDurationMs =
+      ResolveAuraDurationMs(def.id, level, durationMs, &def, castTables);
+  out->auraPeriodicPeriodMs = row.periodMs;
+  if (row.auraType == kSpellAuraPeriodicHeal) {
+    out->auraPeriodicHealthDeltaPerTick =
+        SpellEffectMagnitude::PeriodicHealTickAtLevel(
+            row.basePoints, row.dieSides, row.realPointsPerLevel, level);
+  } else if (row.auraType == kSpellAuraPeriodicDamage) {
+    out->auraPeriodicHealthDeltaPerTick =
+        SpellEffectMagnitude::PeriodicDamageTickAtLevel(
+            row.basePoints, row.dieSides, row.realPointsPerLevel, level);
+  } else {
+    out->auraPeriodicHealthDeltaPerTick = row.periodicHealthDeltaPerTick;
+  }
+  out->auraIsNegative = AuraIsNegative(def, row.auraType);
+  out->auraCasterLevel = level;
+}
+
+int32 SumImmediateHealthFromEffectRows(SpellDefinition const &def, uint8 casterLevel) {
+  if (def.effectRows.empty())
+    return 0;
+  uint8 const level = casterLevel > 0 ? casterLevel : 1;
+  int32 sum = 0;
+  for (SpellEffectRow const &row : def.effectRows) {
+    if (!SpellEffectKindHasImmediateHealthDelta(row.effectKind))
+      continue;
+    sum += SpellEffectMagnitude::SignedImmediateHealthDeltaAtLevel(
+        row.effectKind, row.basePoints, row.dieSides, row.realPointsPerLevel, level);
+  }
+  return sum;
 }
 
 } // namespace
@@ -35,51 +102,77 @@ uint64 ResolvePrimarySpellHitUnitGuid(uint32 clientTargetFlags, uint64 casterGui
 
 void ApplyImmediateHealthFromDefinition(SpellDefinition const *def, uint64 hitGuid,
                                         SpellCastOutcome *out) {
-  if (!out || !def || def->immediateHealthEffectDelta == 0)
+  if (!out || !def)
+    return;
+  int32 delta = SumImmediateHealthFromEffectRows(*def, out->auraCasterLevel);
+  if (delta == 0)
+    delta = def->immediateHealthEffectDelta;
+  if (delta == 0)
     return;
   out->hasDirectHealthEffect = true;
   out->directHealthTargetGuid = hitGuid;
-  out->directHealthDelta = def->immediateHealthEffectDelta;
+  out->directHealthDelta = delta;
+}
+
+void ApplyAuraFromRow(SpellDefinition const &def, SpellAuraEffectRow const &row,
+                      uint64 hitGuid, uint64 casterGuid, uint8 casterLevel,
+                      std::chrono::steady_clock::time_point now,
+                      ISpellCastTables const *castTables, SpellCastOutcome *out) {
+  (void)now;
+  FillAuraOutcomeFromRow(def, row, hitGuid, casterGuid, casterLevel, castTables, out);
 }
 
 void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 casterGuid,
                              uint8 casterLevel, std::chrono::steady_clock::time_point now,
                              ISpellCastTables const *castTables, SpellCastOutcome *out) {
-  if (!out || !def || !def->hasAuraEffect)
+  if (!out || !def)
     return;
 
-  uint32 durationMs = 0;
-  if (castTables) {
-    uint32 const idx =
-        def->auraDurationIndex != 0u ? def->auraDurationIndex : def->durationIndex;
-    durationMs = castTables->GetDurationMs(idx, casterLevel);
+  if (SpellAuraEffectRow const *row = PickPrimaryAuraRowForCast(*def)) {
+    ApplyAuraFromRow(*def, *row, hitGuid, casterGuid, casterLevel, now, castTables, out);
+    return;
   }
-  out->hasAuraApply = true;
-  out->auraTargetGuid = hitGuid;
-  out->auraCasterGuid = casterGuid;
-  out->auraSpellId = def->id;
-  out->auraEffectType = def->auraEffectType;
-  out->auraEffectIndex = def->auraEffectIndex;
-  out->auraBasePoints = def->auraBasePoints;
-  out->auraDieSides = def->auraDieSides;
-  out->auraDurationMs =
-      ResolveAuraDurationMs(def->id, casterLevel, durationMs, def, castTables);
-  out->auraPeriodicPeriodMs = def->auraPeriodicPeriodMs;
-  uint8 const level = casterLevel > 0 ? casterLevel : 1;
-  if (def->auraEffectType == kSpellAuraPeriodicHeal) {
-    out->auraPeriodicHealthDeltaPerTick =
-        SpellEffectMagnitude::PeriodicHealTickAtLevel(
-            def->auraBasePoints, def->auraDieSides, def->auraRealPointsPerLevel, level);
-  } else if (def->auraEffectType == kSpellAuraPeriodicDamage) {
-    out->auraPeriodicHealthDeltaPerTick =
-        SpellEffectMagnitude::PeriodicDamageTickAtLevel(
-            def->auraBasePoints, def->auraDieSides, def->auraRealPointsPerLevel, level);
-  } else {
-    out->auraPeriodicHealthDeltaPerTick = def->auraPeriodicHealthDeltaPerTick;
-  }
-  out->auraIsNegative = AuraIsNegative(*def);
-  out->auraCasterLevel = level;
+
+  if (!def->hasAuraEffect)
+    return;
+
+  SpellAuraEffectRow row{};
+  row.effectIndex = def->auraEffectIndex;
+  row.auraType = def->auraEffectType;
+  row.basePoints = def->auraBasePoints;
+  row.dieSides = def->auraDieSides;
+  row.realPointsPerLevel = def->auraRealPointsPerLevel;
+  row.periodMs = def->auraPeriodicPeriodMs;
+  row.periodicHealthDeltaPerTick = def->auraPeriodicHealthDeltaPerTick;
+  FillAuraOutcomeFromRow(*def, row, hitGuid, casterGuid, casterLevel, castTables, out);
   (void)now;
+}
+
+void ApplySpellEffectsFromDefinition(SpellDefinition const *def, uint64 hitGuid,
+                                     uint64 casterGuid, uint8 casterLevel,
+                                     std::chrono::steady_clock::time_point now,
+                                     ISpellCastTables const *castTables,
+                                     SpellCastOutcome *out) {
+  if (!out || !def)
+    return;
+
+  out->auraCasterLevel = casterLevel > 0 ? casterLevel : 1;
+
+  ApplyImmediateHealthFromDefinition(def, hitGuid, out);
+
+  if (!def->effectRows.empty()) {
+    uint8 const level = out->auraCasterLevel;
+    for (SpellEffectRow const &row : def->effectRows) {
+      if (row.effectKind == kSpellEffectEnergize) {
+        int32 const amount = SpellEffectMagnitude::NeutralMagnitudeAtLevel(
+            row.basePoints, row.dieSides, row.realPointsPerLevel, level);
+        if (amount != 0)
+          out->power1Delta += amount;
+      }
+    }
+  }
+
+  ApplyAuraFromDefinition(def, hitGuid, casterGuid, casterLevel, now, castTables, out);
 }
 
 uint32 ResolveAuraDurationMs(uint32 spellId, uint8 casterLevel, uint32 outcomeDurationMs,

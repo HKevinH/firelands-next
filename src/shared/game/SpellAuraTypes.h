@@ -11,6 +11,12 @@ constexpr uint32 kSpellEffectApplyAura = 6u;
 /// `SpellAuraDefines.h`).
 constexpr uint32 kSpellAuraPeriodicDamage = 3u;
 constexpr uint32 kSpellAuraPeriodicHeal = 8u;
+constexpr uint32 kSpellAuraModStat = 29u;
+constexpr uint32 kSpellAuraModPercentStat = 87u;
+constexpr uint32 kSpellAuraModAttackPowerPct = 99u;
+constexpr uint32 kSpellAuraModAttackPower = 124u;
+constexpr uint32 kSpellAuraModRating = 189u;
+constexpr uint32 kSpellAuraModResistance = 22u;
 constexpr uint32 kSpellAuraModShapeshift = 36u;
 constexpr uint32 kSpellAuraTransform = 56u;
 constexpr uint32 kSpellAuraModIncreaseMountedSpeed = 32u;
@@ -26,5 +32,16 @@ constexpr uint32 kSpellAuraCosmeticMounted = 487u;
 
 /// `SpellEffect.dbc` effect types — grants a skill line (profession trainers).
 constexpr uint32 kSpellEffectSkill = 118u;
+constexpr uint32 kSpellEffectSchoolDamage = 2u;
+constexpr uint32 kSpellEffectHealthLeech = 9u;
+constexpr uint32 kSpellEffectHeal = 10u;
+constexpr uint32 kSpellEffectEnvironmentalDamage = 13u;
+constexpr uint32 kSpellEffectEnergize = 30u;
+
+inline bool SpellEffectKindHasImmediateHealthDelta(uint32 effectKind) {
+  return effectKind == kSpellEffectSchoolDamage ||
+         effectKind == kSpellEffectHeal || effectKind == kSpellEffectHealthLeech ||
+         effectKind == kSpellEffectEnvironmentalDamage;
+}
 
 } // namespace Firelands

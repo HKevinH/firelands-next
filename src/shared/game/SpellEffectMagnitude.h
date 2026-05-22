@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/Common.h>
+#include <shared/game/SpellAuraTypes.h>
 
 #include <cmath>
 
@@ -17,20 +18,6 @@ inline int32 NeutralMagnitude(int32 basePoints, int32 dieSides) {
   return (basePoints + 1) + diceMid;
 }
 
-inline int32 SignedImmediateHealthDelta(uint32 spellEffectKind, int32 basePoints,
-                                        int32 dieSides) {
-  int32 const magnitude = NeutralMagnitude(basePoints, dieSides);
-  if (magnitude == 0)
-    return 0;
-  constexpr uint32 kSchoolDamage = 2u;
-  constexpr uint32 kHeal = 10u;
-  if (spellEffectKind == kSchoolDamage)
-    return -magnitude;
-  if (spellEffectKind == kHeal)
-    return magnitude;
-  return 0;
-}
-
 inline int32 NeutralMagnitudeAtLevel(int32 basePoints, int32 dieSides,
                                     float realPointsPerLevel, uint8 level) {
   int32 mag = 0;
@@ -43,6 +30,36 @@ inline int32 NeutralMagnitudeAtLevel(int32 basePoints, int32 dieSides,
         realPointsPerLevel * static_cast<float>(level > 0 ? level : 1)));
   }
   return mag;
+}
+
+inline int32 SignedImmediateHealthDelta(uint32 spellEffectKind, int32 basePoints,
+                                        int32 dieSides) {
+  int32 const magnitude = NeutralMagnitude(basePoints, dieSides);
+  if (magnitude == 0)
+    return 0;
+  if (spellEffectKind == kSpellEffectSchoolDamage ||
+      spellEffectKind == kSpellEffectHealthLeech ||
+      spellEffectKind == kSpellEffectEnvironmentalDamage)
+    return -magnitude;
+  if (spellEffectKind == kSpellEffectHeal)
+    return magnitude;
+  return 0;
+}
+
+inline int32 SignedImmediateHealthDeltaAtLevel(uint32 spellEffectKind, int32 basePoints,
+                                               int32 dieSides, float realPointsPerLevel,
+                                               uint8 level) {
+  int32 const magnitude =
+      NeutralMagnitudeAtLevel(basePoints, dieSides, realPointsPerLevel, level);
+  if (magnitude == 0)
+    return 0;
+  if (spellEffectKind == kSpellEffectSchoolDamage ||
+      spellEffectKind == kSpellEffectHealthLeech ||
+      spellEffectKind == kSpellEffectEnvironmentalDamage)
+    return -magnitude;
+  if (spellEffectKind == kSpellEffectHeal)
+    return magnitude;
+  return 0;
 }
 
 inline int32 PeriodicHealTick(int32 basePoints, int32 dieSides) {

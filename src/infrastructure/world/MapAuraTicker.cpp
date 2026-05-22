@@ -16,7 +16,7 @@ void TickUnitAuras(uint32 mapId, std::shared_ptr<Map> const &map, uint64 guid,
   UnitAuraTickResult const tick = unit->TickAuras(now);
 
   for (AuraRemoval const &removal : tick.removals)
-    SendAuraRemovalOnMap(map, guid, removal);
+    SendAuraRemovalOnMap(mapId, map, guid, removal);
 
   for (AuraPeriodicTick const &periodic : tick.periodicTicks) {
     if (periodic.healthDelta == 0)

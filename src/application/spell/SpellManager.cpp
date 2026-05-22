@@ -3,6 +3,8 @@
 #include <application/spell/SpellHitEffects.h>
 #include <application/ports/IMapCollisionQueries.h>
 #include <shared/game/SpellAttributes.h>
+#include <shared/game/SpellLevelGate.h>
+#include <shared/game/SpellPowerCost.h>
 
 #include <algorithm>
 #include <cmath>
@@ -114,10 +116,18 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   if (m_spellDefinitions)
     def = m_spellDefinitions->GetDefinition(spellId);
 
-  if (def && def->isPassiveSpell()) {
+  if (def && def->isPassiveSpell() && !def->isActivatablePassiveSpell()) {
     SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
                                      req.client.castId, req.client.spellId,
                                      SpellCastWire::SPELL_FAILED_SPELL_IS_PASSIVE);
+    out->kind = SpellCastOutcome::Kind::SpellFailure;
+    return;
+  }
+
+  if (def && !SpellMeetsCasterLevelRequirement(def->requiredLevel, req.casterLevel)) {
+    SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                     req.client.castId, req.client.spellId,
+                                     SpellCastWire::SPELL_FAILED_LOW_CASTLEVEL);
     out->kind = SpellCastOutcome::Kind::SpellFailure;
     return;
   }
@@ -167,13 +177,15 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
     }
   }
 
-  if (def && def->manaCost > 0u && req.hasCasterPowerSnapshot &&
-      req.casterPower1 < def->manaCost) {
-    SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
-                                     req.client.castId, req.client.spellId,
-                                     SpellCastWire::SPELL_FAILED_NO_POWER);
-    out->kind = SpellCastOutcome::Kind::SpellFailure;
-    return;
+  if (def && def->manaCost > 0u && req.hasCasterPowerSnapshot) {
+    if (!SpellUsesCasterPrimaryPower(def->powerType, req.casterPrimaryPowerType) ||
+        req.casterPower1 < def->manaCost) {
+      SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                       req.client.castId, req.client.spellId,
+                                       SpellCastWire::SPELL_FAILED_NO_POWER);
+      out->kind = SpellCastOutcome::Kind::SpellFailure;
+      return;
+    }
   }
 
   if (def && m_spellCastTables) {
@@ -243,12 +255,10 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   uint64 const hitGuid = SpellHitEffects::ResolvePrimarySpellHitUnitGuid(
       req.client.targetFlags, req.casterGuid, req.client.unitTargetGuid);
 
-  SpellHitEffects::ApplyImmediateHealthFromDefinition(
-      def.has_value() ? &*def : nullptr, hitGuid, out);
-
-  SpellHitEffects::ApplyAuraFromDefinition(def.has_value() ? &*def : nullptr, hitGuid,
-                                           req.casterGuid, req.casterLevel, req.now,
-                                           m_spellCastTables.get(), out);
+  if (def)
+    SpellHitEffects::ApplySpellEffectsFromDefinition(
+        &*def, hitGuid, req.casterGuid, req.casterLevel, req.now,
+        m_spellCastTables.get(), out);
 
   if (cooldownRecoveryMs > 0u)
     out->spellCooldownDurationMs = cooldownRecoveryMs;
@@ -263,6 +273,7 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
       req.now + std::chrono::milliseconds(static_cast<int64_t>(gcdDuration));
 
   if (def && def->manaCost > 0u && req.hasCasterPowerSnapshot &&
+      SpellUsesCasterPrimaryPower(def->powerType, req.casterPrimaryPowerType) &&
       req.casterPower1 >= def->manaCost)
     out->power1Delta = -static_cast<int32>(def->manaCost);
 

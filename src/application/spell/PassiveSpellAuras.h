@@ -3,6 +3,7 @@
 #include <application/spell/SpellManager.h>
 #include <chrono>
 #include <cstdint>
+#include <unordered_set>
 #include <vector>
 
 namespace Firelands {
@@ -10,8 +11,12 @@ namespace Firelands {
 class ISpellCastTables;
 class ISpellDefinitionStore;
 
-/// Builds `SpellCastOutcome` aura applies for racial passive spells in `candidateSpellIds`.
-/// Pass only `GetRacialSpells` ids — not the full spellbook. Skips mount/form auras.
+/// Known spellbook ids that are passive combat auras (excludes language, mount, form).
+std::vector<uint32_t> CollectLoginPassiveSpellIds(
+    std::unordered_set<uint32_t> const &knownSpellIds,
+    ISpellDefinitionStore const *spellDefinitions);
+
+/// Builds `SpellCastOutcome` aura applies for passive spells (one outcome per apply-aura row).
 std::vector<SpellCastOutcome> BuildPassiveAuraOutcomes(
     uint64_t unitGuid, uint8_t casterLevel,
     std::vector<uint32_t> const &candidateSpellIds,

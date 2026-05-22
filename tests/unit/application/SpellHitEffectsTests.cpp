@@ -3,6 +3,7 @@
 #include <application/spell/SpellHitEffects.h>
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellCastTables.h>
+#include <shared/game/SpellAuraTypes.h>
 
 using namespace Firelands;
 
@@ -148,4 +149,100 @@ TEST(SpellHitEffectsTests, ApplyAuraNoOpWhenNoAuraEffect) {
   SpellCastOutcome out{};
   SpellHitEffects::ApplyAuraFromDefinition(&def, 1, 2, 1, {}, nullptr, &out);
   EXPECT_FALSE(out.hasAuraApply);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffectsFromDefinition_EnergizePower) {
+  SpellDefinition def{};
+  def.id = 28730u;
+  SpellEffectRow row{};
+  row.effectKind = kSpellEffectEnergize;
+  row.basePoints = 15;
+  def.effectRows.push_back(row);
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, 0x100ULL, 0x100ULL, 10, std::chrono::steady_clock::now(), nullptr, &out);
+  EXPECT_EQ(out.power1Delta, 16);
+  EXPECT_FALSE(out.hasAuraApply);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffects_SumsMultipleHealthRows) {
+  SpellDefinition def{};
+  def.id = 133u;
+  SpellEffectRow fire{};
+  fire.effectKind = kSpellEffectSchoolDamage;
+  fire.basePoints = 10;
+  fire.dieSides = 0;
+  SpellEffectRow ignite{};
+  ignite.effectKind = kSpellEffectSchoolDamage;
+  ignite.effectIndex = 1;
+  ignite.basePoints = 4;
+  ignite.dieSides = 0;
+  def.effectRows.push_back(fire);
+  def.effectRows.push_back(ignite);
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, 0x200ULL, 0x100ULL, 20, std::chrono::steady_clock::now(), nullptr, &out);
+  ASSERT_TRUE(out.hasDirectHealthEffect);
+  EXPECT_EQ(out.directHealthTargetGuid, 0x200ULL);
+  EXPECT_EQ(out.directHealthDelta, -16);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffects_PrefersEffectRowsOverImmediateHealthFallback) {
+  SpellDefinition def{};
+  def.id = 1u;
+  def.immediateHealthEffectDelta = -99;
+  SpellEffectRow heal{};
+  heal.effectKind = kSpellEffectHeal;
+  heal.basePoints = 5;
+  def.effectRows.push_back(heal);
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, 0x50ULL, 0x50ULL, 10, std::chrono::steady_clock::now(), nullptr, &out);
+  ASSERT_TRUE(out.hasDirectHealthEffect);
+  EXPECT_EQ(out.directHealthDelta, 6);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffects_HealthLeechCountsAsDamage) {
+  SpellDefinition def{};
+  SpellEffectRow leech{};
+  leech.effectKind = kSpellEffectHealthLeech;
+  leech.basePoints = 8;
+  def.effectRows.push_back(leech);
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, 0x30ULL, 0x10ULL, 1, std::chrono::steady_clock::now(), nullptr, &out);
+  ASSERT_TRUE(out.hasDirectHealthEffect);
+  EXPECT_EQ(out.directHealthDelta, -9);
+}
+
+TEST(SpellHitEffectsTests, ApplyAuraFromDefinition_PicksPeriodicRowFromAuraEffects) {
+  SpellDefinition def{};
+  def.id = 774u;
+  def.hasAuraEffect = true;
+  def.auraEffectType = 29u;
+  def.auraEffectIndex = 0;
+  SpellAuraEffectRow stat{};
+  stat.effectIndex = 0;
+  stat.auraType = kSpellAuraModStat;
+  stat.basePoints = 5;
+  SpellAuraEffectRow hot{};
+  hot.effectIndex = 1;
+  hot.auraType = kSpellAuraPeriodicHeal;
+  hot.basePoints = -4;
+  hot.periodMs = 3000;
+  def.auraEffects.push_back(stat);
+  def.auraEffects.push_back(hot);
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplyAuraFromDefinition(&def, 0x50ULL, 0x40ULL, 80,
+                                           std::chrono::steady_clock::now(), nullptr, &out);
+  ASSERT_TRUE(out.hasAuraApply);
+  EXPECT_EQ(out.auraEffectType, kSpellAuraPeriodicHeal);
+  EXPECT_EQ(out.auraEffectIndex, 1u);
+  EXPECT_EQ(out.auraPeriodicPeriodMs, 3000u);
+  EXPECT_EQ(out.auraPeriodicHealthDeltaPerTick, 4);
 }

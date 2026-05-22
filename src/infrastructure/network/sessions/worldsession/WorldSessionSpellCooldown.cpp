@@ -1,3 +1,4 @@
+#include <application/services/PlayerCreateInfoService.h>
 #include <application/spell/SpellManager.h>
 #include <domain/models/CharacterCooldown.h>
 #include <infrastructure/network/sessions/WorldSession.h>
@@ -5,38 +6,36 @@
 #include <shared/network/SpellCooldownWire.h>
 #include <shared/network/WorldPacket.h>
 
+#include <unordered_set>
 #include <vector>
 
 namespace Firelands {
 
 namespace {
 
-void SendGcdCooldownPacket(WorldSession &session, uint64 unitGuid, uint32 spellId,
-                           std::chrono::steady_clock::time_point gcdReady,
-                           std::chrono::steady_clock::time_point now) {
-  if (unitGuid == 0 || gcdReady <= now)
+void SendCooldownEventPacket(WorldSession &session, uint32 spellId) {
+  if (spellId == 0)
     return;
-  auto const rem = std::chrono::duration_cast<std::chrono::milliseconds>(gcdReady - now);
-  if (rem.count() <= 0)
-    return;
-
-  SpellCooldownWire::SpellCooldownEntry entry{spellId, 0};
   WorldPacket pkt;
-  SpellCooldownWire::BuildSpellCooldown(pkt, unitGuid, SpellCooldownWire::kIncludeGcd,
-                                        &entry, 1);
+  SpellCooldownWire::BuildCooldownEvent(pkt, static_cast<int32>(spellId), false);
   session.SendPacket(pkt);
 }
 
-void SendSpellRecoveryCooldownPacket(WorldSession &session, uint64 unitGuid, uint32 spellId,
-                                   uint32 spellCooldownDurationMs) {
-  if (unitGuid == 0 || spellCooldownDurationMs == 0u)
+void SendSpellCooldownRows(WorldSession &session, uint64 unitGuid, uint8 flags,
+                           std::vector<SpellCooldownWire::SpellCooldownStruct> const &rows) {
+  if (unitGuid == 0 || rows.empty())
     return;
-
-  SpellCooldownWire::SpellCooldownEntry entry{
-      spellId, static_cast<int32>(spellCooldownDurationMs)};
   WorldPacket pkt;
-  SpellCooldownWire::BuildSpellCooldown(pkt, unitGuid, SpellCooldownWire::kNone, &entry, 1);
+  SpellCooldownWire::BuildSpellCooldown(pkt, unitGuid, flags, rows);
   session.SendPacket(pkt);
+}
+
+uint32 GcdRemainingMs(std::chrono::steady_clock::time_point gcdReady,
+                      std::chrono::steady_clock::time_point now) {
+  if (gcdReady <= now)
+    return 0;
+  auto const rem = std::chrono::duration_cast<std::chrono::milliseconds>(gcdReady - now);
+  return rem.count() > 0 ? static_cast<uint32>(rem.count()) : 0u;
 }
 
 std::vector<SpellCooldownWire::CategoryCooldownEntry> BuildActiveCategoryCooldownEntries(
@@ -63,10 +62,22 @@ void WorldSession::SendClientSpellCooldownsAfterCast(
     uint32 spellId, uint32 spellCooldownDurationMs,
     std::chrono::steady_clock::time_point gcdReady,
     std::chrono::steady_clock::time_point now) {
-  if (_playerGuid == 0)
+  if (_playerGuid == 0 || spellId == 0)
     return;
-  SendGcdCooldownPacket(*this, _playerGuid, spellId, gcdReady, now);
-  SendSpellRecoveryCooldownPacket(*this, _playerGuid, spellId, spellCooldownDurationMs);
+
+  // Cataclysm 4.3.4: CooldownEvent drives action-bar swipe; SpellCooldown carries durations.
+  SendCooldownEventPacket(*this, spellId);
+
+  uint32 const gcdMs = GcdRemainingMs(gcdReady, now);
+  if (gcdMs > 0) {
+    SpellCooldownWire::SpellCooldownStruct row{spellId, gcdMs, 1.0f};
+    SendSpellCooldownRows(*this, _playerGuid, SpellCooldownWire::kIncludeGcd, {row});
+  }
+
+  if (spellCooldownDurationMs > 0) {
+    SpellCooldownWire::SpellCooldownStruct row{spellId, spellCooldownDurationMs, 1.0f};
+    SendSpellCooldownRows(*this, _playerGuid, SpellCooldownWire::kNone, {row});
+  }
 }
 
 void WorldSession::SendClientActiveSpellCooldowns() {
@@ -74,7 +85,7 @@ void WorldSession::SendClientActiveSpellCooldowns() {
     return;
 
   auto const now = std::chrono::steady_clock::now();
-  std::vector<SpellCooldownWire::SpellCooldownEntry> entries;
+  std::vector<SpellCooldownWire::SpellCooldownStruct> entries;
   entries.reserve(_spellCooldownUntil.size());
   for (auto const &[spellId, until] : _spellCooldownUntil) {
     if (until <= now)
@@ -84,15 +95,12 @@ void WorldSession::SendClientActiveSpellCooldowns() {
     if (rem <= 0)
       continue;
     entries.push_back(
-        SpellCooldownWire::SpellCooldownEntry{spellId, static_cast<int32>(rem)});
+        SpellCooldownWire::SpellCooldownStruct{spellId, static_cast<uint32>(rem), 1.0f});
   }
   if (entries.empty())
     return;
 
-  WorldPacket pkt;
-  SpellCooldownWire::BuildSpellCooldown(pkt, _playerGuid, SpellCooldownWire::kNone,
-                                        entries.data(), entries.size());
-  SendPacket(pkt);
+  SendSpellCooldownRows(*this, _playerGuid, SpellCooldownWire::kNone, entries);
 }
 
 void WorldSession::SendClientActiveCategoryCooldowns() {
@@ -154,6 +162,64 @@ void WorldSession::RestorePersistedSpellCooldowns(uint32 characterGuid) {
     _spellCategoryCooldownUntil[row.category] =
         now + std::chrono::milliseconds(static_cast<int64_t>(row.remainingMs));
   }
+}
+
+bool WorldSession::GmResetAllCooldowns() {
+  if (_playerGuid == 0)
+    return false;
+
+  auto const now = std::chrono::steady_clock::now();
+  bool const hadGcd = _gcdReady > now;
+  uint32 const gcdSpellId = _gcdTriggerSpellId;
+
+  std::unordered_set<uint32> spellIdsToClear;
+  spellIdsToClear.reserve(_spellCooldownUntil.size() + _knownSpells.size());
+  for (auto const &[spellId, until] : _spellCooldownUntil) {
+    if (until > now)
+      spellIdsToClear.insert(spellId);
+  }
+  for (uint32 spellId : _knownSpells) {
+    if (spellId != 0u)
+      spellIdsToClear.insert(spellId);
+  }
+  if (_charService) {
+    if (PlayerCreateInfoService const *pci =
+            _charService->GetPlayerCreateInfoService()) {
+      for (uint32_t racialId : pci->GetRacialSpells(_playerRace, _playerClass)) {
+        if (racialId != 0u)
+          spellIdsToClear.insert(racialId);
+      }
+    }
+  }
+
+  std::vector<uint32> clearList(spellIdsToClear.begin(), spellIdsToClear.end());
+
+  _spellCooldownUntil.clear();
+  _spellCategoryCooldownUntil.clear();
+  _gcdReady = {};
+  _gcdTriggerSpellId = 0;
+
+  if (!clearList.empty()) {
+    WorldPacket pkt;
+    SpellCooldownWire::BuildClearCooldowns(pkt, _playerGuid, clearList.data(),
+                                           clearList.size());
+    SendPacket(pkt);
+  }
+  if (hadGcd && gcdSpellId != 0u) {
+    SpellCooldownWire::SpellCooldownStruct row{gcdSpellId, 0u, 1.0f};
+    SendSpellCooldownRows(*this, _playerGuid, SpellCooldownWire::kIncludeGcd, {row});
+  }
+
+  SendClientActiveCategoryCooldowns();
+
+  uint32 const charGuidLow = static_cast<uint32>(_playerGuid);
+  if (_charService && charGuidLow != 0u) {
+    CharacterCooldownState empty;
+    if (!_charService->SaveCharacterCooldowns(charGuidLow, empty))
+      LOG_WARN("SaveCharacterCooldowns failed after GM cd reset for guid {}", charGuidLow);
+  }
+
+  return true;
 }
 
 void WorldSession::SavePersistedSpellCooldowns(uint32 characterGuid) {

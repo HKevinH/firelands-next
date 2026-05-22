@@ -425,6 +425,7 @@ bool WorldSession::GmSetLevel(uint8 level) {
     lv = 1;
   if (lv > 85)
     lv = 85;
+  _playerLevel = lv;
   if (!_charService->SetCharacterLevel(_accountId, static_cast<uint32>(_playerGuid),
                                        lv)) {
     SendNotification("Failed to set level.");

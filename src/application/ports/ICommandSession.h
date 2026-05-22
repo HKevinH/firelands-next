@@ -63,6 +63,8 @@ public:
     (void)level;
     return false;
   }
+  /// Clears GCD, per-spell recovery, category cooldowns, and racial CDs (world client only).
+  virtual bool GmResetAllCooldowns() { return false; }
 
   /// Applies damage to `targetGuid` on this session's current map (player or creature).
   virtual bool GmDamageUnit(uint64 targetGuid, uint32 amount) {

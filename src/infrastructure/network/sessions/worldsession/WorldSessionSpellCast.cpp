@@ -7,6 +7,7 @@
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 #include <shared/Logger.h>
 #include <shared/game/PlayerFactionTeam.h>
+#include <shared/game/SpellPowerCost.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldPacket.h>
@@ -107,7 +108,7 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
     combat.auraIsNegative = finish.auraIsNegative;
     combat.auraCasterLevel = finish.auraCasterLevel;
     map->BroadcastPacketToNearby(finish.casterGuid, spellGo, true);
-    ApplySpellCastAuraOnMap(map, combat, nowGo);
+    ApplySpellCastAuraOnMap(finish.mapId, map, combat, nowGo);
     ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, combat, nowGo);
     if (finish.spellCategoryCooldownGroup > 0 &&
         finish.spellCategoryCooldownDurationMs > 0) {
@@ -151,7 +152,8 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
   req.gcdReady = _gcdReady;
   req.clientTimestampMs = _position.time;
   req.knownSpells = &_knownSpellIds;
-  req.casterLevel = 80;
+  req.casterLevel = _playerLevel > 0 ? _playerLevel : 1;
+  req.casterPrimaryPowerType = DefaultCasterPrimaryPowerType(_playerClass);
   MovementInfo const &pos = GetPosition();
   req.hasCasterWorldPosition = true;
   req.casterX = pos.x;
@@ -212,7 +214,7 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
     if (auto map = WorldService::Instance().GetMap(_mapId)) {
       map->BroadcastPacketToNearby(_playerGuid, out.spellStart, true);
       map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
-      ApplySpellCastAuraOnMap(map, out, now);
+      ApplySpellCastAuraOnMap(_mapId, map, out, now);
       ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, out, now);
       CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);
     } else {
@@ -221,6 +223,8 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);
     }
     _gcdReady = out.newGcdReady;
+    if (out.newGcdReady > now)
+      _gcdTriggerSpellId = static_cast<uint32>(c.spellId);
     return;
   case SpellCastOutcome::Kind::SpellStartDeferred:
     if (auto map = WorldService::Instance().GetMap(_mapId)) {
@@ -229,6 +233,8 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       SendPacket(out.spellStart);
     }
     _gcdReady = out.newGcdReady;
+    if (out.newGcdReady > now)
+      _gcdTriggerSpellId = static_cast<uint32>(c.spellId);
     SendClientSpellCooldownsAfterCast(static_cast<uint32>(c.spellId), 0u, out.newGcdReady,
                                       now);
     ScheduleDeferredSpellCastCompletion(out);
@@ -260,8 +266,8 @@ void WorldSession::HandleCancelAura(WorldPacket &packet) {
   if (!map)
     return;
 
-  if (!RemovePlayerAuraOnMap(map, _playerGuid, spellId))
-    (void)RemoveAuraOnMapBySpellId(map, spellId, _playerGuid);
+  if (!RemovePlayerAuraOnMap(_mapId, map, _playerGuid, spellId, _playerLevel))
+    (void)RemoveAuraOnMapBySpellId(_mapId, map, spellId, _playerGuid);
 }
 
 void WorldSession::HandleCancelCast(WorldPacket &packet) {

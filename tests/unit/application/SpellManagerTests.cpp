@@ -7,6 +7,7 @@
 #include <domain/repositories/ISpellCastTables.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <shared/game/PlayerFactionTeam.h>
+#include <shared/game/PlayerPowerType.h>
 #include <shared/game/SpellAttributes.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldOpcodes.h>
@@ -886,25 +887,35 @@ TEST(SpellManagerTests, GcdUsesSpellCooldownsStartRecovery) {
   EXPECT_LE(ms, 3210);
 }
 
+class SpellDefinitionWithPowerCost final : public ISpellDefinitionStore {
+public:
+  SpellDefinitionWithPowerCost(uint32 powerType, uint32 cost)
+      : m_powerType(powerType), m_cost(cost) {}
+
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.castingTimeIndex = 1;
+    d.rangeIndex = 0;
+    d.powerType = m_powerType;
+    d.manaCost = m_cost;
+    return d;
+  }
+
+private:
+  uint32 m_powerType;
+  uint32 m_cost;
+};
+
 TEST(SpellManagerTests, SufficientMana_SetsPower1Delta) {
-  class DefMana final : public ISpellDefinitionStore {
-  public:
-    bool HasSpell(uint32 /*spellId*/) const override { return true; }
-    std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
-      SpellDefinition d{};
-      d.id = spellId;
-      d.castingTimeIndex = 1;
-      d.rangeIndex = 0;
-      d.manaCost = 30;
-      return d;
-    }
-  };
-  auto defs = std::make_shared<DefMana>();
+  auto defs = std::make_shared<SpellDefinitionWithPowerCost>(0u, 30u);
   auto tables = std::make_shared<MockSpellCastTables>(0u);
   SpellManager mgr(defs, tables);
   std::unordered_set<uint32> known = {555};
   SpellCastRequest req = MakeRequest(0x10ULL, 555, &known);
   req.hasCasterPowerSnapshot = true;
+  req.casterPrimaryPowerType = 0;
   req.casterPower1 = 100;
   req.casterMaxPower1 = 100;
   SpellCastOutcome out;
@@ -914,26 +925,62 @@ TEST(SpellManagerTests, SufficientMana_SetsPower1Delta) {
 }
 
 TEST(SpellManagerTests, InsufficientMana_ReturnsNoPower) {
-  class DefMana final : public ISpellDefinitionStore {
-  public:
-    bool HasSpell(uint32 /*spellId*/) const override { return true; }
-    std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
-      SpellDefinition d{};
-      d.id = spellId;
-      d.castingTimeIndex = 1;
-      d.rangeIndex = 0;
-      d.manaCost = 100;
-      return d;
-    }
-  };
-  auto defs = std::make_shared<DefMana>();
+  auto defs = std::make_shared<SpellDefinitionWithPowerCost>(0u, 100u);
   auto tables = std::make_shared<MockSpellCastTables>(0u);
   SpellManager mgr(defs, tables);
   std::unordered_set<uint32> known = {555};
   SpellCastRequest req = MakeRequest(0x10ULL, 555, &known);
   req.hasCasterPowerSnapshot = true;
+  req.casterPrimaryPowerType = 0;
   req.casterPower1 = 50;
   req.casterMaxPower1 = 100;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_NO_POWER));
+}
+
+TEST(SpellManagerTests, SufficientRage_SetsPower1Delta) {
+  auto defs = std::make_shared<SpellDefinitionWithPowerCost>(
+      static_cast<uint32>(PlayerPowerType::Rage), 20u);
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {78};
+  SpellCastRequest req = MakeRequest(0x10ULL, 78, &known);
+  req.hasCasterPowerSnapshot = true;
+  req.casterPrimaryPowerType = static_cast<uint8>(PlayerPowerType::Rage);
+  req.casterPower1 = 100;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  EXPECT_EQ(out.power1Delta, -20);
+}
+
+TEST(SpellManagerTests, RageSpellOnManaCaster_ReturnsNoPower) {
+  auto defs = std::make_shared<SpellDefinitionWithPowerCost>(
+      static_cast<uint32>(PlayerPowerType::Rage), 10u);
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {78};
+  SpellCastRequest req = MakeRequest(0x10ULL, 78, &known);
+  req.hasCasterPowerSnapshot = true;
+  req.casterPrimaryPowerType = static_cast<uint8>(PlayerPowerType::Mana);
+  req.casterPower1 = 500;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_EQ(ReadSpellFailureReason(out.failurePacket),
+            static_cast<uint8>(SpellCastWire::SPELL_FAILED_NO_POWER));
+}
+
+TEST(SpellManagerTests, InsufficientRage_ReturnsNoPower) {
+  auto defs = std::make_shared<SpellDefinitionWithPowerCost>(
+      static_cast<uint32>(PlayerPowerType::Rage), 30u);
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {78};
+  SpellCastRequest req = MakeRequest(0x10ULL, 78, &known);
+  req.hasCasterPowerSnapshot = true;
+  req.casterPrimaryPowerType = static_cast<uint8>(PlayerPowerType::Rage);
+  req.casterPower1 = 10;
   SpellCastOutcome out;
   mgr.ProcessCastRequest(req, &out);
   ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
@@ -1055,6 +1102,51 @@ public:
   }
 };
 
+class SpellDefinitionWithRequiredLevel final : public ISpellDefinitionStore {
+public:
+  explicit SpellDefinitionWithRequiredLevel(uint8 requiredLevel)
+      : m_requiredLevel(requiredLevel) {}
+
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.requiredLevel = m_requiredLevel;
+    return d;
+  }
+
+private:
+  uint8 m_requiredLevel;
+};
+
+TEST(SpellManagerTests, CasterBelowRequiredLevel_FailsLowCastLevel) {
+  auto defs = std::make_shared<SpellDefinitionWithRequiredLevel>(10);
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {116};
+  SpellCastRequest req = MakeRequest(0x10ULL, 116, &known);
+  req.casterLevel = 5;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  out.failurePacket.SetReadPos(0);
+  (void)out.failurePacket.ReadPackedGuid();
+  (void)out.failurePacket.Read<uint8>();
+  (void)out.failurePacket.Read<int32>();
+  EXPECT_EQ(out.failurePacket.Read<uint8>(),
+            SpellCastWire::SPELL_FAILED_LOW_CASTLEVEL);
+}
+
+TEST(SpellManagerTests, CasterMeetsRequiredLevel_CastSucceeds) {
+  auto defs = std::make_shared<SpellDefinitionWithRequiredLevel>(10);
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {116};
+  SpellCastRequest req = MakeRequest(0x10ULL, 116, &known);
+  req.casterLevel = 10;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  EXPECT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+}
+
 TEST(SpellManagerTests, PassiveSpellRejected) {
   auto defs = std::make_shared<SpellDefinitionPassive>();
   SpellManager mgr(defs, nullptr);
@@ -1068,6 +1160,31 @@ TEST(SpellManagerTests, PassiveSpellRejected) {
   (void)out.failurePacket.Read<int32>();
   EXPECT_EQ(out.failurePacket.Read<uint8>(),
             SpellCastWire::SPELL_FAILED_SPELL_IS_PASSIVE);
+}
+
+class SpellDefinitionActivatablePassive final : public ISpellDefinitionStore {
+public:
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    d.attributes = SpellAttr0::kPassive;
+    d.durationIndex = 8u;
+    d.hasAuraEffect = true;
+    d.auraEffectType = 99u;
+    return d;
+  }
+};
+
+TEST(SpellManagerTests, ActivatablePassiveRacialCastSucceeds) {
+  auto defs = std::make_shared<SpellDefinitionActivatablePassive>();
+  SpellManager mgr(defs, nullptr);
+  std::unordered_set<uint32> known = {20572u};
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(MakeRequest(0x10ULL, 20572u, &known), &out);
+  EXPECT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  EXPECT_TRUE(out.hasAuraApply);
+  EXPECT_EQ(out.auraSpellId, 20572u);
 }
 
 } // namespace
