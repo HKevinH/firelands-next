@@ -146,6 +146,16 @@ def extract_insert_rows(sql_path: Path, table: str) -> list[list[str]]:
     return rows
 
 
+def _template_spell_sql(tok: str) -> str:
+    """Trinity `spell1`..`spell8` are unsigned; resistances/loot must not be mapped here."""
+    if tok.upper() == "NULL":
+        return "0"
+    try:
+        return str(max(0, int(tok.strip())))
+    except ValueError:
+        return "0"
+
+
 def map_creature_template_row(f: list[str]) -> str:
     """Reference creature_template column order (80 fields). → Firelands Next."""
     if len(f) < 80:
@@ -260,6 +270,14 @@ def map_creature_template_row(f: list[str]) -> str:
         regen_health,
         "0",
         flags_extra,
+        _template_spell_sql(f[50]),
+        _template_spell_sql(f[51]),
+        _template_spell_sql(f[52]),
+        _template_spell_sql(f[53]),
+        _template_spell_sql(f[54]),
+        _template_spell_sql(f[55]),
+        _template_spell_sql(f[56]),
+        _template_spell_sql(f[57]),
         sql_string(script) if script else "N''",
         "NULL",
         verified,
@@ -359,7 +377,9 @@ TEMPLATE_COLUMNS = (
     "`BaseVariance`, `RangeVariance`, `unit_class`, `unit_flags`, `unit_flags2`, `unit_flags3`, "
     "`family`, `trainer_class`, `type`, `VehicleId`, `AIName`, `MovementType`, "
     "`ExperienceModifier`, `RacialLeader`, `movementId`, `WidgetSetID`, `WidgetSetUnitConditionID`, "
-    "`RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, `ScriptName`, `StringId`, "
+    "`RegenHealth`, `CreatureImmunitiesId`, `flags_extra`, "
+    "`spell1`, `spell2`, `spell3`, `spell4`, `spell5`, `spell6`, `spell7`, `spell8`, "
+    "`ScriptName`, `StringId`, "
     "`VerifiedBuild`, `minlevel`, `maxlevel`"
 )
 
