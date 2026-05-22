@@ -1200,6 +1200,24 @@ bool MySqlCharacterRepository::UpdateCharacterLevel(uint32_t accountId,
   }
 }
 
+bool MySqlCharacterRepository::UpdateCharacterLevelAndXp(uint32_t accountId,
+                                                         uint32_t characterGuid,
+                                                         uint8_t level,
+                                                         uint32_t xp) {
+  try {
+    std::shared_ptr<sql::PreparedStatement> st(_connection->prepareStatement(
+        "UPDATE characters SET level = ?, xp = ? WHERE guid = ? AND account = ?"));
+    st->setUInt(1, level);
+    st->setUInt(2, xp);
+    st->setUInt(3, characterGuid);
+    st->setUInt(4, accountId);
+    return st->executeUpdate() > 0;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("UpdateCharacterLevelAndXp failed: {}", e.what());
+    return false;
+  }
+}
+
 std::vector<uint32_t>
 MySqlCharacterRepository::GetCharacterSpellIds(uint32_t characterGuid) {
   std::vector<uint32_t> out;

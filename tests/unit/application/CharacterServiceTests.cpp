@@ -30,6 +30,8 @@ public:
                 (uint32_t, uint32_t, uint32_t), (override));
     MOCK_METHOD(bool, UpdateCharacterLevel,
                 (uint32_t, uint32_t, uint8_t), (override));
+    MOCK_METHOD(bool, UpdateCharacterLevelAndXp,
+                (uint32_t, uint32_t, uint8_t, uint32_t), (override));
     MOCK_METHOD(std::vector<uint32_t>, GetCharacterSpellIds, (uint32_t),
                 (override));
     MOCK_METHOD(CharacterCooldownState, LoadCharacterCooldowns, (uint32_t),

@@ -519,7 +519,7 @@ bool WorldSession::TryCastCreatureCombatSpell(std::shared_ptr<Map> const &map,
   map->BroadcastPacketToNearby(creature->GetGuid(), out.spellStart, true);
   map->BroadcastPacketToNearby(creature->GetGuid(), out.spellGo, true);
   ApplySpellCastAuraOnMap(_mapId, map, out, now);
-  ApplySpellCastOutcomeOnMap(_mapId, map, creature->GetGuid(), spellId, out, now);
+  (void)ApplySpellCastOutcomeOnMap(_mapId, map, creature->GetGuid(), spellId, out, now);
   ScheduleSpellImpactVisual(map, creature->GetGuid(), spellId, out.primaryHitTargetGuid,
                             out.spellImpactDelayMs);
 
@@ -664,8 +664,10 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                         victimCr->GetLiveMaxHealth());
 
-    if (victimCr->GetLiveHealth() == 0)
+    if (victimCr->GetLiveHealth() == 0) {
+      OnCreatureKilledByPlayer(victimGuid, hpBefore);
       StopMeleeAutoAttack(true);
+    }
     else
       ScheduleMeleeAutoAttack();
     return;
@@ -832,6 +834,8 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimCr->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                       victimCr->GetLiveMaxHealth());
+    if (victimCr->GetLiveHealth() == 0)
+      OnCreatureKilledByPlayer(victimGuid, hpBefore);
 
     StartCreatureAggro(victimGuid);
 

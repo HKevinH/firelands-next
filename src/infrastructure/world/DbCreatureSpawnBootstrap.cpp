@@ -54,8 +54,9 @@ std::size_t LoadDatabaseCreatureSpawns(ICreatureSpawnRepository const &spawnRepo
           row.guid, row.entry, faction);
       faction = 0;
     }
-    auto spawned = std::make_shared<Creature>(objectGuid, row.entry, display, maxHp, level,
-                                                faction, row.npcFlags);
+    auto spawned = std::make_shared<Creature>(
+        objectGuid, row.entry, display, maxHp, level, faction, row.npcFlags,
+        row.experienceModifier);
     spawned->SetPosition(mi);
     WorldService::Instance().AddCreatureToMap(row.mapId, std::move(spawned));
     ++count;

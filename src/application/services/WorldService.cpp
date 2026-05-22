@@ -74,6 +74,16 @@ std::shared_ptr<SpellVisualDbc const> WorldService::GetSpellVisualDbc() {
   return m_spellVisualDbc;
 }
 
+void WorldService::SetExperienceRates(ExperienceRates rates) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_experienceRates = rates;
+}
+
+ExperienceRates WorldService::GetExperienceRates() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_experienceRates;
+}
+
 void WorldService::ForEachMap(
     std::function<void(uint32 mapId, std::shared_ptr<Map> const &)> const &fn) {
   std::lock_guard<std::mutex> lock(m_worldMutex);

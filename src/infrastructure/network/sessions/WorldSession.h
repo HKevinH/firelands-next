@@ -113,6 +113,7 @@ public:
                   float orientation = 0.0f) override;
 
   uint64 GetGuid() const override { return _playerGuid; }
+  void OnCreatureKilledByPlayer(uint64 creatureGuid, uint32 hpBefore) override;
   const MovementInfo &GetPosition() const override { return _position; }
   uint32 GetMapId() const override { return _mapId; }
   AccessLevel GetAccountAccessLevel() const override {
@@ -264,6 +265,8 @@ public:
                                   std::shared_ptr<Player> const &target,
                                   CreatureCombatRuntime &runtime, uint32_t spellId);
   void TryAggroCreatureFromSpellDamage(uint64_t targetGuid, int32_t healthDelta);
+  void MaybeGrantKillExperience(Creature &creature, uint32 hpBefore);
+  void PublishPlayerXpLevelUpdate(uint8 level, uint32 xp);
   void EvadeCreatureCombat(uint64_t creatureGuid);
   bool ShouldCreatureAbandonChase(std::shared_ptr<Map> const &map,
                                   std::shared_ptr<Creature> const &creature,

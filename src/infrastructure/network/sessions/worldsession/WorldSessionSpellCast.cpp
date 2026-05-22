@@ -119,8 +119,8 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
     combat.auraCasterLevel = finish.auraCasterLevel;
     map->BroadcastPacketToNearby(finish.casterGuid, spellGo, true);
     ApplySpellCastAuraOnMap(finish.mapId, map, combat, nowGo);
-    ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, finish.spellId, combat,
-                               nowGo);
+    (void)ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, finish.spellId,
+                                    combat, nowGo);
     TryAggroCreatureFromSpellDamage(combat.directHealthTargetGuid,
                                     combat.directHealthDelta);
     ScheduleSpellImpactVisual(map, finish.casterGuid, finish.spellId, finish.hitGuid,
@@ -261,8 +261,8 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       map->BroadcastPacketToNearby(_playerGuid, out.spellStart, true);
       map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
       ApplySpellCastAuraOnMap(_mapId, map, out, now);
-      ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, static_cast<uint32>(c.spellId), out,
-                                 now);
+      (void)ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid,
+                                      static_cast<uint32>(c.spellId), out, now);
       TryAggroCreatureFromSpellDamage(out.directHealthTargetGuid, out.directHealthDelta);
       ScheduleSpellImpactVisual(map, _playerGuid, static_cast<uint32>(c.spellId),
                                 out.primaryHitTargetGuid, out.spellImpactDelayMs);

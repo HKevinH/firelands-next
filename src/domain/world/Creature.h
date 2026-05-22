@@ -23,12 +23,16 @@ public:
   /// `maxHealth` seeds runtime HP from `creature_classlevelstats` / spawn bootstrap.
   Creature(uint64 guid, uint32 entry, uint32 displayId, uint32 maxHealth = 100u,
            uint8 level = 1u, uint32 factionTemplate = kDefaultFactionTemplate,
-           uint32 npcFlags = 0u);
+           uint32 npcFlags = 0u, float experienceModifier = 1.0f);
 
   uint32 GetEntry() const { return m_entry; }
   uint32 GetNpcFlags() const { return m_npcFlags; }
   uint32 GetDisplayId() const { return m_displayId; }
   uint8 GetLevel() const { return m_level; }
+  /// `creature_template.ExperienceModifier` (1.0 = normal kill XP).
+  float GetExperienceModifier() const { return m_experienceModifier; }
+  /// Ensures kill XP is granted at most once per creature lifetime on the map.
+  bool TryMarkKillExperienceAwarded();
   /// `FactionTemplate.dbc` row; drives client hostility vs player factions / forced reactions.
   uint32 GetFactionTemplate() const { return m_factionTemplate; }
   void SetFactionTemplate(uint32 factionTemplate);
@@ -53,6 +57,8 @@ private:
   uint32 m_npcFlags = 0;
   uint32 m_factionTemplate = kDefaultFactionTemplate;
   uint8 m_level = 1;
+  float m_experienceModifier = 1.0f;
+  bool m_killExperienceAwarded = false;
   uint32 m_liveHealth = 1;
   uint32 m_liveMaxHealth = 1;
   UnitAuraState m_auraState;

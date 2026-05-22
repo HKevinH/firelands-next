@@ -61,6 +61,8 @@ public:
                                     uint32_t moneyCopper) = 0;
   virtual bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,
                                     uint8_t level) = 0;
+  virtual bool UpdateCharacterLevelAndXp(uint32_t accountId, uint32_t characterGuid,
+                                         uint8_t level, uint32_t xp) = 0;
   virtual std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) = 0;
   virtual CharacterCooldownState LoadCharacterCooldowns(uint32_t characterGuid) = 0;
   virtual bool SaveCharacterCooldowns(uint32_t characterGuid,

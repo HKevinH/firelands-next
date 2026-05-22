@@ -28,6 +28,13 @@ RealmLink:
 World:
   RealmName: "Firelands"
 
+# Global rate multipliers (1.0 = Blizzard default). Kill applies to creature XP on death.
+Rates:
+  Experience:
+    Kill: 1.0
+    Quest: 1.0
+    Explore: 1.0
+
 # Lua gameplay scripts (bootstrap.lua optional under this directory).
 Scripting:
   ScriptsDirectory: "scripts/lua"

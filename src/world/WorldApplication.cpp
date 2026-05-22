@@ -11,6 +11,7 @@
 #include <application/services/PlayerCreateInfoService.h>
 #include <application/services/CommandService.h>
 #include <application/services/WorldService.h>
+#include <application/services/WorldRatesConfig.h>
 #include <application/spell/SpellManager.h>
 #include <infrastructure/world/MapAuraTicker.h>
 #include <atomic>
@@ -78,6 +79,11 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
       scriptHost->FireEvent("world_startup", 0);
     }
     WorldService::Instance().SetScriptHost(std::move(scriptHost));
+
+    ExperienceRates const xpRates = LoadExperienceRatesFromConfig(config);
+    WorldService::Instance().SetExperienceRates(xpRates);
+    LOG_INFO("Experience rates: Kill={} Quest={} Explore={}", xpRates.kill, xpRates.quest,
+             xpRates.explore);
 
     const std::string collisionRoot =
         config.GetNested<std::string>({"Collision", "DataRoot"}, "");

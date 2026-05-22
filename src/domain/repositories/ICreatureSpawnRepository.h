@@ -26,6 +26,8 @@ struct CreatureSpawnRow {
   uint32 factionTemplate = 0;
   /// `creature_template.npcflag` → `UNIT_NPC_FLAGS` on spawn.
   uint32 npcFlags = 0;
+  /// `creature_template.ExperienceModifier` (1.0 = normal).
+  float experienceModifier = 1.0f;
 };
 
 /// Loads static NPC placements from `creature` joined with `creature_template`.

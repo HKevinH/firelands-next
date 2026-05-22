@@ -42,6 +42,7 @@ add_library(FirelandsInfrastructure STATIC
     network/sessions/worldsession/WorldSessionSpellCooldown.cpp
     network/sessions/worldsession/WorldSessionSpellEffects.cpp
     network/sessions/worldsession/WorldSessionCombat.cpp
+    network/sessions/worldsession/WorldSessionExperience.cpp
     world/MapAuraTicker.cpp
     network/sessions/worldsession/WorldSessionTimeMirror.cpp
     network/sessions/worldsession/WorldSessionWorldLifecycle.cpp

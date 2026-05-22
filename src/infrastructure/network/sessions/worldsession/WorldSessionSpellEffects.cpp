@@ -438,13 +438,15 @@ void BroadcastSpellImpactVisualOnMap(std::shared_ptr<Map> const &map,
                                impactPkt, true);
 }
 
-void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
-                                uint64 casterGuid, uint32 spellId,
-                                SpellCastOutcome const &outcome,
-                                std::chrono::steady_clock::time_point now) {
+std::optional<CreatureKillByPlayerHint> ApplySpellCastOutcomeOnMap(
+    uint32 mapId, std::shared_ptr<Map> const &map, uint64 casterGuid, uint32 spellId,
+    SpellCastOutcome const &outcome, std::chrono::steady_clock::time_point now) {
   (void)now;
+  (void)spellId;
   if (!map)
-    return;
+    return std::nullopt;
+
+  std::optional<CreatureKillByPlayerHint> killHint;
 
   if (outcome.hasDirectHealthEffect && outcome.directHealthDelta != 0) {
     if (auto target = map->TryGetPlayer(outcome.directHealthTargetGuid)) {
@@ -460,6 +462,7 @@ void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
       BroadcastUnitHealthAfterDelta(mapId, map, outcome.directHealthTargetGuid,
                                     healthAfter, target->GetLiveMaxHealth());
     } else if (auto cr = map->TryGetCreature(outcome.directHealthTargetGuid)) {
+      uint32_t const hpBefore = cr->GetLiveHealth();
       cr->ApplyHealthDelta(outcome.directHealthDelta);
       uint32_t const healthAfter = cr->GetLiveHealth();
       if (outcome.directHealthDelta < 0 && spellId != 0) {
@@ -471,6 +474,14 @@ void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
       }
       BroadcastUnitHealthAfterDelta(mapId, map, outcome.directHealthTargetGuid,
                                     healthAfter, cr->GetLiveMaxHealth());
+      if (hpBefore > 0 && healthAfter == 0) {
+        if (auto killer = map->TryGetPlayer(casterGuid)) {
+          if (auto notifier = killer->GetNotifier())
+            notifier->OnCreatureKilledByPlayer(outcome.directHealthTargetGuid,
+                                               hpBefore);
+        }
+        killHint = CreatureKillByPlayerHint{outcome.directHealthTargetGuid, hpBefore};
+      }
     }
   }
 
@@ -484,6 +495,8 @@ void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
       map->BroadcastPacketToNearby(casterGuid, pwUpdate, true);
     }
   }
+
+  return killHint;
 }
 
 } // namespace Firelands

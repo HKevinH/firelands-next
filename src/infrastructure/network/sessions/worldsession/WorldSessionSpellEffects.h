@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace Firelands {
@@ -31,11 +32,16 @@ void ApplyPassiveAurasForKnownSpellsOnMap(
     uint8_t casterLevel, std::vector<uint32_t> const &candidateSpellIds,
     std::chrono::steady_clock::time_point now);
 
+/// Set when a player caster reduces a creature to 0 HP (for kill XP).
+struct CreatureKillByPlayerHint {
+  uint64 creatureGuid = 0;
+  uint32 hpBefore = 0;
+};
+
 /// Applies direct health/power from `SpellCastOutcome` on `map` and broadcasts wire.
-void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
-                                uint64 casterGuid, uint32 spellId,
-                                SpellCastOutcome const &outcome,
-                                std::chrono::steady_clock::time_point now);
+std::optional<CreatureKillByPlayerHint> ApplySpellCastOutcomeOnMap(
+    uint32 mapId, std::shared_ptr<Map> const &map, uint64 casterGuid, uint32 spellId,
+    SpellCastOutcome const &outcome, std::chrono::steady_clock::time_point now);
 
 /// Broadcasts target impact VFX (`SMSG_PLAY_SPELL_VISUAL_KIT`) for a successful spell hit.
 void BroadcastSpellImpactVisualOnMap(std::shared_ptr<Map> const &map, uint64 nearbyAnchorGuid,

@@ -36,6 +36,7 @@ add_executable(FirelandsUnitTests
     unit/shared/KnownSpellsWireTests.cpp
     unit/shared/SpellPeriodicAuraLogWireTests.cpp
     unit/shared/SpellEffectMagnitudeTests.cpp
+    unit/shared/ExperienceLogicTests.cpp
     unit/shared/MovementStateQueriesTests.cpp
     unit/shared/CombatPacketsTest.cpp
     unit/shared/MeleeRangeTest.cpp

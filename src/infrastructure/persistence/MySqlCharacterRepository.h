@@ -41,6 +41,8 @@ namespace Firelands {
                                   uint32_t moneyCopper) override;
         bool UpdateCharacterLevel(uint32_t accountId, uint32_t characterGuid,
                                    uint8_t level) override;
+        bool UpdateCharacterLevelAndXp(uint32_t accountId, uint32_t characterGuid,
+                                        uint8_t level, uint32_t xp) override;
         std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) override;
         CharacterCooldownState LoadCharacterCooldowns(uint32_t characterGuid) override;
         bool SaveCharacterCooldowns(uint32_t characterGuid,

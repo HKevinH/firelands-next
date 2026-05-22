@@ -8,6 +8,7 @@
 #include <domain/world/GameObject.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
+#include <shared/game/ExperienceRates.h>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -70,6 +71,9 @@ public:
   std::shared_ptr<ISpellDefinitionStore const> GetSpellDefinitions();
   void SetSpellVisualDbc(std::shared_ptr<SpellVisualDbc const> spellVisualDbc);
   std::shared_ptr<SpellVisualDbc const> GetSpellVisualDbc();
+
+  void SetExperienceRates(ExperienceRates rates);
+  ExperienceRates GetExperienceRates();
   /// Explicit teardown hook for process shutdown. Releases map-held objects
   /// (players/sessions) while core services (io_context, logger) are still alive.
   void ResetForShutdown();
@@ -90,6 +94,7 @@ private:
   std::shared_ptr<ISpellCastTables const> m_spellCastTables;
   std::shared_ptr<ISpellDefinitionStore const> m_spellDefinitions;
   std::shared_ptr<SpellVisualDbc const> m_spellVisualDbc;
+  ExperienceRates m_experienceRates{};
 };
 
 } // namespace Firelands

@@ -257,6 +257,11 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
     return m_repository->UpdateCharacterLevel(accountId, characterGuid, level);
   }
 
+  bool UpdateCharacterLevelAndXp(uint32_t accountId, uint32_t characterGuid,
+                                 uint8_t level, uint32_t xp) {
+    return m_repository->UpdateCharacterLevelAndXp(accountId, characterGuid, level, xp);
+  }
+
   std::vector<uint32_t> GetCharacterSpellIds(uint32_t characterGuid) {
     return m_repository->GetCharacterSpellIds(characterGuid);
   }

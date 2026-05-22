@@ -21,8 +21,15 @@ void TickUnitAuras(uint32 mapId, std::shared_ptr<Map> const &map, uint64 guid,
   for (AuraPeriodicTick const &periodic : tick.periodicTicks) {
     if (periodic.healthDelta == 0)
       continue;
+    uint32_t const hpBefore = unit->GetLiveHealth();
     unit->ApplyHealthDelta(periodic.healthDelta);
     SendPeriodicHealTickOnMap(mapId, map, guid, periodic);
+    if (hpBefore > 0 && unit->GetLiveHealth() == 0 && periodic.casterGuid != 0) {
+      if (auto killer = map->TryGetPlayer(periodic.casterGuid)) {
+        if (auto notifier = killer->GetNotifier())
+          notifier->OnCreatureKilledByPlayer(guid, hpBefore);
+      }
+    }
   }
 }
 
