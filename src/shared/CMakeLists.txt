@@ -9,6 +9,7 @@ add_library(FirelandsShared STATIC
     dbc/LanguagesDbc.cpp
     dbc/EmotesTextDbc.cpp
     dbc/SpellDifficultyDbc.cpp
+    dbc/SpellVisualDbc.cpp
     dbc/GtOctCombatDbc.cpp
     dbc/GtPlayerStatGameTables.cpp
     dbc/FactionTemplateDbc.cpp
@@ -26,6 +27,7 @@ add_library(FirelandsShared STATIC
     network/MovementWire.cpp
     network/movement/ClientMovementMse.cpp
     network/SpellCastWire.cpp
+    network/PlaySpellVisualKitWire.cpp
     network/AuraUpdateWire.cpp
     network/SpellCooldownWire.cpp
     network/SpellPeriodicAuraLogWire.cpp

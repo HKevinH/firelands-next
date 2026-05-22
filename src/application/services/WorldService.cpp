@@ -1,5 +1,7 @@
 #include <application/services/WorldService.h>
 
+#include <shared/dbc/SpellVisualDbc.h>
+
 namespace Firelands {
 
 void WorldService::AddCreatureToMap(uint32 mapId,
@@ -62,6 +64,16 @@ std::shared_ptr<ISpellDefinitionStore const> WorldService::GetSpellDefinitions()
   return m_spellDefinitions;
 }
 
+void WorldService::SetSpellVisualDbc(std::shared_ptr<SpellVisualDbc const> spellVisualDbc) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_spellVisualDbc = std::move(spellVisualDbc);
+}
+
+std::shared_ptr<SpellVisualDbc const> WorldService::GetSpellVisualDbc() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_spellVisualDbc;
+}
+
 void WorldService::ForEachMap(
     std::function<void(uint32 mapId, std::shared_ptr<Map> const &)> const &fn) {
   std::lock_guard<std::mutex> lock(m_worldMutex);
@@ -83,6 +95,7 @@ void WorldService::ResetForShutdown() {
     m_collisionQueries.reset();
     m_spellCastTables.reset();
     m_spellDefinitions.reset();
+    m_spellVisualDbc.reset();
   }
   mapsToDestroy.clear();
 }

@@ -61,6 +61,9 @@ struct SpellDefinition {
   /// Primary-resource cost from `SpellPower.dbc` (`ManaCost` field) via `spellPowerId`.
   /// Applies to POWER1 when `powerType` matches the caster's primary power.
   uint32 manaCost = 0;
+  /// `Spell.dbc` `SpellVisualID[0]` / `[1]` (4.3.4 fields 19 / 23) → `SpellVisual.dbc`.
+  uint32 spellVisualId0 = 0;
+  uint32 spellVisualId1 = 0;
   /// First spell-hit immediate HP delta from `SpellEffect.dbc` (school damage / generic heal).
   /// Negative removes HP (damage); positive restores HP (heal). Zero = none for Phase D simplification.
   int32 immediateHealthEffectDelta = 0;

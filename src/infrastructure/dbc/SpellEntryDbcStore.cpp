@@ -65,6 +65,9 @@ constexpr uint32_t kFieldCooldownsId = 37;
 constexpr uint32_t kFieldSpellPowerId = 42;
 /// `SpellEntry::LevelsID` → `SpellLevels.dbc`.
 constexpr uint32_t kFieldLevelsId = 41;
+/// `Spell.dbc` `SpellVisualID[0]` / `[1]` (Cataclysm 4.3.4 layout).
+constexpr uint32_t kFieldSpellVisualId0 = 19;
+constexpr uint32_t kFieldSpellVisualId1 = 23;
 
 constexpr std::string_view kSpellLevelsFmt = "diii";
 constexpr uint32_t kSpellLevelsFieldSpellLevel = 3;
@@ -205,6 +208,8 @@ bool SpellEntryDbcStore::Load(std::string const &path) {
     def.cooldownsId = reader.ReadUInt32(rec, kFieldCooldownsId, offsets);
     def.spellPowerId = reader.ReadUInt32(rec, kFieldSpellPowerId, offsets);
     def.levelsId = reader.ReadUInt32(rec, kFieldLevelsId, offsets);
+    def.spellVisualId0 = reader.ReadUInt32(rec, kFieldSpellVisualId0, offsets);
+    def.spellVisualId1 = reader.ReadUInt32(rec, kFieldSpellVisualId1, offsets);
     m_byId.emplace(id, def);
   }
 

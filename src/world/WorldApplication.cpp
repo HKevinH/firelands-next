@@ -17,6 +17,7 @@
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <infrastructure/dbc/SpellCastTablesDbc.h>
 #include <infrastructure/dbc/SpellEntryDbcStore.h>
+#include <shared/dbc/SpellVisualDbc.h>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
 #include <infrastructure/network/realm_link/RealmLinkOutbound.h>
 #include <infrastructure/network/sessions/WorldSession.h>
@@ -196,6 +197,15 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     if (spellDbcOk || spellEntryStore->DefinitionCount() > 0u)
       spellDefinitions = spellEntryStore;
     WorldService::Instance().SetSpellDefinitions(spellDefinitions);
+
+    auto spellVisualDbc = std::make_shared<SpellVisualDbc>();
+    if (!spellVisualDbc->Load(dbcBasePath + "/SpellVisual.dbc")) {
+      LOG_WARN("SpellVisual.dbc not loaded from {}; spell impact VFX disabled.",
+               dbcBasePath + "/SpellVisual.dbc");
+      spellVisualDbc.reset();
+    }
+    if (spellVisualDbc)
+      WorldService::Instance().SetSpellVisualDbc(spellVisualDbc);
 
     SpellDifficultyDbc spellDifficultyDbc;
     if (spellDifficultyDbc.Load(dbcBasePath + "/SpellDifficulty.dbc")) {

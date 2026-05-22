@@ -94,6 +94,12 @@ struct SpellCastOutcome {
   uint32 deferredTargetFlags = 0;
   uint64 deferredTargetUnitGuid = 0;
   uint64 deferredHitGuid = 0;
+  bool deferredSpellGoMissile = false;
+  SpellCastWire::SpellMissileTrajectoryWire deferredMissile{};
+  /// Primary hit unit for `SMSG_SPELL_GO` (impact VFX, combat effects).
+  uint64 primaryHitTargetGuid = 0;
+  /// Delay before `SMSG_PLAY_SPELL_VISUAL_KIT` when GO carries missile travel time.
+  uint32 spellImpactDelayMs = 0;
   /// Phase F: aura apply on successful hit (see `SpellHitEffects::ApplyAuraFromDefinition`).
   bool hasAuraApply = false;
   uint64 auraTargetGuid = 0;

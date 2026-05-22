@@ -15,6 +15,8 @@
 
 namespace Firelands {
 
+class SpellVisualDbc;
+
 /// Singleton world state (maps, shared script host, collision port).
 /// Populated from `world` executable after config load.
 class WorldService {
@@ -66,6 +68,8 @@ public:
   std::shared_ptr<ISpellCastTables const> GetSpellCastTables();
   void SetSpellDefinitions(std::shared_ptr<ISpellDefinitionStore const> definitions);
   std::shared_ptr<ISpellDefinitionStore const> GetSpellDefinitions();
+  void SetSpellVisualDbc(std::shared_ptr<SpellVisualDbc const> spellVisualDbc);
+  std::shared_ptr<SpellVisualDbc const> GetSpellVisualDbc();
   /// Explicit teardown hook for process shutdown. Releases map-held objects
   /// (players/sessions) while core services (io_context, logger) are still alive.
   void ResetForShutdown();
@@ -85,6 +89,7 @@ private:
   std::shared_ptr<IMapCollisionQueries> m_collisionQueries;
   std::shared_ptr<ISpellCastTables const> m_spellCastTables;
   std::shared_ptr<ISpellDefinitionStore const> m_spellDefinitions;
+  std::shared_ptr<SpellVisualDbc const> m_spellVisualDbc;
 };
 
 } // namespace Firelands

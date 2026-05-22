@@ -36,6 +36,10 @@ void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
                                 uint64 casterGuid, SpellCastOutcome const &outcome,
                                 std::chrono::steady_clock::time_point now);
 
+/// Broadcasts target impact VFX (`SMSG_PLAY_SPELL_VISUAL_KIT`) for a successful spell hit.
+void BroadcastSpellImpactVisualOnMap(std::shared_ptr<Map> const &map, uint64 nearbyAnchorGuid,
+                                     uint32 spellId, uint64 hitTargetGuid);
+
 /// Sends `SMSG_AURA_UPDATE` remove (slot + spell id 0) and refreshes player aura stat fields.
 void SendAuraRemovalOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
                           uint64 unitGuid, AuraRemoval const &removal);

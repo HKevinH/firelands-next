@@ -26,6 +26,8 @@ add_executable(FirelandsUnitTests
     unit/shared/ChrRacesDbcTests.cpp
     unit/shared/PermissionsTests.cpp
     unit/shared/SpellCastWireTests.cpp
+    unit/shared/SpellVisualDbcTests.cpp
+    unit/shared/PlaySpellVisualKitWireTests.cpp
     unit/shared/AuraUpdateWireTests.cpp
     unit/shared/SpellCooldownWireTests.cpp
     unit/shared/ActionButtonTests.cpp
@@ -41,6 +43,7 @@ add_executable(FirelandsUnitTests
     unit/application/CharacterServiceTests.cpp
     unit/application/CharacterActionButtonsTests.cpp
     unit/application/SpellHitEffectsTests.cpp
+    unit/application/SpellImpactEffectsTests.cpp
     unit/application/SpellManagerTests.cpp
     unit/application/PlayerCreateInfoServiceStatsTests.cpp
     unit/application/PlayerSpellbookTests.cpp

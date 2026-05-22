@@ -66,6 +66,7 @@ class IGossipRepository;
 class INpcTextRepository;
 class IQuestGossipRepository;
 class Creature;
+class Map;
 
 class WorldSession : public IAuthSession,
                      public IMapNotifier,
@@ -196,6 +197,8 @@ public:
   void HandlePlayedTime(WorldPacket &packet);
   void HandleMovement(WorldPacket &packet);
   void HandleMoveTeleportAck(WorldPacket &packet);
+  /// Ack for server-initiated run/flight speed changes (`MovementHandler` parity).
+  void HandleForceSpeedChangeAck(WorldPacket &packet);
   void HandlePing(WorldPacket &packet);
   void HandleSetSelection(WorldPacket &packet);
   void HandleTimeSyncResp(WorldPacket &packet);
@@ -418,11 +421,16 @@ public:
     int32 auraPeriodicHealthDeltaPerTick = 0;
     bool auraIsNegative = false;
     uint8 auraCasterLevel = 1;
+    bool spellGoMissile = false;
+    SpellCastWire::SpellMissileTrajectoryWire missile{};
+    uint32 spellImpactDelayMs = 0;
   };
 
   void CancelPendingClientSpellCast();
   void ScheduleDeferredSpellCastCompletion(SpellCastOutcome const &out);
   void CompleteDeferredSpellCast(PendingSpellCastFinish const &finish);
+  void ScheduleSpellImpactVisual(std::shared_ptr<Map> map, uint64 casterGuid, uint32 spellId,
+                                 uint64 hitTargetGuid, uint32 delayMs);
 
   tcp::socket _socket;
   std::shared_ptr<AuthService> _authService;

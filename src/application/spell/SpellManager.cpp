@@ -81,6 +81,9 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   out->deferredTargetFlags = 0;
   out->deferredTargetUnitGuid = 0;
   out->deferredHitGuid = 0;
+  out->deferredSpellGoMissile = false;
+  out->primaryHitTargetGuid = 0;
+  out->spellImpactDelayMs = 0;
   out->hasAuraApply = false;
   out->auraTargetGuid = 0;
   out->auraCasterGuid = 0;
@@ -283,15 +286,25 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
                                  spellId, castFlagsStart, 0, castTimeStart, targetFlags,
                                  targetUnitGuid);
 
+  SpellCastWire::SpellGoMissileResolution const missile =
+      SpellCastWire::ResolveSpellGoMissile(
+          req.client, req.hasCasterWorldPosition, req.casterX, req.casterY, req.casterZ,
+          req.hasTargetWorldPosition, req.targetX, req.targetY, req.targetZ, castTimeStart);
+
   bool const resolveInstantly = (castTimeStart == 0u);
   if (resolveInstantly) {
-    uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
+    uint32 const castFlagsGo = SpellCastWire::BuildSpellGoCastFlags(missile.sendOnWire);
     uint32 const castTimeGo =
         SpellCastWire::ResolveSpellGoTimestampMs(req.clientTimestampMs);
     uint64 const hitTargets[1] = {hitGuid};
+    SpellCastWire::SpellMissileTrajectoryWire const *missilePtr =
+        missile.sendOnWire ? &missile.trajectory : nullptr;
     SpellCastWire::BuildSpellGo(out->spellGo, req.casterGuid, req.client.castId, spellId,
                                 castFlagsGo, 0, castTimeGo, hitTargets, 1, targetFlags,
-                                targetUnitGuid);
+                                targetUnitGuid, missilePtr);
+    out->primaryHitTargetGuid = hitGuid;
+    out->spellImpactDelayMs =
+        missile.sendOnWire ? missile.trajectory.travelTimeMs : 0u;
     out->kind = SpellCastOutcome::Kind::SpellStartAndGo;
   } else {
     out->kind = SpellCastOutcome::Kind::SpellStartDeferred;
@@ -301,6 +314,11 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
     out->deferredTargetFlags = targetFlags;
     out->deferredTargetUnitGuid = targetUnitGuid;
     out->deferredHitGuid = hitGuid;
+    out->primaryHitTargetGuid = hitGuid;
+    out->deferredSpellGoMissile = missile.sendOnWire;
+    out->deferredMissile = missile.trajectory;
+    out->spellImpactDelayMs =
+        missile.sendOnWire ? missile.trajectory.travelTimeMs : 0u;
   }
 }
 

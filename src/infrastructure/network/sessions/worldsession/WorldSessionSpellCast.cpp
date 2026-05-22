@@ -12,6 +12,9 @@
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldPacket.h>
 
+#include <algorithm>
+#include <utility>
+
 namespace Firelands {
 
 void WorldSession::CancelPendingClientSpellCast() {
@@ -52,6 +55,9 @@ void WorldSession::ScheduleDeferredSpellCastCompletion(SpellCastOutcome const &o
   finish.auraPeriodicHealthDeltaPerTick = out.auraPeriodicHealthDeltaPerTick;
   finish.auraIsNegative = out.auraIsNegative;
   finish.auraCasterLevel = out.auraCasterLevel;
+  finish.spellGoMissile = out.deferredSpellGoMissile;
+  finish.missile = out.deferredMissile;
+  finish.spellImpactDelayMs = out.spellImpactDelayMs;
 
   _pendingDeferredCastActive = true;
   _pendingCastId = out.deferredCastId;
@@ -78,15 +84,18 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
   _pendingCastId = 0;
   _pendingSpellId = 0;
 
-  uint32 const castFlagsGo = SpellCastWire::CAST_FLAG_UNKNOWN_9;
+  uint32 const castFlagsGo =
+      SpellCastWire::BuildSpellGoCastFlags(finish.spellGoMissile);
   auto const nowGo = std::chrono::steady_clock::now();
   uint32 const castTimeGo =
       SpellCastWire::ResolveSpellGoTimestampMs(_position.time);
   WorldPacket spellGo;
   uint64 const hitTargets[1] = {finish.hitGuid};
+  SpellCastWire::SpellMissileTrajectoryWire const *missilePtr =
+      finish.spellGoMissile ? &finish.missile : nullptr;
   SpellCastWire::BuildSpellGo(spellGo, finish.casterGuid, finish.castId, finish.spellId,
                               castFlagsGo, 0, castTimeGo, hitTargets, 1,
-                              finish.targetFlags, finish.targetUnitGuid);
+                              finish.targetFlags, finish.targetUnitGuid, missilePtr);
 
   if (auto map = WorldService::Instance().GetMap(finish.mapId)) {
     SpellCastOutcome combat{};
@@ -110,6 +119,8 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
     map->BroadcastPacketToNearby(finish.casterGuid, spellGo, true);
     ApplySpellCastAuraOnMap(finish.mapId, map, combat, nowGo);
     ApplySpellCastOutcomeOnMap(finish.mapId, map, finish.casterGuid, combat, nowGo);
+    ScheduleSpellImpactVisual(map, finish.casterGuid, finish.spellId, finish.hitGuid,
+                              finish.spellImpactDelayMs);
     if (finish.spellCategoryCooldownGroup > 0 &&
         finish.spellCategoryCooldownDurationMs > 0) {
       _spellCategoryCooldownUntil[finish.spellCategoryCooldownGroup] =
@@ -121,6 +132,37 @@ void WorldSession::CompleteDeferredSpellCast(PendingSpellCastFinish const &finis
   } else {
     SendPacket(spellGo);
   }
+}
+
+void WorldSession::ScheduleSpellImpactVisual(std::shared_ptr<Map> map, uint64 casterGuid,
+                                             uint32 spellId, uint64 hitTargetGuid,
+                                             uint32 delayMs) {
+  if (!map || hitTargetGuid == 0 || spellId == 0)
+    return;
+
+  auto sendImpact = [map, casterGuid, spellId, hitTargetGuid]() {
+    BroadcastSpellImpactVisualOnMap(map, casterGuid, spellId, hitTargetGuid);
+  };
+
+  if (delayMs == 0u) {
+    sendImpact();
+    return;
+  }
+
+  auto self = shared_from_this();
+  Asio::SpawnDetached(_socket.get_executor(),
+                      [self, this, sendImpact = std::move(sendImpact),
+                       delayMs]() -> Asio::awaitable<void> {
+                        boost::asio::steady_timer timer(_socket.get_executor());
+                        boost::system::error_code ec;
+                        timer.expires_after(std::chrono::milliseconds(
+                            static_cast<int64_t>(std::max<uint32_t>(1u, delayMs))));
+                        co_await timer.async_wait(
+                            boost::asio::redirect_error(Asio::use_awaitable, ec));
+                        if (ec)
+                          co_return;
+                        sendImpact();
+                      });
 }
 
 void WorldSession::HandleCastSpell(WorldPacket &packet) {
@@ -216,6 +258,8 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       map->BroadcastPacketToNearby(_playerGuid, out.spellGo, true);
       ApplySpellCastAuraOnMap(_mapId, map, out, now);
       ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid, out, now);
+      ScheduleSpellImpactVisual(map, _playerGuid, static_cast<uint32>(c.spellId),
+                                out.primaryHitTargetGuid, out.spellImpactDelayMs);
       CommitSpellCooldownsFromCast(static_cast<uint32>(c.spellId), out, now);
     } else {
       SendPacket(out.spellStart);

@@ -3,6 +3,7 @@
 #include <application/spell/PassiveSpellAuras.h>
 #include <application/spell/PlayerAuraStatEffects.h>
 #include <application/spell/SpellHitEffects.h>
+#include <application/spell/SpellImpactEffects.h>
 #include <application/services/WorldService.h>
 #include <shared/game/SpellEffectMagnitude.h>
 #include <domain/world/Aura.h>
@@ -13,7 +14,9 @@
 #include <shared/Logger.h>
 #include <shared/game/SpellAttributes.h>
 #include <shared/game/SpellAuraTypes.h>
+#include <shared/dbc/SpellVisualDbc.h>
 #include <shared/network/AuraUpdateWire.h>
+#include <shared/network/PlaySpellVisualKitWire.h>
 #include <shared/network/SpellPeriodicAuraLogWire.h>
 #include <shared/network/WorldPacket.h>
 
@@ -406,6 +409,32 @@ bool RemoveAuraOnMapBySpellId(uint32 mapId, std::shared_ptr<Map> const &map,
       removed = true;
   });
   return removed;
+}
+
+void BroadcastSpellImpactVisualOnMap(std::shared_ptr<Map> const &map,
+                                     uint64 nearbyAnchorGuid, uint32 spellId,
+                                     uint64 hitTargetGuid) {
+  if (!map || hitTargetGuid == 0 || spellId == 0)
+    return;
+
+  auto const defs = WorldService::Instance().GetSpellDefinitions();
+  auto const visualDbc = WorldService::Instance().GetSpellVisualDbc();
+  if (!defs || !visualDbc || !visualDbc->IsLoaded())
+    return;
+
+  auto def = defs->GetDefinition(spellId);
+  if (!def)
+    return;
+
+  uint32 const kitId = SpellImpactEffects::ResolveImpactKitForSpell(*def, *visualDbc);
+  if (kitId == 0u)
+    return;
+
+  WorldPacket impactPkt;
+  PlaySpellVisualKitWire::BuildPlaySpellVisualKit(impactPkt, hitTargetGuid,
+                                                  static_cast<int32>(kitId));
+  map->BroadcastPacketToNearby(nearbyAnchorGuid != 0 ? nearbyAnchorGuid : hitTargetGuid,
+                               impactPkt, true);
 }
 
 void ApplySpellCastOutcomeOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
