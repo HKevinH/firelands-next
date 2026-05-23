@@ -42,4 +42,12 @@ void EnsureRacialLanguageSpells(uint8 race, std::vector<uint32> &spellIds);
 /// Moves the default `/say` language passive to the front of the list.
 void PrioritizeDefaultLanguageSpell(uint8 race, std::vector<uint32> &spellIds);
 
+/// True when `CHAT_LANG_ADDON` (-1) is valid for this `ChatMsg` type (party, guild, …).
+bool IsAddonChatLanguageAllowed(uint32 chatType);
+
+/// Maps client language id (including `-1` / universal) to a speakable language for
+/// `SMSG_MESSAGECHAT`. Never returns `LANG_UNIVERSAL` or `CHAT_LANG_ADDON`.
+uint32 NormalizePlayerChatLanguage(uint32 requestedLang, uint32 chatType, uint8 race,
+                                   std::unordered_set<uint32> const &knownSpellIds);
+
 } // namespace Firelands

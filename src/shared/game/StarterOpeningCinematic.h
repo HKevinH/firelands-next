@@ -1,6 +1,7 @@
 #pragma once
 
 #include <shared/Common.h>
+#include <shared/game/PlayerClass.h>
 #include <cstdint>
 
 namespace Firelands {
@@ -8,9 +9,8 @@ namespace Firelands {
 /// `SMSG_TRIGGER_CINEMATIC` uses ids from the client's `CinematicSequences.dbc`.
 /// Race ids match `ChrRaces.dbc` (build 15595 / parity with post-Cata ChrRaces rows).
 /// Death Knight uses `ChrClasses.dbc` camera / cinematic sequence (see wiki).
-inline uint32_t OpeningCinematicSequence(uint8 klass, uint8 race) {
-  constexpr uint8_t kClassDeathKnight = 6;
-  if (klass == kClassDeathKnight)
+inline uint32_t OpeningCinematicSequence(PlayerClass klass, uint8 race) {
+  if (klass == PlayerClass::DeathKnight)
     return 165u;
 
   switch (race) {
@@ -41,6 +41,10 @@ inline uint32_t OpeningCinematicSequence(uint8 klass, uint8 race) {
   default:
     return 0u;
   }
+}
+
+inline uint32_t OpeningCinematicSequence(uint8 klass, uint8 race) {
+  return OpeningCinematicSequence(ToPlayerClass(klass), race);
 }
 
 } // namespace Firelands

@@ -30,6 +30,12 @@ public:
   /// True when `spellId` is granted via a profession / meta skill line in DBC.
   bool IsSpellFromExcludedSkillLine(uint32_t spellId) const;
 
+  /// Spells with `AcquireMethod` learn-on-skill for `skillLineIds` (class tabs from
+  /// `playercreateinfo_skill`). Ref `Player::LearnSkillRewardedSpells` at create.
+  std::vector<uint32_t>
+  GetSpellsLearnedOnSkillLearn(std::vector<uint32_t> const &skillLineIds,
+                               uint8_t race, uint8_t klass) const;
+
 private:
   std::vector<uint32_t> collectSkillLineSpells(uint8_t race, uint8_t klass,
                                              bool weaponArmorLanguageOnly) const;

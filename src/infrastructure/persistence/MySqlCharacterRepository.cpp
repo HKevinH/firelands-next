@@ -5,6 +5,7 @@
 #include <shared/game/EquipmentCache.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/game/ItemEquipSlots.h>
+#include <shared/game/PlayerClass.h>
 #include <shared/game/PlayerFactionTeam.h>
 #include <shared/Logger.h>
 #include <cmath>
@@ -816,7 +817,7 @@ MySqlCharacterRepository::CreateCharacter(const Character &character) {
     stmnt->setUInt(1, character.GetAccount());
     stmnt->setString(2, character.GetName());
     stmnt->setUInt(3, character.GetRace());
-    stmnt->setUInt(4, character.GetClass());
+    stmnt->setUInt(4, ToClassId(character.GetClass()));
     stmnt->setUInt(5, character.GetGender());
     stmnt->setUInt(6, character.GetSkin());
     stmnt->setUInt(7, character.GetFace());

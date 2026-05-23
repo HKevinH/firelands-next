@@ -25,8 +25,12 @@ enum WorldOpcode : uint32 {
   /// Reference: SMSG_CREATE_CHAR
   SMSG_CHAR_CREATE = 0x2D05,
   CMSG_CHAR_DELETE = 0x6425,
+  /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs`
+  CMSG_GENERATE_RANDOM_CHARACTER_NAME = 0x2413,
   /// Reference: SMSG_DELETE_CHAR
   SMSG_CHAR_DELETE = 0x0304,
+  /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs`
+  SMSG_GENERATE_RANDOM_CHARACTER_NAME_RESULT = 0x38B1,
   CMSG_PLAYER_LOGIN = 0x05B1,
   /// Reference: WowPacketParser V4_3_4_15595 Opcodes.cs
   CMSG_LOGOUT_REQUEST = 0x0A25,

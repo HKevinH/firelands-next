@@ -195,6 +195,40 @@ bool StarterSpellsDbc::IsSpellFromExcludedSkillLine(uint32_t spellId) const {
   return false;
 }
 
+std::vector<uint32_t> StarterSpellsDbc::GetSpellsLearnedOnSkillLearn(
+    std::vector<uint32_t> const &skillLineIds, uint8_t race,
+    uint8_t klass) const {
+  if (!m_loaded || klass == 0u || skillLineIds.empty())
+    return {};
+
+  uint32_t const raceMask = PlayerRaceMask(race);
+  uint32_t const classMask = PlayerClassMask(klass);
+  std::unordered_set<uint32_t> skillLines(skillLineIds.begin(),
+                                          skillLineIds.end());
+
+  std::unordered_set<uint32_t> candidates;
+  for (SkillLineAbilityRow const &row : m_abilities) {
+    if (!skillLines.count(row.skillLine))
+      continue;
+    if (row.acquireMethod != 2u)
+      continue;
+    if (row.minSkillLineRank > 1u)
+      continue;
+    if (!MaskAllowsPlayer(row.classMask, classMask))
+      continue;
+    if (row.raceMask != 0u && row.raceMask != 0xFFFFFFFFu &&
+        !MaskAllowsPlayer(row.raceMask, raceMask))
+      continue;
+    if (IsRidingOrTransportStarterSpell(row.spellId))
+      continue;
+    if (IsWarlockQuestGatedSummonSpell(row.spellId))
+      continue;
+    candidates.insert(row.spellId);
+  }
+
+  return finalizeCandidates(std::move(candidates));
+}
+
 std::vector<uint32_t> StarterSpellsDbc::GetRacialSpells(uint8_t race,
                                                         uint8_t klass) const {
   if (!m_loaded || klass == 0u || race == 0u)

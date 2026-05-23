@@ -1,3 +1,4 @@
+#include <shared/game/PlayerClass.h>
 #include <application/services/PlayerSpellbook.h>
 #include <application/services/PlayerCreateInfoService.h>
 #include <shared/game/ChatLanguages.h>
@@ -135,7 +136,7 @@ std::vector<uint32_t> BuildKnownSpells(
   EnsureRacialLanguageSpells(race, spells);
   PrioritizeDefaultLanguageSpell(race, spells);
 
-  if (klass == 9u) {
+  if (ToPlayerClass(klass) == PlayerClass::Warlock) {
     spells.erase(
         std::remove_if(spells.begin(), spells.end(),
                        [](uint32_t sid) {

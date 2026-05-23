@@ -1027,12 +1027,14 @@ bool CommandService::HandleGmTag(std::shared_ptr<ICommandSession> session,
   }
   if (AsciiEqualsLower(args[0], "on")) {
     session->SetGmTagEnabled(true);
-    session->SendNotification("GM tag enabled.");
+    session->SendNotification(
+        "GM tag enabled. All nearby creatures are visible and selectable.");
     return true;
   }
   if (AsciiEqualsLower(args[0], "off")) {
     session->SetGmTagEnabled(false);
-    session->SendNotification("GM tag disabled.");
+    session->SendNotification(
+        "GM tag disabled. Creature visibility follows phases and unit flags again.");
     return true;
   }
   session->SendNotification("Usage: .gm on | .gm off");
@@ -1116,7 +1118,7 @@ bool CommandService::HandleGmFly(std::shared_ptr<ICommandSession> session,
   }
   if (AsciiEqualsLower(args[0], "on")) {
     session->SetGmFlyEnabled(true);
-    session->SendNotification("Flight enabled (client).");
+    session->SendNotification("Flight enabled.");
     return true;
   }
   if (AsciiEqualsLower(args[0], "off")) {

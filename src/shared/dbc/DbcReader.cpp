@@ -145,6 +145,20 @@ float DbcReader::ReadFirstFloatInRecord(uint32_t recordIndex) const {
   return f;
 }
 
+std::string DbcReader::ReadStringAtOffset(uint32_t stringOffset) const {
+  if (m_recordCount == 0 || m_recordSize == 0)
+    return {};
+  size_t const stringsBase =
+      m_recordsOffset + static_cast<size_t>(m_recordCount) * m_recordSize;
+  size_t const pos = stringsBase + static_cast<size_t>(stringOffset);
+  if (pos >= m_data.size())
+    return {};
+  size_t end = pos;
+  while (end < m_data.size() && m_data[end] != 0)
+    ++end;
+  return std::string(reinterpret_cast<char const *>(m_data.data() + pos), end - pos);
+}
+
 uint32_t DbcReader::ReadUInt32AtRecordByteOffset(
     uint32_t recordIndex, uint32_t byteOffsetFromRecordStart) const {
   if (recordIndex >= m_recordCount)

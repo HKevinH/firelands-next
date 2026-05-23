@@ -42,6 +42,27 @@ inline bool MovementIsAirborneTier(MovementInfo const &m) {
          MovementHasFlag(m, MOVEMENTFLAG_SPLINE_ELEVATION);
 }
 
+/// Bits cleared when GM `.fly off` so server anim tier / breath match liquid again.
+inline constexpr uint32 kGmFlyMovementClearMask =
+    MOVEMENTFLAG_CAN_FLY | MOVEMENTFLAG_MASK_MOVING_FLY |
+    MOVEMENTFLAG_DISABLE_GRAVITY | MOVEMENTFLAG_HOVER |
+    MOVEMENTFLAG_SPLINE_ELEVATION;
+
+/// Reconcile `MovementInfo` with GM fly authority (client packets + `.fly` toggle).
+/// `wasInLiquidForBreath` is true when breath mirror is active — swim opcodes can
+/// lead `MOVEMENTFLAG_SWIMMING` on heartbeats.
+inline void ApplyGmFlyAuthority(MovementInfo &m, bool gmFlyEnabled,
+                                bool wasInLiquidForBreath = false) {
+  if (gmFlyEnabled) {
+    m.flags |= MOVEMENTFLAG_CAN_FLY;
+    return;
+  }
+  m.flags &= ~kGmFlyMovementClearMask;
+  m.flags2 &= static_cast<uint16>(~MOVEMENTFLAG2_CAN_SWIM_TO_FLY_TRANS);
+  if (wasInLiquidForBreath && !MovementIsSwimming(m))
+    m.flags |= MOVEMENTFLAG_SWIMMING;
+}
+
 /// `UNIT_FIELD_BYTES_1` anim tier byte (Cataclysm `UnitBytes1_Flags_AnimationTier`).
 inline uint8 MovementAnimTier(MovementInfo const &m) {
   if (MovementIsSwimming(m))

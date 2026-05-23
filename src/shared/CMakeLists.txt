@@ -16,6 +16,7 @@ add_library(FirelandsShared STATIC
     dbc/FactionTemplateDbc.cpp
     dbc/AreaTableDbc.cpp
     dbc/ChrRacesDbc.cpp
+    dbc/NameGenDbc.cpp
     game/EquipmentCache.cpp
     game/ChatLanguages.cpp
     game/StarterSpellFilters.cpp

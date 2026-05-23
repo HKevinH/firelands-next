@@ -101,7 +101,7 @@ enum Language {
 
 /// Client / `LANG_ADDON` wire value for add-on messages (party, raid,
 /// guild, whisper, battleground). Not part of the `Language` enumerator range.
-constexpr uint32 CHAT_LANG_ADDON = 0xFFFFFFFFu;
+constexpr std::uint32_t CHAT_LANG_ADDON = 0xFFFFFFFFu;
 
 /// Wire `ChatTag` suffix on `SMSG_MESSAGECHAT` / `SMSG_GM_MESSAGECHAT` (4.3.4).
 /// Bitflags — same order as WowPacketParser `ChatTag` / `ChatTags`.

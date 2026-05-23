@@ -67,6 +67,31 @@ TEST(PlayerCreateInfoServiceStats, AppliesClassRaceAndSetsHealth) {
   EXPECT_EQ(ch.GetPowerType(), 1u); // warrior rage
 }
 
+TEST(PlayerCreateInfoServiceStats, HumanHunterMergesClassTabLearnOnSkillSpells) {
+  if (!Logger::IsInitialized())
+    Logger::Init(LoggerBuilder().WithConsole(false).Build());
+  auto repo = std::make_shared<MockPlayerCreateInfoRepo>();
+  EXPECT_CALL(*repo, GetStarterSpells(1, 3))
+      .WillOnce(Return(std::vector<uint32_t>{1978u, 56641u}));
+  EXPECT_CALL(*repo, GetStarterSkills(1, 3))
+      .WillOnce(Return(std::vector<StarterSkillGrant>{
+          StarterSkillGrant{50u, 0u, 0u},
+          StarterSkillGrant{51u, 0u, 0u},
+          StarterSkillGrant{163u, 0u, 0u},
+          StarterSkillGrant{795u, 0u, 0u},
+      }));
+
+  PlayerCreateInfoService svc(repo, "", kTestDbcDir);
+  std::vector<uint32_t> spells = svc.GetStarterSpells(1, 3);
+  auto has = [&](uint32_t id) {
+    return std::find(spells.begin(), spells.end(), id) != spells.end();
+  };
+  EXPECT_TRUE(has(1978u));
+  EXPECT_TRUE(has(56641u));
+  EXPECT_TRUE(has(75u)) << "Auto Shot from class-tab learn-on-skill";
+  EXPECT_TRUE(has(883u)) << "Call Pet from class-tab learn-on-skill";
+}
+
 TEST(PlayerCreateInfoServiceStats, MergesDbcSkillLineAndRacialSpellsWithWorldDb) {
   if (!Logger::IsInitialized())
     Logger::Init(LoggerBuilder().WithConsole(false).Build());

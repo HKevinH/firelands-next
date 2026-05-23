@@ -1,4 +1,5 @@
 #include <application/services/PlayerCreateInfoService.h>
+#include <shared/game/PlayerClass.h>
 #include <domain/models/Character.h>
 #include <shared/game/PlayerPowerType.h>
 #include <shared/Logger.h>
@@ -88,6 +89,20 @@ std::vector<uint32_t> PlayerCreateInfoService::GetStarterSpells(uint8_t race,
     std::vector<uint32_t> racial = m_starterSpellsDbc.GetRacialSpells(race, klass);
     StripRidingSpells(racial);
     MergeUniqueSpellIds(spells, racial);
+
+    if (m_repository) {
+      std::vector<uint32_t> classTabSkillLines;
+      for (StarterSkillGrant const &grant :
+           m_repository->GetStarterSkills(race, klass)) {
+        if (IsClassSpellTabStarterSkill(grant.skillId))
+          classTabSkillLines.push_back(grant.skillId);
+      }
+      std::vector<uint32_t> onSkillLearn =
+          m_starterSpellsDbc.GetSpellsLearnedOnSkillLearn(classTabSkillLines, race,
+                                                          klass);
+      StripRidingSpells(onSkillLearn);
+      MergeUniqueSpellIds(spells, onSkillLearn);
+    }
   }
 
   if (spells.empty()) {
@@ -144,7 +159,7 @@ bool PlayerCreateInfoService::TryApplyTemplateCombatState(Character &character) 
   if (!m_repository)
     return false;
 
-  uint8_t const klass = character.GetClass();
+  uint8_t const klass = ToClassId(character.GetClass());
   uint8_t const level = character.GetLevel();
   uint8_t const race = character.GetRace();
 

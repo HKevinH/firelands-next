@@ -161,3 +161,57 @@ TEST_F(StarterSpellsDbcTests, GetRacialSpells_BloodElfPaladinHasArcaneTorrent) {
   EXPECT_TRUE(std::find(spells.begin(), spells.end(), 28730u) != spells.end())
       << "Arcane Torrent";
 }
+
+TEST_F(StarterSpellsDbcTests, HumanHunterClassTabLearnIncludesAutoShotAndCallPet) {
+  StarterSpellsDbc dbc;
+  ASSERT_TRUE(dbc.Load(kDbcDir + "/SkillLineAbility.dbc",
+                        kDbcDir + "/SkillRaceClassInfo.dbc"));
+
+  std::vector<uint32_t> const hunterTabs = {50u, 51u, 163u, 795u};
+  std::vector<uint32_t> spells =
+      dbc.GetSpellsLearnedOnSkillLearn(hunterTabs, 1, 3);
+  auto has = [&](uint32_t id) {
+    return std::find(spells.begin(), spells.end(), id) != spells.end();
+  };
+  EXPECT_TRUE(has(75u)) << "Auto Shot (Marksmanship learn-on-skill)";
+  EXPECT_TRUE(has(883u)) << "Call Pet (Beast Mastery learn-on-skill)";
+  EXPECT_FALSE(has(1978u)) << "Serpent Sting is playercreateinfo, not acquire-on-learn";
+}
+
+namespace {
+
+void ExpectClassTabLearnSpells(StarterSpellsDbc const &dbc,
+                               std::vector<uint32_t> const &tabs, uint8_t race,
+                               uint8_t klass,
+                               std::initializer_list<uint32_t> expected,
+                               std::initializer_list<uint32_t> excluded = {}) {
+  std::vector<uint32_t> spells =
+      dbc.GetSpellsLearnedOnSkillLearn(tabs, race, klass);
+  auto has = [&](uint32_t id) {
+    return std::find(spells.begin(), spells.end(), id) != spells.end();
+  };
+  for (uint32_t id : expected)
+    EXPECT_TRUE(has(id)) << "expected learn-on-skill spell " << id;
+  for (uint32_t id : excluded)
+    EXPECT_FALSE(has(id)) << "spell " << id << " should not be learn-on-skill only";
+}
+
+} // namespace
+
+TEST_F(StarterSpellsDbcTests, ClassTabLearnSpells_MatchCataReferenceLevelOne) {
+  StarterSpellsDbc dbc;
+  ASSERT_TRUE(dbc.Load(kDbcDir + "/SkillLineAbility.dbc",
+                        kDbcDir + "/SkillRaceClassInfo.dbc"));
+
+  ExpectClassTabLearnSpells(dbc, {26u, 256u, 257u, 803u}, 1, 1, {2457u, 88161u});
+  ExpectClassTabLearnSpells(dbc, {184u, 267u, 594u, 800u}, 1, 2, {35395u});
+  ExpectClassTabLearnSpells(dbc, {38u, 39u, 253u, 797u}, 1, 4, {1752u});
+  ExpectClassTabLearnSpells(dbc, {56u, 78u, 613u, 804u}, 1, 5, {585u});
+  ExpectClassTabLearnSpells(dbc, {770u, 771u, 772u, 796u}, 1, 6, {59879u});
+  ExpectClassTabLearnSpells(dbc, {373u, 374u, 375u, 801u}, 1, 7, {403u});
+  ExpectClassTabLearnSpells(dbc, {6u, 8u, 237u, 799u}, 1, 8, {133u});
+  ExpectClassTabLearnSpells(dbc, {354u, 355u, 593u, 802u}, 1, 9, {686u},
+                            {688u, 697u});
+  ExpectClassTabLearnSpells(dbc, {134u, 573u, 574u, 798u}, 1, 11, {5176u},
+                            {33943u, 40120u});
+}

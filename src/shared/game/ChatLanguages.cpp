@@ -1,5 +1,6 @@
 #include <shared/game/ChatLanguages.h>
 
+#include <domain/models/Chat.h>
 #include <shared/Common.h>
 
 #include <algorithm>
@@ -247,6 +248,34 @@ void PrioritizeDefaultLanguageSpell(uint8 race, std::vector<uint32> &spellIds) {
     spellIds.erase(it);
     spellIds.insert(spellIds.begin(), primary);
   }
+}
+
+bool IsAddonChatLanguageAllowed(uint32 chatType) {
+  switch (chatType) {
+  case CHAT_MSG_PARTY:
+  case CHAT_MSG_RAID:
+  case CHAT_MSG_GUILD:
+  case CHAT_MSG_WHISPER:
+  case CHAT_MSG_BATTLEGROUND:
+    return true;
+  default:
+    return false;
+  }
+}
+
+uint32 NormalizePlayerChatLanguage(uint32 requestedLang, uint32 chatType, uint8 race,
+                                   std::unordered_set<uint32> const &knownSpellIds) {
+  uint32 const fallback = DefaultLanguageForRace(race);
+  if (requestedLang == CHAT_LANG_ADDON) {
+    if (IsAddonChatLanguageAllowed(chatType))
+      return CHAT_LANG_ADDON;
+    return fallback;
+  }
+  if (requestedLang == LANG_UNIVERSAL)
+    return fallback;
+  if (PlayerKnowsLanguage(knownSpellIds, requestedLang))
+    return requestedLang;
+  return fallback;
 }
 
 void AppendRacialLanguageSpells(uint8 race, std::vector<uint32> &knownSpells) {

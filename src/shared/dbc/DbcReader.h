@@ -45,6 +45,9 @@ public:
     return static_cast<uint32_t>(fmt.size()) == m_fieldCount;
   }
 
+  /// Null-terminated UTF-8 string at `stringOffset` bytes into the DBC string block.
+  std::string ReadStringAtOffset(uint32_t stringOffset) const;
+
 private:
   std::vector<uint8_t> m_data;
   uint32_t m_recordCount = 0;

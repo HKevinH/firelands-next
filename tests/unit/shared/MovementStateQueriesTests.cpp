@@ -45,3 +45,28 @@ TEST(MovementStateQueries, FatiguePlayerFlag) {
   EXPECT_FALSE(PlayerFlagsIndicatesFatigueBoundary(0));
   EXPECT_TRUE(PlayerFlagsIndicatesFatigueBoundary(kPlayerFlagsIsOutOfBounds));
 }
+
+TEST(MovementStateQueries, GmFlyAuthorityOnSetsCanFly) {
+  MovementInfo m{};
+  ApplyGmFlyAuthority(m, true);
+  EXPECT_TRUE(MovementCanFly(m));
+}
+
+TEST(MovementStateQueries, GmFlyAuthorityOffClearsAirborneKeepsSwim) {
+  MovementInfo m{};
+  m.flags = MOVEMENTFLAG_SWIMMING | MOVEMENTFLAG_DISABLE_GRAVITY |
+            MOVEMENTFLAG_FLYING | MOVEMENTFLAG_CAN_FLY;
+  ApplyGmFlyAuthority(m, false);
+  EXPECT_TRUE(MovementIsSwimming(m));
+  EXPECT_FALSE(MovementCanFly(m));
+  EXPECT_FALSE(MovementIsAirborneTier(m));
+  EXPECT_EQ(MovementAnimTier(m), 1u);
+}
+
+TEST(MovementStateQueries, GmFlyAuthorityOffRestoresSwimFromLiquidHint) {
+  MovementInfo m{};
+  m.flags = MOVEMENTFLAG_DISABLE_GRAVITY | MOVEMENTFLAG_FLYING;
+  ApplyGmFlyAuthority(m, false, true);
+  EXPECT_TRUE(MovementIsSwimming(m));
+  EXPECT_EQ(MovementAnimTier(m), 1u);
+}

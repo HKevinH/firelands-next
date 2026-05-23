@@ -1,5 +1,7 @@
 #pragma once
 
+#include <shared/game/PlayerClass.h>
+
 #include <cstdint>
 
 namespace Firelands {
@@ -7,6 +9,10 @@ namespace Firelands {
 /// `Unit::getClassMask()` / `Player::SatisfyQuestClass`.
 inline constexpr uint32_t PlayerClassMask(uint8_t classId) noexcept {
   return classId == 0 ? 0u : (1u << (classId - 1u));
+}
+
+inline constexpr uint32_t PlayerClassMask(PlayerClass klass) noexcept {
+  return PlayerClassMask(ToClassId(klass));
 }
 
 /// `Unit::getRaceMask()` / `Player::SatisfyQuestRace`.

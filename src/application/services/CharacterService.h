@@ -1,7 +1,7 @@
 #pragma once
 
 #include <domain/repositories/ICharacterRepository.h>
-#include <domain/models/Character.h>
+#include <shared/game/PlayerClass.h>
 #include <array>
 #include <domain/models/PlayerCreateInfo.h>
 #include <application/services/PlayerCreateInfoService.h>
@@ -11,6 +11,7 @@
 #include <shared/game/AccessLevel.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/game/ItemEquipSlots.h>
+#include <shared/dbc/NameGenDbc.h>
 #include <shared/Common.h>
 #include <algorithm>
 #include <optional>
@@ -92,9 +93,11 @@ class CharacterService {
 public:
   explicit CharacterService(
       std::shared_ptr<ICharacterRepository> repository,
-      std::shared_ptr<PlayerCreateInfoService> playerCreateInfoService = nullptr)
+      std::shared_ptr<PlayerCreateInfoService> playerCreateInfoService = nullptr,
+      std::shared_ptr<NameGenDbc const> nameGenDbc = nullptr)
       : m_repository(std::move(repository)),
-        m_playerCreateInfoService(std::move(playerCreateInfoService)) {}
+        m_playerCreateInfoService(std::move(playerCreateInfoService)),
+        m_nameGenDbc(std::move(nameGenDbc)) {}
 
   std::vector<std::shared_ptr<Character>>
   GetCharactersForAccount(uint32 accountId) {
@@ -105,6 +108,14 @@ public:
     if (!m_playerCreateInfoService)
       return {};
     return m_playerCreateInfoService->GetStarterSpells(race, klass);
+  }
+
+  /// Character creation screen dice button (`CMSG_GENERATE_RANDOM_CHARACTER_NAME`).
+  std::optional<std::string> GenerateRandomCharacterName(uint8_t race,
+                                                         uint8_t gender) const {
+    if (!m_nameGenDbc || !m_nameGenDbc->IsLoaded())
+      return std::nullopt;
+    return m_nameGenDbc->PickRandomName(race, gender);
   }
 
   bool CreateCharacter(uint32 accountId, std::string name, uint8 race,
@@ -335,7 +346,7 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
       uint32_t const entry = ch->GetPackItemEntry(packIndex);
       if (entry != 0) {
         auto grants = m_playerCreateInfoService->GetStarterItemGrants(
-            ch->GetRace(), ch->GetClass(), ch->GetGender(), ch->GetOutfitId());
+            ch->GetRace(), ToClassId(ch->GetClass()), ch->GetGender(), ch->GetOutfitId());
         if (HasAtLeast(m_repository->GetAccountAccessLevel(accountId),
                        AccessLevel::GameMaster)) {
           AppendGmStarterItems(grants);
@@ -403,6 +414,7 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
 private:
   std::shared_ptr<ICharacterRepository> m_repository;
   std::shared_ptr<PlayerCreateInfoService> m_playerCreateInfoService;
+  std::shared_ptr<NameGenDbc const> m_nameGenDbc;
 };
 
 } // namespace Firelands

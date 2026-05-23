@@ -1,4 +1,5 @@
 #include <application/logic/GossipLogic.h>
+#include <shared/game/PlayerClass.h>
 #include <shared/game/QuestMask.h>
 #include <gtest/gtest.h>
 #include <vector>
@@ -6,8 +7,8 @@
 namespace Firelands {
 
 TEST(QuestMaskTests, PlayerClassMask_Matches) {
-  EXPECT_EQ(PlayerClassMask(11), 1024u); // Druid
-  EXPECT_EQ(PlayerClassMask(1), 1u); // Warrior
+  EXPECT_EQ(PlayerClassMask(PlayerClass::Druid), 1024u);
+  EXPECT_EQ(PlayerClassMask(PlayerClass::Warrior), 1u);
 }
 
 TEST(QuestMaskTests, PlayerRaceMask_Troll) {
@@ -33,7 +34,8 @@ TEST(QuestGossipFilterTests, Jinthala_ShowsOnlyDruidQuestForTrollDruid) {
   add(24782, 16, 946);
   add(26272, 256, 946);
 
-  auto filtered = FilterQuestGossipForPlayer(all, 11, 8);
+  auto filtered = FilterQuestGossipForPlayer(
+      all, ToClassId(PlayerClass::Druid), 8);
   ASSERT_EQ(filtered.size(), 1u);
   EXPECT_EQ(filtered[0].questId, 24764u);
 }
@@ -41,8 +43,8 @@ TEST(QuestGossipFilterTests, Jinthala_ShowsOnlyDruidQuestForTrollDruid) {
 TEST(QuestGossipFilterTests, ZeroMasksAllowAllClassesAndRaces) {
   QuestGossipSummary open;
   open.questId = 1;
-  EXPECT_TRUE(QuestGossipAllowsPlayer(open, 11, 8));
-  EXPECT_TRUE(QuestGossipAllowsPlayer(open, 1, 1));
+  EXPECT_TRUE(QuestGossipAllowsPlayer(open, ToClassId(PlayerClass::Druid), 8));
+  EXPECT_TRUE(QuestGossipAllowsPlayer(open, ToClassId(PlayerClass::Warrior), 1));
 }
 
 } // namespace Firelands
