@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <application/combat/CombatHostility.h>
-#include <application/ports/IMapNotifier.h>
+#include <domain/ports/IMapNotifier.h>
 #include <domain/world/Creature.h>
 #include <domain/world/Player.h>
 

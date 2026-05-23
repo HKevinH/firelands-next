@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <domain/world/Player.h>
-#include <application/ports/IMapNotifier.h>
+#include <domain/ports/IMapNotifier.h>
 #include <shared/network/WorldPacket.h>
 
 using namespace Firelands;

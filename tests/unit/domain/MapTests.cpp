@@ -3,7 +3,7 @@
 #include <domain/world/Creature.h>
 #include <domain/world/Map.h>
 #include <domain/world/Player.h>
-#include <application/ports/IMapNotifier.h>
+#include <domain/ports/IMapNotifier.h>
 #include <shared/network/WorldPacket.h>
 
 #include <shared/Logger.h>

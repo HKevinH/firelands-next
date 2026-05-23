@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <application/combat/CombatEntityAdapters.h>
 #include <application/combat/CombatService.h>
-#include <application/ports/IMapNotifier.h>
+#include <domain/ports/IMapNotifier.h>
 #include <domain/combat/CombatEngine.h>
 #include <domain/world/Creature.h>
 #include <domain/world/Player.h>

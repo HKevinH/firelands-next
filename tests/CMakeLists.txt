@@ -62,6 +62,9 @@ add_executable(FirelandsUnitTests
     unit/application/PlayerSpellbookTests.cpp
     unit/application/PassiveSpellAurasTests.cpp
     unit/application/PlayerPhaseShiftTests.cpp
+    unit/application/PhaseAreaCatalogTests.cpp
+    unit/application/CommandServiceReviveUnlearnTests.cpp
+    unit/application/GmPlayerReviveTests.cpp
     unit/application/PlayerAuraStatEffectsTests.cpp
     unit/application/WorldServiceCreatureScriptTests.cpp
     unit/application/CreatureSpawnLogicTests.cpp
@@ -70,6 +73,7 @@ add_executable(FirelandsUnitTests
     unit/application/QuestGiverLogicTests.cpp
     unit/application/QuestGossipFilterTests.cpp
     unit/shared/WowGuidTests.cpp
+    unit/shared/AreaTableDbcTests.cpp
     unit/infrastructure/ActionButtonPacketTests.cpp
     unit/infrastructure/ActionBarTogglesObjectUpdateTests.cpp
     unit/infrastructure/Power1ObjectUpdateTests.cpp
@@ -80,6 +84,7 @@ add_executable(FirelandsUnitTests
     unit/domain/MapTests.cpp
     unit/domain/CreatureCombatTests.cpp
     unit/domain/CreatureEvadeTests.cpp
+    unit/domain/CreatureUnitFlagsTests.cpp
     unit/domain/PlayerCombatTests.cpp
     unit/combat/CombatEngineTest.cpp
     unit/combat/CombatHostilityTests.cpp
