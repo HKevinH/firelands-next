@@ -1,6 +1,6 @@
 -- Phase group membership (Trinity/Cata `phase_x_phase_group`).
 -- Required for `creature.PhaseGroup` spawns when `PhaseId` is 0.
--- Import from reference DB2 export or `firelands-cata-ref` when available.
+-- Data: migration 55 (`python3 tools/sql/import_ref_phase_data.py`, PhaseXPhaseGroup.dbc).
 
 USE `firelands_world`;
 

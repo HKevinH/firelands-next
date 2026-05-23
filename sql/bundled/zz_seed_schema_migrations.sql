@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS `firelands_auth`.`schema_migrations` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO `firelands_auth`.`schema_migrations` (`migration`) VALUES
+  ('creature_ref_import.sql'),
   ('firelands_auth.sql'),
   ('firelands_characters.sql'),
   ('firelands_world.sql'),
@@ -21,4 +22,28 @@ INSERT IGNORE INTO `firelands_auth`.`schema_migrations` (`migration`) VALUES
   ('32_world_gossip_tables.sql'),
   ('33_world_npc_text.sql'),
   ('34_world_npc_text_data.sql'),
-  ('35_world_gossip_data.sql');
+  ('35_world_gossip_data.sql'),
+  ('36_world_quest_gossip_tables.sql'),
+  ('38_world_quest_gossip_data.sql'),
+  ('39_world_quest_gossip_class_race.sql'),
+  ('40_world_quest_gossip_allowable_masks.sql'),
+  ('41_char_spell_cooldowns.sql'),
+  ('42_world_playercreateinfo_tables.sql'),
+  ('43_world_playercreateinfo_data.sql'),
+  ('44_world_playercreateinfo_schema_fix.sql'),
+  ('45_world_playercreateinfo_restore_data.sql'),
+  ('46_world_paladin_crusader_strike_starter.sql'),
+  ('46_world_playercreateinfo_remove_riding_spells.sql'),
+  ('47_world_playercreateinfo_remove_meta_skills.sql'),
+  ('47_world_rogue_sinister_strike_starter.sql'),
+  ('48_world_mage_fireball_starter.sql'),
+  ('49_world_warlock_shadow_bolt_starter.sql'),
+  ('50_world_warlock_quest_summon_spells.sql'),
+  ('51_world_warlock_suppress_summon_imp_ui.sql'),
+  ('52_char_character_action.sql'),
+  ('52_world_creature_template_spells.sql'),
+  ('53_characters_action_bar_toggles.sql'),
+  ('53_world_phase_x_phase_group.sql'),
+  ('54_characters_rest_bonus.sql'),
+  ('54_world_phase_area.sql'),
+  ('55_world_phase_catalog_data.sql');

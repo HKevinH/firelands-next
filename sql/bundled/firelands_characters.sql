@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `firstLogin` tinyint(3) unsigned NOT NULL DEFAULT '1',
   `money` int unsigned NOT NULL DEFAULT '0',
   `xp` int unsigned NOT NULL DEFAULT '0',
+  `rest_bonus` float NOT NULL DEFAULT '0',
   `live_health` int unsigned NULL DEFAULT NULL,
   `live_power1` int unsigned NULL DEFAULT NULL,
   `tutorial0` int unsigned NOT NULL DEFAULT '0',
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS `characters` (
   `tutorial5` int unsigned NOT NULL DEFAULT '0',
   `tutorial6` int unsigned NOT NULL DEFAULT '0',
   `tutorial7` int unsigned NOT NULL DEFAULT '0',
+  `actionBarToggles` tinyint unsigned NOT NULL DEFAULT '255',
   PRIMARY KEY (`guid`),
   KEY `idx_account` (`account`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -63,6 +65,35 @@ CREATE TABLE IF NOT EXISTS `character_spell` (
   PRIMARY KEY (`guid`, `spell`),
   KEY `idx_guid` (`guid`),
   CONSTRAINT `fk_character_spell_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `character_spell_cooldown` (
+  `guid` int unsigned NOT NULL,
+  `spell` int unsigned NOT NULL,
+  `remaining_ms` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`, `spell`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_spell_cooldown_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `character_spell_category_cooldown` (
+  `guid` int unsigned NOT NULL,
+  `category` int unsigned NOT NULL,
+  `remaining_ms` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`, `category`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_spell_category_cooldown_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `character_action` (
+  `guid` int unsigned NOT NULL,
+  `spec` tinyint unsigned NOT NULL DEFAULT '0',
+  `button` tinyint unsigned NOT NULL,
+  `action` int unsigned NOT NULL DEFAULT '0',
+  `type` tinyint unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`guid`, `spec`, `button`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_action_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `gm_ticket` (
@@ -167,4 +198,69 @@ CREATE TABLE IF NOT EXISTS `item_refund_instance` (
   `paidExtendedCost` smallint unsigned NOT NULL DEFAULT '0',
   PRIMARY KEY (`item_guid`,`player_guid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Item Refund System';
+
+
+-- === source: migrations/41_char_spell_cooldowns.sql ===
+-- Migration: character spell cooldown persistence
+-- Target: `firelands_characters` — per-character spell/category recovery timers
+
+CREATE DATABASE IF NOT EXISTS `firelands_characters`;
+USE `firelands_characters`;
+
+CREATE TABLE IF NOT EXISTS `character_spell_cooldown` (
+  `guid` int unsigned NOT NULL,
+  `spell` int unsigned NOT NULL,
+  `remaining_ms` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`, `spell`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_spell_cooldown_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `character_spell_category_cooldown` (
+  `guid` int unsigned NOT NULL,
+  `category` int unsigned NOT NULL,
+  `remaining_ms` int unsigned NOT NULL,
+  PRIMARY KEY (`guid`, `category`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_spell_category_cooldown_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- === source: migrations/52_char_character_action.sql ===
+-- Migration: per-character action bar layout (Cataclysm 4.3.4)
+-- Target: `firelands_characters`
+
+CREATE DATABASE IF NOT EXISTS `firelands_characters`;
+USE `firelands_characters`;
+
+CREATE TABLE IF NOT EXISTS `character_action` (
+  `guid` int unsigned NOT NULL,
+  `spec` tinyint unsigned NOT NULL DEFAULT '0',
+  `button` tinyint unsigned NOT NULL,
+  `action` int unsigned NOT NULL DEFAULT '0',
+  `type` tinyint unsigned NOT NULL DEFAULT '0',
+  PRIMARY KEY (`guid`, `spec`, `button`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_action_guid` FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- === source: migrations/53_characters_action_bar_toggles.sql ===
+-- Migration: persist which action bars are visible (PLAYER_FIELD_BYTES toggles byte)
+-- Target: `firelands_characters`
+
+CREATE DATABASE IF NOT EXISTS `firelands_characters`;
+USE `firelands_characters`;
+
+ALTER TABLE `characters`
+  ADD COLUMN `actionBarToggles` tinyint unsigned NOT NULL DEFAULT '255'
+  AFTER `tutorial7`;
+
+
+-- === source: migrations/54_characters_rest_bonus.sql ===
+-- Rested XP pool (Cataclysm `PLAYER_REST_STATE_EXPERIENCE` / rest indicator).
+USE `firelands_characters`;
+
+ALTER TABLE `characters`
+  ADD COLUMN `rest_bonus` float NOT NULL DEFAULT 0 AFTER `xp`;
 
