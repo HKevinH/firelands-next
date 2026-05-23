@@ -79,7 +79,7 @@ inline uint32_t MonsterMoveDurationMs(float fromX, float fromY, float fromZ, flo
   float const dist = std::sqrt(dx * dx + dy * dy + dz * dz);
   float const speed = std::max(0.01f, speedYardsPerSec);
   float const ms = dist / speed * 1000.0f;
-  return static_cast<uint32_t>(std::clamp(ms, 200.0f, 2000.0f));
+  return static_cast<uint32_t>(std::clamp(ms, 200.0f, 3000.0f));
 }
 
 /// Cataclysm 4.3.4.15595 `SMSG_ON_MONSTER_MOVE` — ref `WorldPackets::Movement::MonsterMove::Write`.

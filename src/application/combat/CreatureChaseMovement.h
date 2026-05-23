@@ -23,4 +23,15 @@ CreatureChaseStepResult StepCreatureTowardTarget(Firelands::MovementInfo const &
                                                 float targetZ, float deltaSeconds,
                                                 CreatureChaseConfig const &config);
 
+/// Simulates repeated `StepCreatureTowardTarget` for up to `maxDeltaSeconds` (one tick per
+/// 0.2s slice). Used to build a single client spline instead of restarting animation every tick.
+CreatureChaseStepResult ProjectCreatureTowardTarget(Firelands::MovementInfo const &current,
+                                                  float targetX, float targetY,
+                                                  float targetZ, float maxDeltaSeconds,
+                                                  CreatureChaseConfig const &config);
+
+/// Ref `ChaseMovementGenerator`: replan when `target->GetPosition() != _lastTargetPosition`.
+bool ChaseTargetRelocated(float lastX, float lastY, float lastZ, float newX, float newY,
+                          float newZ, float thresholdYards = 0.5f);
+
 } // namespace application::combat

@@ -64,4 +64,37 @@ CreatureChaseStepResult StepCreatureTowardTarget(Firelands::MovementInfo const &
   return result;
 }
 
+CreatureChaseStepResult ProjectCreatureTowardTarget(MovementInfo const &current,
+                                                  float targetX, float targetY,
+                                                  float targetZ, float maxDeltaSeconds,
+                                                  CreatureChaseConfig const &config) {
+  constexpr float kSimTickSeconds = 0.2f;
+
+  CreatureChaseStepResult result{};
+  result.position = current;
+  result.moved = false;
+  result.inStopRange = false;
+
+  float remaining = std::max(0.f, maxDeltaSeconds);
+  while (remaining > 1e-4f) {
+    float const slice = std::min(remaining, kSimTickSeconds);
+    auto const step =
+        StepCreatureTowardTarget(result.position, targetX, targetY, targetZ, slice, config);
+    result = step;
+    if (step.inStopRange || !step.moved)
+      break;
+    remaining -= slice;
+  }
+  return result;
+}
+
+bool ChaseTargetRelocated(float lastX, float lastY, float lastZ, float newX, float newY,
+                          float newZ, float thresholdYards) {
+  float const dx = newX - lastX;
+  float const dy = newY - lastY;
+  float const dz = newZ - lastZ;
+  float const thresholdSq = thresholdYards * thresholdYards;
+  return (dx * dx + dy * dy + dz * dz) > thresholdSq;
+}
+
 } // namespace application::combat

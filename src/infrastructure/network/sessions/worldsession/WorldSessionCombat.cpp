@@ -30,8 +30,8 @@ namespace Firelands {
 namespace {
 
 constexpr std::chrono::milliseconds kCreatureMoveTickInterval{200};
-constexpr float kCreatureMoveDeltaSeconds =
-    static_cast<float>(kCreatureMoveTickInterval.count()) / 1000.0f;
+/// How far ahead one `SMSG_ON_MONSTER_MOVE` projects (avoids restarting run/walk every tick).
+constexpr float kCreatureSplineHorizonSeconds = 1.5f;
 constexpr float kCreatureHomeArrivalYards = 0.75f;
 constexpr float kCreatureRunSpeedYardsPerSec = 7.0f;
 
@@ -151,64 +151,120 @@ void BroadcastCreatureMonsterStop(std::shared_ptr<Map> const &map,
   map->BroadcastPacketToNearby(creature->GetGuid(), pkt, true);
 }
 
-/// Steps `creature` toward a world position and broadcasts splines when it moved.
-bool StepCreatureToward(std::shared_ptr<Map> const &map,
-                         std::shared_ptr<Creature> const &creature, uint64_t faceTargetGuid,
-                         float targetX, float targetY, float targetZ, float stopDistanceYards,
-                         uint32_t &moveCounter) {
+bool IsCreatureSplineInFlight(WorldSession::CreatureCombatRuntime const &runtime,
+                              std::chrono::steady_clock::time_point now) {
+  return runtime.activeSplineUntil.has_value() && now < *runtime.activeSplineUntil;
+}
+
+void MarkCreatureSplineInFlight(WorldSession::CreatureCombatRuntime &runtime,
+                                std::chrono::steady_clock::time_point now,
+                                uint32_t durationMs) {
+  runtime.activeSplineUntil =
+      now + std::chrono::milliseconds(static_cast<int64_t>(durationMs));
+}
+
+void ClearCreatureSplineInFlight(WorldSession::CreatureCombatRuntime &runtime) {
+  runtime.activeSplineUntil.reset();
+}
+
+bool MovedMeaningfully(MovementInfo const &from, MovementInfo const &to) {
+  float const dx = to.x - from.x;
+  float const dy = to.y - from.y;
+  float const dz = to.z - from.z;
+  return (dx * dx + dy * dy + dz * dz) > 0.01f * 0.01f;
+}
+
+/// Projects movement toward a target and, when the prior spline finished, sends one packet.
+bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
+                                      std::shared_ptr<Creature> const &creature,
+                                      float targetX, float targetY, float targetZ,
+                                      float stopDistanceYards,
+                                      WorldSession::CreatureCombatRuntime &runtime,
+                                      std::chrono::steady_clock::time_point now,
+                                      uint32_t &moveCounter, uint64_t faceTargetGuid,
+                                      bool returnHomeSpline) {
   if (!map || !creature)
     return false;
 
   MovementInfo const from = creature->GetPosition();
   application::combat::CreatureChaseConfig config{};
   config.stopDistanceYards = stopDistanceYards;
-  auto const step = application::combat::StepCreatureTowardTarget(
-      from, targetX, targetY, targetZ, kCreatureMoveDeltaSeconds, config);
 
-  if (step.inStopRange)
+  auto const projected = application::combat::ProjectCreatureTowardTarget(
+      from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config);
+
+  bool const chaseTargetMoved =
+      !returnHomeSpline &&
+      (!runtime.lastChaseTargetPos.has_value() ||
+       application::combat::ChaseTargetRelocated(runtime.lastChaseTargetPos->x,
+                                                 runtime.lastChaseTargetPos->y,
+                                                 runtime.lastChaseTargetPos->z, targetX,
+                                                 targetY, targetZ));
+
+  if (projected.inStopRange) {
+  // Ref chase: stop spline when already in expected melee range.
+    if (!returnHomeSpline && IsCreatureSplineInFlight(runtime, now)) {
+      ClearCreatureSplineInFlight(runtime);
+      int32_t const stopId = static_cast<int32_t>(++moveCounter);
+      BroadcastCreatureMonsterStop(map, creature, stopId);
+    }
+    if (!returnHomeSpline) {
+      MovementInfo chaseTarget{};
+      chaseTarget.x = targetX;
+      chaseTarget.y = targetY;
+      chaseTarget.z = targetZ;
+      runtime.lastChaseTargetPos = chaseTarget;
+    }
     return true;
+  }
 
-  MovementInfo pos = step.position;
-  map->UpdateObjectPosition(creature->GetGuid(), pos);
-  if (step.moved) {
-    int32_t const splineId = static_cast<int32_t>(++moveCounter);
-    BroadcastCreatureChaseMove(map, creature->GetGuid(), faceTargetGuid, from, pos, splineId);
+  if (IsCreatureSplineInFlight(runtime, now) && !chaseTargetMoved)
+    return false;
+
+  if (!projected.moved || !MovedMeaningfully(from, projected.position))
+    return false;
+
+  MovementInfo const &to = projected.position;
+  map->UpdateObjectPosition(creature->GetGuid(), to);
+  int32_t const splineId = static_cast<int32_t>(++moveCounter);
+  uint32_t const durationMs = monster_move_wire::MonsterMoveDurationMs(
+      from.x, from.y, from.z, to.x, to.y, to.z, kCreatureRunSpeedYardsPerSec);
+  if (returnHomeSpline)
+    BroadcastCreatureReturnMove(map, creature->GetGuid(), from, to, splineId);
+  else
+    BroadcastCreatureChaseMove(map, creature->GetGuid(), faceTargetGuid, from, to, splineId);
+  MarkCreatureSplineInFlight(runtime, now, durationMs);
+  if (!returnHomeSpline) {
+    MovementInfo chaseTarget{};
+    chaseTarget.x = targetX;
+    chaseTarget.y = targetY;
+    chaseTarget.z = targetZ;
+    runtime.lastChaseTargetPos = chaseTarget;
   }
   return false;
 }
 
 bool StepCreatureReturnToward(std::shared_ptr<Map> const &map,
                               std::shared_ptr<Creature> const &creature,
-                              MovementInfo const &home, uint32_t &moveCounter) {
-  if (!map || !creature)
-    return false;
-
-  MovementInfo const from = creature->GetPosition();
-  application::combat::CreatureChaseConfig config{};
-  config.stopDistanceYards = kCreatureHomeArrivalYards;
-  auto const step = application::combat::StepCreatureTowardTarget(
-      from, home.x, home.y, home.z, kCreatureMoveDeltaSeconds, config);
-
-  if (step.inStopRange)
-    return true;
-
-  MovementInfo pos = step.position;
-  map->UpdateObjectPosition(creature->GetGuid(), pos);
-  if (step.moved) {
-    int32_t const splineId = static_cast<int32_t>(++moveCounter);
-    BroadcastCreatureReturnMove(map, creature->GetGuid(), from, pos, splineId);
-  }
-  return false;
+                              MovementInfo const &home,
+                              WorldSession::CreatureCombatRuntime &runtime,
+                              std::chrono::steady_clock::time_point now,
+                              uint32_t &moveCounter) {
+  return TryBroadcastCreatureSplineStep(map, creature, home.x, home.y, home.z,
+                                        kCreatureHomeArrivalYards, runtime, now, moveCounter, 0,
+                                        true);
 }
 
 bool FinalizeCreatureReturnAtHome(std::shared_ptr<Map> const &map, uint64_t creatureGuid,
-                                  MovementInfo const &home, uint32_t &moveCounter) {
+                                  MovementInfo const &home, uint32_t &moveCounter,
+                                  WorldSession::CreatureCombatRuntime &runtime) {
   if (!map)
     return true;
   auto creature = map->TryGetCreature(creatureGuid);
   if (!creature)
     return true;
 
+  ClearCreatureSplineInFlight(runtime);
   MovementInfo snapped = home;
   snapped.flags = MOVEMENTFLAG_NONE;
   map->UpdateObjectPosition(creatureGuid, snapped);
@@ -220,7 +276,9 @@ bool FinalizeCreatureReturnAtHome(std::shared_ptr<Map> const &map, uint64_t crea
 void ChaseCreatureTowardPlayer(std::shared_ptr<Map> const &map,
                                std::shared_ptr<Creature> const &creature,
                                std::shared_ptr<Player> const &target,
-                               WorldSession const &session, uint32_t &moveCounter) {
+                               WorldSession const &session,
+                               WorldSession::CreatureCombatRuntime &runtime,
+                               std::chrono::steady_clock::time_point now) {
   if (!map || !creature || !target)
     return;
 
@@ -228,8 +286,9 @@ void ChaseCreatureTowardPlayer(std::shared_ptr<Map> const &map,
   map->UpdateObjectPosition(target->GetGuid(), playerPos);
 
   application::combat::CreatureChaseConfig config{};
-  (void)StepCreatureToward(map, creature, target->GetGuid(), playerPos.x, playerPos.y,
-                           playerPos.z, config.stopDistanceYards, moveCounter);
+  (void)TryBroadcastCreatureSplineStep(map, creature, playerPos.x, playerPos.y, playerPos.z,
+                                       config.stopDistanceYards, runtime, now, runtime.moveCounter,
+                                       target->GetGuid(), false);
 }
 
 } // namespace
@@ -250,17 +309,21 @@ void WorldSession::BeginCreatureReturnToHome(uint64_t creatureGuid,
 
   uint32_t moveCounter = initialMoveCounter;
   float const arriveSq = kCreatureHomeArrivalYards * kCreatureHomeArrivalYards;
+  CreatureCombatRuntime scratch{};
+  scratch.moveCounter = moveCounter;
   if (DistanceSquared2d(creature->GetX(), creature->GetY(), home.x, home.y) <= arriveSq) {
-    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, moveCounter);
+    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, moveCounter, scratch);
     return;
   }
 
+  auto const now = std::chrono::steady_clock::now();
   auto const emplaced = _creatureReturningHome.emplace(
       creatureGuid, CreatureCombatRuntime{home, moveCounter});
-  uint32_t &returnCounter = emplaced.first->second.moveCounter;
-  if (StepCreatureReturnToward(map, creature, home, returnCounter)) {
+  CreatureCombatRuntime &returnRuntime = emplaced.first->second;
+  uint32_t &returnCounter = returnRuntime.moveCounter;
+  if (StepCreatureReturnToward(map, creature, home, returnRuntime, now, returnCounter)) {
     _creatureReturningHome.erase(creatureGuid);
-    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter);
+    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime);
     return;
   }
   ScheduleCreatureCombatMovement();
@@ -553,19 +616,21 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
     return;
   }
 
+  auto const now = std::chrono::steady_clock::now();
   for (auto returnIt = _creatureReturningHome.begin();
        returnIt != _creatureReturningHome.end();) {
     uint64_t const creatureGuid = returnIt->first;
     MovementInfo const home = returnIt->second.home;
-    uint32_t &returnCounter = returnIt->second.moveCounter;
+    CreatureCombatRuntime &returnRuntime = returnIt->second;
+    uint32_t &returnCounter = returnRuntime.moveCounter;
     auto creature = map->TryGetCreature(creatureGuid);
     if (!creature || creature->GetLiveHealth() == 0) {
       returnIt = _creatureReturningHome.erase(returnIt);
       continue;
     }
 
-    if (StepCreatureReturnToward(map, creature, home, returnCounter)) {
-      (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter);
+    if (StepCreatureReturnToward(map, creature, home, returnRuntime, now, returnCounter)) {
+      (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime);
       returnIt = _creatureReturningHome.erase(returnIt);
       continue;
     }
@@ -583,7 +648,7 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
       evaded.push_back(creatureGuid);
       continue;
     }
-    ChaseCreatureTowardPlayer(map, creature, attackerPl, *this, runtime.moveCounter);
+    ChaseCreatureTowardPlayer(map, creature, attackerPl, *this, runtime, now);
     ProcessCreatureCombatAttack(map, creature, attackerPl, runtime);
   }
 
