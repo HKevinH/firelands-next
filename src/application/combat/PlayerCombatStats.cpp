@@ -4,8 +4,19 @@
 
 namespace Firelands {
 
+bool UsesAgilityForMeleeAttackPower(PlayerClass klass) {
+  switch (klass) {
+  case PlayerClass::Hunter:
+  case PlayerClass::Rogue:
+  case PlayerClass::Druid:
+    return true;
+  default:
+    return false;
+  }
+}
+
 bool UsesAgilityForMeleeAttackPower(uint8 classId) {
-  return classId == 3 || classId == 4 || classId == 11;
+  return UsesAgilityForMeleeAttackPower(ToPlayerClass(classId));
 }
 
 int32 ComputeBaseMeleeAttackPower(Character const &character) {
@@ -20,26 +31,30 @@ int32 ComputeBaseMeleeAttackPower(Character const &character) {
   return ap < 0 ? 0 : ap;
 }
 
-bool UsesBaselineSpellPowerFromIntellect(uint8 classId) {
-  switch (classId) {
-  case 2:
-  case 3:
-  case 5:
-  case 6:
-  case 7:
-  case 8:
-  case 9:
-  case 11:
+bool UsesBaselineSpellPowerFromIntellect(PlayerClass klass) {
+  switch (klass) {
+  case PlayerClass::Paladin:
+  case PlayerClass::Hunter:
+  case PlayerClass::Priest:
+  case PlayerClass::DeathKnight:
+  case PlayerClass::Shaman:
+  case PlayerClass::Mage:
+  case PlayerClass::Warlock:
+  case PlayerClass::Druid:
     return true;
   default:
     return false;
   }
 }
 
+bool UsesBaselineSpellPowerFromIntellect(uint8 classId) {
+  return UsesBaselineSpellPowerFromIntellect(ToPlayerClass(classId));
+}
+
 UnitCombatStats BuildPlayerCombatStats(Character const &character) {
   UnitCombatStats stats{};
   stats.level = character.GetLevel();
-  uint8 const klass = character.GetClass();
+  PlayerClass const klass = character.GetClass();
   uint32 const agi = character.GetPrimaryStat(1);
   uint32 const str = character.GetPrimaryStat(0);
   uint32 const sta = character.GetPrimaryStat(2);
@@ -47,7 +62,7 @@ UnitCombatStats BuildPlayerCombatStats(Character const &character) {
   uint32 const spi = character.GetPrimaryStat(4);
   uint32 const lv = static_cast<uint32>(stats.level);
 
-  stats.armor = ComputeBaselineArmor(klass, stats.level, agi, str, sta);
+  stats.armor = ComputeBaselineArmor(ToClassId(klass), stats.level, agi, str, sta);
   uint32 const mr = lv / 2u + spi / 6u;
   for (uint32 i = 1; i <= 6; ++i)
     stats.resistance[i] = mr;

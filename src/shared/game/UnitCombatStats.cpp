@@ -1,5 +1,7 @@
 #include <shared/game/UnitCombatStats.h>
 
+#include <shared/game/PlayerClass.h>
+
 #include <algorithm>
 
 namespace Firelands {
@@ -17,18 +19,18 @@ uint32 ComputeBaselineArmor(uint8 classId, uint8 level, uint32 agi, uint32 str,
                             uint32 sta) {
   uint32 const lv = static_cast<uint32>(level);
   uint32 a = lv * 12u;
-  switch (classId) {
-  case 1:  // Warrior
-  case 2:  // Paladin
-  case 6:  // Death Knight
+  switch (ToPlayerClass(classId)) {
+  case PlayerClass::Warrior:
+  case PlayerClass::Paladin:
+  case PlayerClass::DeathKnight:
     a += sta * 2u + str + agi / 2u;
     break;
-  case 3:  // Hunter
-  case 7:  // Shaman
+  case PlayerClass::Hunter:
+  case PlayerClass::Shaman:
     a += agi * 3u + sta + lv;
     break;
-  case 4:  // Rogue
-  case 11: // Druid
+  case PlayerClass::Rogue:
+  case PlayerClass::Druid:
     a += agi * 4u + lv * 2u;
     break;
   default: // Cloth casters
@@ -41,9 +43,9 @@ uint32 ComputeBaselineArmor(uint8 classId, uint8 level, uint32 agi, uint32 str,
 namespace {
 
 uint8 MapCreatureUnitClassToPlayerClass(uint8 unitClass) {
-  if (unitClass >= 1 && unitClass <= 11)
+  if (IsValidPlayerClass(unitClass))
     return unitClass;
-  return 1;
+  return ToClassId(PlayerClass::Warrior);
 }
 
 } // namespace

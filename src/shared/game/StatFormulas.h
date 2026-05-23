@@ -19,7 +19,7 @@ struct AvoidanceClassParams {
   float diminishingK;
 };
 
-/// Uses class index `classId` 1..11 (Blizzard `ChrClasses`; 10 unused).
+/// Uses class index 1..11 (`PlayerClass` / Blizzard `ChrClasses`; 10 unused).
 AvoidanceClassParams AvoidanceParamsForClass(uint8_t classId);
 
 bool ClassHasBaselineParry(uint8_t classId);

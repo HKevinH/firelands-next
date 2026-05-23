@@ -1,6 +1,7 @@
 #include <shared/game/StatFormulas.h>
 
 #include <shared/dbc/GtPlayerStatGameTables.h>
+#include <shared/game/PlayerClass.h>
 
 #include <algorithm>
 
@@ -36,7 +37,7 @@ uint8_t ClampPlayerLevel(uint8_t level) {
 size_t ClassTableIndex(uint8_t classId) {
   if (classId >= 1u && classId <= 9u)
     return static_cast<size_t>(classId) - 1u;
-  if (classId == 11u)
+  if (ToPlayerClass(classId) == PlayerClass::Druid)
     return 10u;
   return 0u;
 }
@@ -153,7 +154,15 @@ AvoidanceClassParams AvoidanceParamsForClass(uint8_t classId) {
 }
 
 bool ClassHasBaselineParry(uint8_t classId) {
-  return classId == 1u || classId == 2u || classId == 4u || classId == 6u;
+  switch (ToPlayerClass(classId)) {
+  case PlayerClass::Warrior:
+  case PlayerClass::Paladin:
+  case PlayerClass::Rogue:
+  case PlayerClass::DeathKnight:
+    return true;
+  default:
+    return false;
+  }
 }
 
 void ComputeDodgeContributionsFromAgility(uint8_t level, uint8_t classId,

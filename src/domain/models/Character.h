@@ -3,6 +3,7 @@
 #include <shared/Common.h>
 #include <shared/game/Bag0InventoryData.h>
 #include <shared/game/InventorySlots.h>
+#include <shared/game/PlayerClass.h>
 #include <algorithm>
 #include <array>
 #include <optional>
@@ -73,7 +74,7 @@ public:
     case 8:
       return gender == 0 ? 1478 : 1479; // Troll
     case 9:
-      return gender == 0 ? 21245 : 21246; // Goblin
+      return gender == 0 ? 6894 : 6895; // Goblin (ChrRaces.dbc Male/FemaleDisplayID)
     case 10:
       return gender == 0 ? 15476 : 15475; // Blood Elf
     case 11:
@@ -86,37 +87,37 @@ public:
   }
 
   static std::array<uint32_t, 5> GetDefaultPrimaryStats(uint8 klass) {
-    switch (klass) {
-    case 1:
-      return {23u, 20u, 22u, 20u, 21u}; // Warrior
-    case 2:
-      return {23u, 20u, 22u, 20u, 22u}; // Paladin
-    case 3:
-      return {22u, 21u, 22u, 20u, 21u}; // Hunter
-    case 4:
-      return {23u, 21u, 21u, 20u, 21u}; // Rogue
-    case 5:
-      return {17u, 22u, 22u, 22u, 23u}; // Priest
-    case 6:
-      return {25u, 19u, 22u, 20u, 22u}; // Death Knight
-    case 7:
-      return {22u, 21u, 22u, 20u, 22u}; // Shaman
-    case 8:
-      return {17u, 22u, 22u, 23u, 23u}; // Mage
-    case 9:
-      return {21u, 21u, 22u, 23u, 23u}; // Warlock
-    case 11:
-      return {22u, 20u, 22u, 22u, 23u}; // Druid
+    switch (ToPlayerClass(klass)) {
+    case PlayerClass::Warrior:
+      return {23u, 20u, 22u, 20u, 21u};
+    case PlayerClass::Paladin:
+      return {23u, 20u, 22u, 20u, 22u};
+    case PlayerClass::Hunter:
+      return {22u, 21u, 22u, 20u, 21u};
+    case PlayerClass::Rogue:
+      return {23u, 21u, 21u, 20u, 21u};
+    case PlayerClass::Priest:
+      return {17u, 22u, 22u, 22u, 23u};
+    case PlayerClass::DeathKnight:
+      return {25u, 19u, 22u, 20u, 22u};
+    case PlayerClass::Shaman:
+      return {22u, 21u, 22u, 20u, 22u};
+    case PlayerClass::Mage:
+      return {17u, 22u, 22u, 23u, 23u};
+    case PlayerClass::Warlock:
+      return {21u, 21u, 22u, 23u, 23u};
+    case PlayerClass::Druid:
+      return {22u, 20u, 22u, 22u, 23u};
     default:
       return {20u, 20u, 20u, 20u, 20u};
-  }
+    }
   }
 
   uint32 GetGuid() const { return m_guid; }
   uint32 GetAccount() const { return m_account; }
   const std::string &GetName() const { return m_name; }
   uint8 GetRace() const { return m_race; }
-  uint8 GetClass() const { return m_klass; }
+  PlayerClass GetClass() const { return ToPlayerClass(m_klass); }
   uint8 GetGender() const { return m_gender; }
   uint8 GetSkin() const { return m_skin; }
   uint8 GetFace() const { return m_face; }

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <shared/game/PlayerClass.h>
+#include <shared/game/PlayerPowerType.h>
+
 #include <cstdint>
 
 namespace Firelands {
@@ -13,19 +16,23 @@ enum class PlayerPowerType : uint8_t {
   RunicPower = 6,
 };
 
-inline PlayerPowerType GetDefaultPlayerPowerType(uint8_t klass) {
+inline PlayerPowerType GetDefaultPlayerPowerType(PlayerClass klass) {
   switch (klass) {
-  case 1: // Warrior
+  case PlayerClass::Warrior:
     return PlayerPowerType::Rage;
-  case 4: // Rogue
+  case PlayerClass::Rogue:
     return PlayerPowerType::Energy;
-  case 3: // Hunter
+  case PlayerClass::Hunter:
     return PlayerPowerType::Focus;
-  case 6: // Death Knight
+  case PlayerClass::DeathKnight:
     return PlayerPowerType::RunicPower;
   default:
     return PlayerPowerType::Mana;
   }
+}
+
+inline PlayerPowerType GetDefaultPlayerPowerType(uint8_t klass) {
+  return GetDefaultPlayerPowerType(ToPlayerClass(klass));
 }
 
 inline uint32_t DefaultMaxPower1(PlayerPowerType pt) {
