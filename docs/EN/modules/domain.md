@@ -17,6 +17,7 @@ The **domain** layer models core game and account concepts and defines **reposit
 - **Models** — e.g. `Character`, `PlayerCreateInfo`, `Account` types (via repositories), `WebSession`, `Chat`, `Realm` declarations as appropriate.
 - **World entities** — `Player`, `WorldObject`, `Unit`, `Map` API used by `WorldService` and sessions.
 - **Repository interfaces** — `IAccountRepository`, `IRealmRepository`, `ICharacterRepository`, `IPlayerCreateInfoRepository`, `IWebSessionRepository`: contracts implemented in `MySql*` classes under infrastructure.
+- **Ports** (`domain/ports/`) — e.g. `IMapNotifier`: callbacks from `Player` on a map to the owning session (packets, kill notifications) without domain importing infrastructure.
 
 ## Principles
 

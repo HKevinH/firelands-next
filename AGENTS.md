@@ -107,6 +107,7 @@ docker-compose up -d db
 - Ref world text: `python3 tools/sql/import_ref_npc_text.py` → `sql/migrations/34_world_npc_text_data.sql`.
 - Ref gossip menus: `python3 tools/sql/import_ref_gossip.py` → `sql/migrations/35_world_gossip_data.sql`.
 - Ref quest gossip (starters): `python3 tools/sql/import_ref_quest_gossip.py` → `sql/migrations/38_world_quest_gossip_data.sql`.
+- Phase catalogs (zone phasing + phase groups): `python3 tools/sql/import_ref_phase_data.py` → `sql/migrations/55_world_phase_catalog_data.sql` (needs `data/dbc/PhaseXPhaseGroup.dbc`).
 
 ## Testing
 
@@ -123,6 +124,16 @@ docker-compose up -d db
 ### Integration Tests
 - Adapters tested against real database
 - Use docker-compose MySQL for integration tests
+
+## Cursor slash commands
+
+Type `/` in chat to run project commands from `.cursor/commands/` (tracked in git).
+
+| Command | Definition |
+|---------|------------|
+| `/auto-commit` | [.cursor/commands/auto-commit.md](.cursor/commands/auto-commit.md) — analyze diff, apply Firelands version bumps (`merge_migrations`, `db_version`), split into Conventional Commits; **no push** unless requested |
+
+A global copy may exist at `~/.cursor/commands/auto-commit.md`; prefer the **project** file when working in this repo. See [.cursor/README.md](.cursor/README.md).
 
 ## Cursor Rules (Auto-loaded)
 

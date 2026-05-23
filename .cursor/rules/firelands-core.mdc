@@ -21,3 +21,7 @@ alwaysApply: true
 | Cross-platform | `TechStack/SKILL.md` |
 
 Operational details (build commands, deps, DB): see `AGENTS.md`.
+
+## Cursor slash commands
+
+- **`/auto-commit`** — grouped Conventional Commits (see `.cursor/commands/auto-commit.md`). Run when the user invokes `/auto-commit` or asks to auto-commit; do not push unless asked.

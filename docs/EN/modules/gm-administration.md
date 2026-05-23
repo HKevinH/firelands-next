@@ -88,15 +88,22 @@ All names are registered **without** the leading dot in `CommandService`’s con
 | `goto`, `appear` | `ManagePlayers` | BOTH | same | In-game: teleport self to target. Console: `.goto Who Target` / `.appear …`. |
 | `summon` | `ManagePlayers` | BOTH | same | In-game: bring target to self. Console: `.summon Who Anchor`. |
 | `learn` | `CommandGameplay` | BOTH | target first (console) | Persists spell in `character_spell` when DB supports it. |
+| `unlearn` | `CommandGameplay` | BOTH | target first (console) | Removes spell from session and `character_spell`; sends `SMSG_SEND_UNLEARN_SPELLS`. Language passives are blocked. |
 | `money` | `CommandGameplay` | BOTH | target first (console) | Signed copper delta; persists `characters.money`. |
 | `additem` | `CommandGameplay` | BOTH | target first (console) | First free backpack slot. |
 | `level` | `CommandGameplay` | BOTH | target first (console) | Clamps to supported range (e.g. 1–85). |
 | `cd` | `CommandGameplay` | BOTH | target first (console) | Clears GCD and all spell/category cooldowns via `SMSG_CLEAR_COOLDOWNS` + empty category sync (not `SMSG_SPELL_COOLDOWN` with 0 ms); persists empty state. |
 | `damage` | `CommandGameplay` | GAME | same | Target a player or NPC, then `.damage <amount>`. |
-| `revive` | `CommandGameplay` | GAME | same | Restores your character to full health and primary power (in-world). |
+| `revive` | `CommandGameplay` | GAME | same | Restores full health and primary power for the selected player, or yourself when no player is targeted. |
 | `account` | `ManageAccounts` | CONSOLE | same | `create`, `setaccess`, `delete` against `IAccountRepository`. |
 | `ban`, `unban` | `ManageAccounts` | CONSOLE | same | Toggles `account.locked` (login lock), not only a runtime kick. |
 | `ticket` | `ManageGmTickets` | GAME | same | GM queue: `queue`, `mine`, `ui`, `take <id>`, `reply <id> text`, `close <id>` (requires `account.id` on session; see [gm-tickets.md](gm-tickets.md)). |
+
+## GM gossip design tokens
+
+Synthetic GM gossip windows (`.ticket ui`, `.npc info`) share parchment-safe colors and
+`$B` line breaks via `src/shared/game/GmGossipDesignTokens.h`. Use these tokens for any
+new GM gossip UI — do not reuse chat-notification palettes on gossip bodies.
 
 ## GM appearance and chat wire format
 
@@ -110,7 +117,7 @@ Migration **`sql/16_gameplay_money_spells_account_lock.sql`** (and related schem
 
 - **`firelands_auth.account.locked`** — used by `.ban` / `.unban` via `MySqlAccountRepository::SetLockedByUsername`.
 - **`firelands_characters.characters.money`** — copper balance for `.money`.
-- **`firelands_characters.character_spell`** — persisted extra spells for `.learn`.
+- **`firelands_characters.character_spell`** — persisted extra spells for `.learn` / `.unlearn`.
 
 Apply migrations through the world (or auth) startup migrator as configured; see [tools-sql-build.md](tools-sql-build.md).
 

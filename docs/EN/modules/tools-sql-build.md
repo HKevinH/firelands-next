@@ -17,6 +17,7 @@
 ## Tools (`src/tools/`, `tools/`)
 
 - **`FirelandsDevTools`** (`src/tools/DevTools.cpp`) — CLI for accounts/realms against MariaDB; documented in [devtools.md](../devtools.md).
+- **`tools/sql/import_ref_phase_data.py`** — `phase_area` (ref SQL) + `phase_x_phase_group` (client `PhaseXPhaseGroup.dbc`) → `sql/migrations/55_world_phase_catalog_data.sql`.
 - **`tools/extractors/`** — MPQ/data extraction pipeline (StormLib); see [extractors.md](../extractors.md).
 - **`tools/vmap/`** — map/vmap extraction helpers and tests; see [VMAP_EXTRACTION_PLAN.md](../VMAP_EXTRACTION_PLAN.md).
 
