@@ -40,11 +40,11 @@ TEST(ChatLanguagesTests, PlayerKnowsDraeneiWhenPassiveSpellPresent) {
   EXPECT_FALSE(PlayerKnowsLanguage(known, 1)); // Orcish
 }
 
-TEST(ChatLanguagesTests, PrioritizeDefaultLanguageSpellMovesCommonFirstForDraenei) {
+TEST(ChatLanguagesTests, PrioritizeDefaultLanguageSpellMovesPrimaryFirstForDraenei) {
   std::vector<uint32> spells{29932u, 668u};
   PrioritizeDefaultLanguageSpell(11, spells);
   ASSERT_GE(spells.size(), 2u);
-  EXPECT_EQ(spells.front(), 668u);
+  EXPECT_EQ(spells.front(), 29932u);
 }
 
 TEST(ChatLanguagesTests, AllianceHumanGetsCommonLanguage) {
@@ -78,4 +78,50 @@ TEST(ChatLanguagesTests, NormalizePlayerChatLanguageKeepsKnownRacialLanguage) {
   std::unordered_set<uint32> draenei{668u, 29932u};
   EXPECT_EQ(NormalizePlayerChatLanguage(LANG_DRAENEI, CHAT_MSG_SAY, 11, draenei),
             LANG_DRAENEI);
+}
+
+TEST(ChatLanguagesTests, GoblinKnowsGoblinAndOrcishByRaceGrant) {
+  std::unordered_set<uint32> empty;
+  EXPECT_TRUE(PlayerKnowsLanguage(empty, LANG_GOBLIN, 9));
+  EXPECT_TRUE(PlayerKnowsLanguage(empty, LANG_GOBLIN_BINARY, 9));
+  EXPECT_TRUE(PlayerKnowsLanguage(empty, LANG_ORCISH, 9));
+  EXPECT_EQ(LanguageSpellIdForLang(LANG_GOBLIN_BINARY), 69269u);
+  EXPECT_EQ(LanguageSkillIdForLang(LANG_GOBLIN_BINARY), 792u);
+}
+
+TEST(ChatLanguagesTests, GoblinNormalizeKeepsGoblinLanguageWithoutSpellbook) {
+  std::unordered_set<uint32> empty;
+  EXPECT_EQ(NormalizePlayerChatLanguage(LANG_GOBLIN, CHAT_MSG_SAY, 9, empty),
+            LANG_GOBLIN);
+  EXPECT_EQ(NormalizePlayerChatLanguage(LANG_UNIVERSAL, CHAT_MSG_SAY, 9, empty),
+            LANG_GOBLIN);
+}
+
+TEST(ChatLanguagesTests, UndeadPrimaryLanguageIsGutterspeak) {
+  EXPECT_EQ(PrimaryLanguageForRace(5), LANG_GUTTERSPEAK);
+  EXPECT_EQ(DefaultLanguageForRace(5), LANG_ORCISH);
+
+  std::unordered_set<uint32> empty;
+  EXPECT_EQ(NormalizePlayerChatLanguage(LANG_UNIVERSAL, CHAT_MSG_SAY, 5, empty),
+            LANG_GUTTERSPEAK);
+  EXPECT_EQ(NormalizePlayerChatLanguage(LANG_GUTTERSPEAK, CHAT_MSG_SAY, 5, empty),
+            LANG_GUTTERSPEAK);
+}
+
+TEST(ChatLanguagesTests, GoblinGetsGoblinAndOrcishLanguagePassives) {
+  std::vector<uint32> spells;
+  AppendRacialLanguageSpells(9, spells);
+  auto has = [&](uint32 id) {
+    return std::find(spells.begin(), spells.end(), id) != spells.end();
+  };
+  EXPECT_TRUE(has(69269u));
+  EXPECT_TRUE(has(669u));
+
+  std::vector<uint32> skills;
+  AppendRacialLanguageSkills(9, skills);
+  auto hasSkill = [&](uint32 id) {
+    return std::find(skills.begin(), skills.end(), id) != skills.end();
+  };
+  EXPECT_TRUE(hasSkill(792u));
+  EXPECT_TRUE(hasSkill(109u));
 }

@@ -21,9 +21,14 @@ bool PlayerKnowsLanguage(std::vector<uint32> const &knownSpells, uint32 lang);
 /// Same as the vector overload; preferred when ids are stored in a set (O(1)).
 bool PlayerKnowsLanguage(std::unordered_set<uint32> const &knownSpellIds,
                          uint32 lang);
+bool PlayerKnowsLanguage(std::unordered_set<uint32> const &knownSpellIds,
+                         uint32 lang, uint8 race);
 
-/// Default spoken language for a race (Common/Orcish by faction in 4.3.4).
+/// Faction trade language (Common for Alliance, Orcish for Horde).
 uint32 DefaultLanguageForRace(uint8 race);
+
+/// Primary racial language (`GetLanguageByIndex(1)` on the 4.3.4 client).
+uint32 PrimaryLanguageForRace(uint8 race);
 
 /// SkillLine.dbc id for a `Language` id, or 0 when that language has no known
 /// skill row in 4.3.4.

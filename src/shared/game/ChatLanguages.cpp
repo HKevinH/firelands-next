@@ -88,6 +88,10 @@ uint32 LanguageSpellIdForLang(uint32 lang) {
     return kSpellGoblin;
   case kLangWorgen:
     return kSpellGilnean;
+  case 37: // LANG_GNOMISH_BINARY — scrambled display form of Gnomish
+    return kSpellGnomish;
+  case 38: // LANG_GOBLIN_BINARY — scrambled display form of Goblin
+    return kSpellGoblin;
   default:
     return 0;
   }
@@ -121,10 +125,16 @@ uint32 LanguageSkillIdForLang(uint32 lang) {
     // Gilnean is represented by spell 69270 / language 39. SkillLine presence
     // varies across Cataclysm-era data; Common is the functional Worgen chat skill.
     return 0;
+  case 37: // LANG_GNOMISH_BINARY
+    return kSkillGnomish;
+  case 38: // LANG_GOBLIN_BINARY
+    return kSkillGoblin;
   default:
     return 0;
   }
 }
+
+bool LanguageGrantedToRace(uint8 race, uint32 lang);
 
 bool PlayerKnowsLanguage(std::vector<uint32> const &knownSpells, uint32 lang) {
   uint32 const sid = LanguageSpellIdForLang(lang);
@@ -136,10 +146,17 @@ bool PlayerKnowsLanguage(std::vector<uint32> const &knownSpells, uint32 lang) {
 
 bool PlayerKnowsLanguage(std::unordered_set<uint32> const &knownSpellIds,
                          uint32 lang) {
+  return PlayerKnowsLanguage(knownSpellIds, lang, 0);
+}
+
+bool PlayerKnowsLanguage(std::unordered_set<uint32> const &knownSpellIds,
+                         uint32 lang, uint8 race) {
   uint32 const sid = LanguageSpellIdForLang(lang);
-  if (sid == 0)
-    return false;
-  return knownSpellIds.count(sid) != 0u;
+  if (sid != 0u && knownSpellIds.count(sid) != 0u)
+    return true;
+  if (race != 0u && LanguageGrantedToRace(race, lang))
+    return true;
+  return false;
 }
 
 uint32 DefaultLanguageForRace(uint8 race) {
@@ -158,6 +175,37 @@ uint32 DefaultLanguageForRace(uint8 race) {
   case 11: // Draenei
   case 22: // Worgen
     return kLangCommon;
+  default:
+    return kLangCommon;
+  }
+}
+
+uint32 PrimaryLanguageForRace(uint8 race) {
+  switch (race) {
+  case 1:
+    return kLangCommon;
+  case 2:
+    return kLangOrcish;
+  case 3:
+    return kLangDwarvish;
+  case 4:
+    return kLangDarnassian;
+  case 5:
+    return kLangGutterspeak;
+  case 6:
+    return kLangTaurahe;
+  case 7:
+    return kLangGnomish;
+  case 8:
+    return kLangTroll;
+  case 9:
+    return kLangGoblin;
+  case 10:
+    return kLangThalassian;
+  case 11:
+    return kLangDraenei;
+  case 22:
+    return kLangWorgen;
   default:
     return kLangCommon;
   }
@@ -240,7 +288,7 @@ void EnsureRacialLanguageSpells(uint8 race, std::vector<uint32> &spellIds) {
 
 void PrioritizeDefaultLanguageSpell(uint8 race, std::vector<uint32> &spellIds) {
   uint32 const primary =
-      LanguageSpellIdForLang(DefaultLanguageForRace(race));
+      LanguageSpellIdForLang(PrimaryLanguageForRace(race));
   if (primary == 0u)
     return;
   auto it = std::find(spellIds.begin(), spellIds.end(), primary);
@@ -265,16 +313,18 @@ bool IsAddonChatLanguageAllowed(uint32 chatType) {
 
 uint32 NormalizePlayerChatLanguage(uint32 requestedLang, uint32 chatType, uint8 race,
                                    std::unordered_set<uint32> const &knownSpellIds) {
-  uint32 const fallback = DefaultLanguageForRace(race);
+  uint32 const fallback = PrimaryLanguageForRace(race);
   if (requestedLang == CHAT_LANG_ADDON) {
     if (IsAddonChatLanguageAllowed(chatType))
       return CHAT_LANG_ADDON;
     return fallback;
   }
   if (requestedLang == LANG_UNIVERSAL)
-    return fallback;
-  if (PlayerKnowsLanguage(knownSpellIds, requestedLang))
+    requestedLang = fallback;
+  if (PlayerKnowsLanguage(knownSpellIds, requestedLang, race))
     return requestedLang;
+  if (PlayerKnowsLanguage(knownSpellIds, fallback, race))
+    return fallback;
   return fallback;
 }
 
@@ -330,6 +380,18 @@ void AppendRacialLanguageSpells(uint8 race, std::vector<uint32> &knownSpells) {
     PushUnique(knownSpells, kSpellCommon);
     break;
   }
+}
+
+bool LanguageGrantedToRace(uint8 race, uint32 lang) {
+  if (race == 0 || lang == 0)
+    return false;
+  std::vector<uint32> racialSpells;
+  AppendRacialLanguageSpells(race, racialSpells);
+  uint32 const sid = LanguageSpellIdForLang(lang);
+  if (sid == 0)
+    return false;
+  return std::find(racialSpells.begin(), racialSpells.end(), sid) !=
+         racialSpells.end();
 }
 
 } // namespace Firelands

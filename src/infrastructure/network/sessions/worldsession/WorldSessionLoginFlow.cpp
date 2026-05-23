@@ -23,6 +23,7 @@
 #include <shared/game/PlayerGmAppearance.h>
 #include <shared/game/PlayerItemProficiency.h>
 #include <shared/game/StarterOpeningCinematic.h>
+#include <shared/game/SkillLineCategories.h>
 #include <shared/game/StarterSpellFilters.h>
 #include <shared/game/WowGuid.h>
 #include <shared/network/MovementStateQueries.h>
@@ -197,7 +198,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
             IsRidingOrTransportStarterSpell(persisted) ||
             IsKnownMountSpell(persisted))
           return true;
-        if (pci && pci->IsSpellFromExcludedSkillLine(persisted))
+        if (IsSpellFromExcludedSkillLine(persisted))
           return true;
         if (!_spellDefinitions)
           return false;
@@ -215,7 +216,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
     SendSetProficiency(kItemClassArmor,
                        ComputeArmorProficiencyMask(_knownSkills));
 
-    uint32 const defaultLang = DefaultLanguageForRace(character.GetRace());
+    uint32 const defaultLang = PrimaryLanguageForRace(character.GetRace());
     uint32 const defaultLangSpell = LanguageSpellIdForLang(defaultLang);
   {
       std::string ids;
@@ -229,7 +230,7 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
                 static_cast<uint32>(character.GetRace()),
                 static_cast<uint32>(ToClassId(character.GetClass())), defaultLang,
                 defaultLangSpell,
-                PlayerKnowsLanguage(_knownSpellIds, defaultLang) ? 1 : 0,
+                PlayerKnowsLanguage(_knownSpellIds, defaultLang, character.GetRace()) ? 1 : 0,
                 _knownSpells.size(), ids);
 }
 }

@@ -88,8 +88,8 @@ bool AddonLangAllowedForType(uint32 type) {
   return IsAddonChatLanguageAllowed(type);
 }
 
-/// Build 15595 `ChatMessage::Read` — language is a plain int32, then bit-packed strings.
-/// Text length is always 11 bits; `/say` also carries a 1-bit IsSecure flag after lengths.
+/// Build 15595 `HandleMessagechatOpcode` — language is a plain int32, then bit-packed
+/// strings. Matches Cataclysm 4.3.4 reference (`ReadBits(9)` text, `ReadBits(10)` names).
 bool ReadCataChatMessageBody(uint32 type, BitReader &br, std::string &message,
                              std::string &target, std::string &channel) {
   message.clear();
@@ -98,39 +98,32 @@ bool ReadCataChatMessageBody(uint32 type, BitReader &br, std::string &message,
 
   switch (type) {
   case CHAT_MSG_SAY:
-  case CHAT_MSG_PARTY:
-  case CHAT_MSG_RAID:
-  case CHAT_MSG_RAID_WARNING: {
-    uint32 const textLen = br.ReadBits(11);
-    (void)br.ReadBit(); // IsSecure
-    message = br.ReadString(textLen);
-    return true;
-  }
   case CHAT_MSG_YELL:
   case CHAT_MSG_EMOTE:
   case CHAT_MSG_AFK:
   case CHAT_MSG_DND:
+  case CHAT_MSG_PARTY:
+  case CHAT_MSG_RAID:
+  case CHAT_MSG_RAID_WARNING:
   case CHAT_MSG_GUILD:
   case CHAT_MSG_OFFICER:
   case CHAT_MSG_BATTLEGROUND: {
-    uint32 const textLen = br.ReadBits(11);
+    uint32 const textLen = br.ReadBits(9);
     message = br.ReadString(textLen);
     return true;
   }
   case CHAT_MSG_WHISPER: {
-    uint32 const nameLen = br.ReadBits(9);
-    uint32 const textLen = br.ReadBits(11);
+    uint32 const nameLen = br.ReadBits(10);
+    uint32 const textLen = br.ReadBits(9);
     target = br.ReadString(nameLen);
     message = br.ReadString(textLen);
     return true;
   }
   case CHAT_MSG_CHANNEL: {
-    uint32 const chLen = br.ReadBits(9);
-    uint32 const textLen = br.ReadBits(11);
-    if (br.ReadBit()) // OptionalInit(IsSecure)
-      (void)br.ReadBit();
-    channel = br.ReadString(chLen);
+    uint32 const chLen = br.ReadBits(10);
+    uint32 const textLen = br.ReadBits(9);
     message = br.ReadString(textLen);
+    channel = br.ReadString(chLen);
     return true;
   }
   default:
@@ -232,7 +225,7 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
             packet.GetOpcode(), 0, type, lang,
             message.size(), chatPreview());
   LOG_DEBUG("[CHAT] knows lang={} => {}", lang,
-            PlayerKnowsLanguage(_knownSpellIds, lang) ? 1 : 0);
+            PlayerKnowsLanguage(_knownSpellIds, lang, _playerRace) ? 1 : 0);
 
   if (_commandService->IsCommand(message)) {
     _commandService->ExecuteCommand(
