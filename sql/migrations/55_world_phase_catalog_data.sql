@@ -1,5 +1,6 @@
 -- Phase catalog data (zone phasing + phase group membership).
 -- Reference: firelands-cata-ref `phase_area`; client PhaseXPhaseGroup.dbc.
+-- Quest/aura gates: migration 57 (`python3 tools/sql/import_ref_phase_conditions.py`).
 -- JDBC-safe: DELETE + batched REPLACE (re-runnable).
 -- Regenerate: python3 tools/sql/import_ref_phase_data.py
 -- Requires migrations 53 (phase_x_phase_group DDL) and 54 (phase_area DDL).
