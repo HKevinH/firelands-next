@@ -6,8 +6,8 @@ namespace application::combat {
 
 struct CreatureChaseConfig {
   float runSpeedYardsPerSec = 7.0f;
-  /// Stop within strike distance (~2 yd); must be less than player melee range (~8.5 yd).
-  float stopDistanceYards = 2.5f;
+  /// Halt this far from the target center (Cataclysm chase contact distance).
+  float stopDistanceYards = 1.0f;
   float zBlendPerTick = 0.35f;
 };
 
@@ -16,6 +16,11 @@ struct CreatureChaseStepResult {
   bool inStopRange = false;
   Firelands::MovementInfo position{};
 };
+
+/// Last point on the approach line, `stopDistanceYards` from the target center.
+Firelands::MovementInfo ComputeChaseStandPosition(Firelands::MovementInfo const &from,
+                                       float targetX, float targetY, float targetZ,
+                                       float stopDistanceYards);
 
 /// Advances `current` toward (`targetX`,`targetY`,`targetZ`) by `deltaSeconds`.
 CreatureChaseStepResult StepCreatureTowardTarget(Firelands::MovementInfo const &current,

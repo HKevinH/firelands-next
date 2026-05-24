@@ -194,8 +194,14 @@ public:
   struct CreatureCombatRuntime {
     MovementInfo home{};
     uint32_t moveCounter = 0;
-    /// While set and in the future, the client is still playing the last `SMSG_ON_MONSTER_MOVE`.
-    std::optional<std::chrono::steady_clock::time_point> activeSplineUntil;
+    /// In-flight `SMSG_ON_MONSTER_MOVE`: server position lerps from->to over `durationMs`.
+    struct ActiveSpline {
+      MovementInfo from{};
+      MovementInfo to{};
+      std::chrono::steady_clock::time_point startedAt{};
+      uint32_t durationMs = 0;
+    };
+    std::optional<ActiveSpline> activeSpline;
     /// Last chase destination used for spline replanning (ref `_lastTargetPosition`).
     std::optional<MovementInfo> lastChaseTargetPos;
     std::chrono::steady_clock::time_point nextMeleeSwingAt{};
@@ -295,6 +301,7 @@ public:
                                uint32_t initialMoveCounter = 0);
   void ScheduleCreatureCombatMovement();
   void ProcessCreatureCombatMovementTick();
+  void SyncAggroedCreatureSplinePosition(uint64_t creatureGuid);
   void ProcessCreatureCombatAttack(std::shared_ptr<Map> const &map,
                                   std::shared_ptr<Creature> const &creature,
                                   std::shared_ptr<Player> const &target,
@@ -304,6 +311,10 @@ public:
                                   std::shared_ptr<Player> const &target,
                                   CreatureCombatRuntime &runtime, uint32_t spellId);
   void TryAggroCreatureFromSpellDamage(uint64_t targetGuid, int32_t healthDelta);
+  void FinalizeCreatureDeath(uint64 creatureGuid, uint32 hpBefore);
+  void EnterPlayerCombat();
+  void RefreshPlayerCombatWireState(std::shared_ptr<Map> const &map);
+  bool PlayerShouldShowInCombatOnWire() const;
   void MaybeGrantKillExperience(Creature &creature, uint32 hpBefore);
   void PublishPlayerXpLevelUpdate(uint8 level, uint32 xp);
   void PublishPlayerRestStateUpdate();

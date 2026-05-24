@@ -95,8 +95,8 @@ inline WorldPacket BuildMonsterMoveToPosition(
   pkt.Append<int8_t>(vehicleExitVoluntary);
   AppendPositionXyz(pkt, posX, posY, posZ);
   AppendMovementMonsterSpline(pkt, splineId, static_cast<uint8_t>(face), faceAngle,
-                              faceTargetGuid, faceSpotX, faceSpotY, faceSpotZ, SmoothGroundPath,
-                              durationMs, destX, destY, destZ);
+                              faceTargetGuid, faceSpotX, faceSpotY, faceSpotZ, 0u, durationMs,
+                              destX, destY, destZ);
   return pkt;
 }
 

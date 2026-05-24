@@ -22,8 +22,9 @@ TEST(MeleeRangeTest, VerticalSlopAllowsSmallHeightDelta) {
   EXPECT_FALSE(Firelands::IsWithinMeleeRange3d(0.f, 0.f, 0.f, 0.f, 0.f, 4.f));
 }
 
-TEST(MeleeRangeTest, NpcToleranceAllowsClientServerDesync) {
-  // 10 yd horizontal is beyond 8.5 yd player-vs-player but inside 8.5 + 2.5 NPC slop.
+TEST(MeleeRangeTest, NpcToleranceAllowsMinorSplineDelay) {
+  // 9 yd is inside 8.5 + 0.5 NPC slop; 10 yd is beyond it.
   EXPECT_FALSE(Firelands::IsWithinMeleeRange2d(0.f, 0.f, 10.f, 0.f));
-  EXPECT_TRUE(Firelands::IsWithinMeleeRangeAgainstNpc(0.f, 0.f, 0.f, 10.f, 0.f, 0.f));
+  EXPECT_FALSE(Firelands::IsWithinMeleeRangeAgainstNpc(0.f, 0.f, 0.f, 10.f, 0.f, 0.f));
+  EXPECT_TRUE(Firelands::IsWithinMeleeRangeAgainstNpc(0.f, 0.f, 0.f, 9.f, 0.f, 0.f));
 }

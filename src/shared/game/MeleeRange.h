@@ -10,9 +10,8 @@ constexpr float kDefaultUnitCombatReachYards = 1.5f;
 /// Small latency / rounding tolerance (not a full extra yard band).
 constexpr float kMeleeRangeSlopYards = 0.5f;
 constexpr float kMeleeMaxVerticalSlopYards = 3.0f;
-/// Extra horizontal reach when the victim is an NPC: server coords can lag client
-/// spline interpolation / non-heartbeat player movement.
-constexpr float kNpcMeleePositionSyncToleranceYards = 2.5f;
+/// Small tolerance for NPC spline vs server tick timing (not a full extra yard band).
+constexpr float kNpcMeleePositionSyncToleranceYards = 0.5f;
 constexpr float kNpcMeleeMaxVerticalSlopYards = 5.0f;
 
 inline float MeleeRangeMaxYards(float attackerCombatReachYards,

@@ -19,6 +19,8 @@
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 #include <shared/game/MeleeRange.h>
+#include <shared/game/PlayerGmAppearance.h>
+#include <shared/game/UnitFieldFlags.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/MonsterMovePackets.h>
 #include <shared/network/MovementFlags.h>
@@ -30,9 +32,12 @@ namespace Firelands {
 namespace {
 
 constexpr std::chrono::milliseconds kCreatureMoveTickInterval{200};
-/// How far ahead one `SMSG_ON_MONSTER_MOVE` projects (avoids restarting run/walk every tick).
+/// Long enough for one continuous client run cycle; replan when it finishes or target moves.
 constexpr float kCreatureSplineHorizonSeconds = 1.5f;
+/// Client starts spline playback after packet delivery; lag server position to match.
+constexpr float kSplineClientPlaybackDelayMs = 150.f;
 constexpr float kCreatureHomeArrivalYards = 0.75f;
+constexpr float kCreatureChaseStandArrivalYards = 0.5f;
 constexpr float kCreatureRunSpeedYardsPerSec = 7.0f;
 
 /// Max distance from spawn/home before the creature abandons combat (evade).
@@ -41,12 +46,6 @@ constexpr float kCreatureLeashDistanceFromHomeYards = 50.0f;
 constexpr float kCreatureMaxChaseTargetDistanceYards = 45.0f;
 constexpr std::chrono::milliseconds kCreatureMeleeSwingInterval{2000};
 constexpr std::chrono::milliseconds kCreatureSpellTryInterval{2500};
-
-bool IsCreatureInMeleeRangeOfPlayer(Creature const &creature, WorldSession const &session) {
-  MovementInfo const &playerPos = session.GetPosition();
-  return IsWithinMeleeRangeAgainstNpc(playerPos.x, playerPos.y, playerPos.z,
-                                      creature.GetX(), creature.GetY(), creature.GetZ());
-}
 
 float DistanceSquared2d(float ax, float ay, float bx, float by) {
   float const dx = ax - bx;
@@ -99,17 +98,25 @@ void BroadcastMeleeHit(std::shared_ptr<Map> const &map, uint32 mapId, uint64 att
   BroadcastUnitHealthAfterDelta(mapId, map, victimGuid, victimHealth, victimMaxHealth);
 }
 
+void BroadcastCreatureUnitWireState(uint32 mapId, std::shared_ptr<Map> const &map,
+                                    Creature const &creature) {
+  if (!map)
+    return;
+  uint64 const guid = creature.GetGuid();
+  BroadcastUnitFlagsOnMap(mapId, map, guid, creature.GetUnitFieldFlags());
+  BroadcastUnitDynamicFlagsOnMap(mapId, map, guid, creature.GetUnitDynamicFlags());
+}
+
 bool SessionPlayerInMeleeRangeOf(WorldSession const &session, float targetX, float targetY,
                                  float targetZ) {
   MovementInfo const &pos = session.GetPosition();
   return IsWithinMeleeRange3d(pos.x, pos.y, pos.z, targetX, targetY, targetZ);
 }
 
-bool SessionPlayerInMeleeRangeOfNpc(WorldSession const &session,
-                                    Firelands::Creature const &creature) {
+bool SessionPlayerInMeleeRangeOfNpc(WorldSession const &session, Creature const &creature) {
   MovementInfo const &pos = session.GetPosition();
-  return IsWithinMeleeRangeAgainstNpc(pos.x, pos.y, pos.z, creature.GetX(), creature.GetY(),
-                                      creature.GetZ());
+  return IsWithinMeleeRange3d(pos.x, pos.y, pos.z, creature.GetX(), creature.GetY(),
+                              creature.GetZ());
 }
 
 void BroadcastCreatureChaseMove(std::shared_ptr<Map> const &map, uint64 creatureGuid,
@@ -151,20 +158,105 @@ void BroadcastCreatureMonsterStop(std::shared_ptr<Map> const &map,
   map->BroadcastPacketToNearby(creature->GetGuid(), pkt, true);
 }
 
-bool IsCreatureSplineInFlight(WorldSession::CreatureCombatRuntime const &runtime,
-                              std::chrono::steady_clock::time_point now) {
-  return runtime.activeSplineUntil.has_value() && now < *runtime.activeSplineUntil;
+using ActiveCreatureSpline = WorldSession::CreatureCombatRuntime::ActiveSpline;
+
+float SplineElapsedMs(ActiveCreatureSpline const &spline,
+                      std::chrono::steady_clock::time_point now,
+                      bool clientAligned) {
+  float const elapsedMs =
+      std::chrono::duration<float, std::milli>(now - spline.startedAt).count();
+  if (!clientAligned)
+    return elapsedMs;
+  return std::max(0.f, elapsedMs - kSplineClientPlaybackDelayMs);
 }
 
-void MarkCreatureSplineInFlight(WorldSession::CreatureCombatRuntime &runtime,
-                                std::chrono::steady_clock::time_point now,
-                                uint32_t durationMs) {
-  runtime.activeSplineUntil =
-      now + std::chrono::milliseconds(static_cast<int64_t>(durationMs));
+bool IsCreatureSplineInFlight(WorldSession::CreatureCombatRuntime const &runtime,
+                              std::chrono::steady_clock::time_point now,
+                              bool clientAligned = true) {
+  if (!runtime.activeSpline.has_value())
+    return false;
+  ActiveCreatureSpline const &spline = *runtime.activeSpline;
+  return SplineElapsedMs(spline, now, clientAligned) <
+         static_cast<float>(spline.durationMs);
+}
+
+MovementInfo InterpolateActiveSpline(ActiveCreatureSpline const &spline,
+                                     std::chrono::steady_clock::time_point now,
+                                     bool clientAligned = true) {
+  float const elapsedMs = SplineElapsedMs(spline, now, clientAligned);
+  float const t =
+      spline.durationMs > 0
+          ? std::clamp(elapsedMs / static_cast<float>(spline.durationMs), 0.f, 1.f)
+          : 1.f;
+
+  MovementInfo pos{};
+  pos.x = spline.from.x + (spline.to.x - spline.from.x) * t;
+  pos.y = spline.from.y + (spline.to.y - spline.from.y) * t;
+  pos.z = spline.from.z + (spline.to.z - spline.from.z) * t;
+  pos.orientation =
+      spline.from.orientation + (spline.to.orientation - spline.from.orientation) * t;
+  pos.flags = t >= 1.f ? MOVEMENTFLAG_NONE : MOVEMENTFLAG_FORWARD;
+  return pos;
+}
+
+MovementInfo GetCreatureClientVisiblePosition(
+    Creature const &creature, WorldSession::CreatureCombatRuntime const &runtime,
+    std::chrono::steady_clock::time_point now) {
+  if (runtime.activeSpline.has_value())
+    return InterpolateActiveSpline(*runtime.activeSpline, now, true);
+  return creature.GetPosition();
+}
+
+bool IsCreatureInMeleeRangeOfPlayer(Creature const &creature, WorldSession const &session,
+                                    WorldSession::CreatureCombatRuntime const &runtime,
+                                    std::chrono::steady_clock::time_point now) {
+  MovementInfo const &playerPos = session.GetPosition();
+  MovementInfo const vis = GetCreatureClientVisiblePosition(creature, runtime, now);
+  return IsWithinMeleeRange3d(playerPos.x, playerPos.y, playerPos.z, vis.x, vis.y, vis.z);
+}
+
+bool SessionPlayerInMeleeRangeOfNpc(WorldSession const &session, Creature const &creature,
+                                    WorldSession::CreatureCombatRuntime const &runtime,
+                                    std::chrono::steady_clock::time_point now) {
+  MovementInfo const &pos = session.GetPosition();
+  MovementInfo const vis = GetCreatureClientVisiblePosition(creature, runtime, now);
+  return IsWithinMeleeRange3d(pos.x, pos.y, pos.z, vis.x, vis.y, vis.z);
+}
+
+/// Advances server position along the client-aligned spline timeline.
+void SyncCreatureToActiveSpline(std::shared_ptr<Map> const &map,
+                                std::shared_ptr<Creature> const &creature,
+                                WorldSession::CreatureCombatRuntime &runtime,
+                                std::chrono::steady_clock::time_point now) {
+  if (!map || !creature || !runtime.activeSpline.has_value())
+    return;
+
+  ActiveCreatureSpline const &spline = *runtime.activeSpline;
+  if (!IsCreatureSplineInFlight(runtime, now, true)) {
+    MovementInfo const arrived = InterpolateActiveSpline(spline, now, true);
+    map->UpdateObjectPosition(creature->GetGuid(), arrived);
+    runtime.activeSpline.reset();
+    return;
+  }
+
+  map->UpdateObjectPosition(creature->GetGuid(),
+                            InterpolateActiveSpline(spline, now, true));
+}
+
+void StartCreatureActiveSpline(WorldSession::CreatureCombatRuntime &runtime,
+                               MovementInfo const &from, MovementInfo const &to,
+                               std::chrono::steady_clock::time_point now,
+                               uint32_t durationMs) {
+  ActiveCreatureSpline spline{};
+  spline.from = from;
+  spline.to = to;
+  spline.startedAt = now;
+  spline.durationMs = durationMs;
+  runtime.activeSpline = spline;
 }
 
 void ClearCreatureSplineInFlight(WorldSession::CreatureCombatRuntime &runtime) {
-  runtime.activeSplineUntil.reset();
+  runtime.activeSpline.reset();
 }
 
 bool MovedMeaningfully(MovementInfo const &from, MovementInfo const &to) {
@@ -172,6 +264,51 @@ bool MovedMeaningfully(MovementInfo const &from, MovementInfo const &to) {
   float const dy = to.y - from.y;
   float const dz = to.z - from.z;
   return (dx * dx + dy * dy + dz * dz) > 0.01f * 0.01f;
+}
+
+void SnapCreatureToChaseStand(std::shared_ptr<Map> const &map,
+                              std::shared_ptr<Creature> const &creature,
+                              MovementInfo const &stand) {
+  if (!map || !creature)
+    return;
+  map->UpdateObjectPosition(creature->GetGuid(), stand);
+}
+
+bool TryFinalizeCreatureChaseStand(std::shared_ptr<Map> const &map,
+                                   std::shared_ptr<Creature> const &creature,
+                                   MovementInfo const &from, float targetX, float targetY,
+                                   float targetZ, float stopDistanceYards,
+                                   WorldSession::CreatureCombatRuntime &runtime,
+                                   std::chrono::steady_clock::time_point now,
+                                   uint32_t &moveCounter, uint64_t faceTargetGuid) {
+  MovementInfo const stand =
+      application::combat::ComputeChaseStandPosition(from, targetX, targetY, targetZ,
+                                                     stopDistanceYards);
+  float const standDistSq =
+      DistanceSquared2d(from.x, from.y, stand.x, stand.y);
+
+  if (IsCreatureSplineInFlight(runtime, now, true))
+    return false;
+
+  if (standDistSq > kCreatureChaseStandArrivalYards * kCreatureChaseStandArrivalYards) {
+    int32_t const splineId = static_cast<int32_t>(++moveCounter);
+    uint32_t const durationMs = monster_move_wire::MonsterMoveDurationMs(
+        from.x, from.y, from.z, stand.x, stand.y, stand.z, kCreatureRunSpeedYardsPerSec);
+    BroadcastCreatureChaseMove(map, creature->GetGuid(), faceTargetGuid, from, stand, splineId);
+    StartCreatureActiveSpline(runtime, from, stand, now, durationMs);
+    return false;
+  }
+
+  SnapCreatureToChaseStand(map, creature, stand);
+  int32_t const stopId = static_cast<int32_t>(++moveCounter);
+  BroadcastCreatureMonsterStop(map, creature, stopId);
+  ClearCreatureSplineInFlight(runtime);
+  MovementInfo chaseTarget{};
+  chaseTarget.x = targetX;
+  chaseTarget.y = targetY;
+  chaseTarget.z = targetZ;
+  runtime.lastChaseTargetPos = chaseTarget;
+  return true;
 }
 
 /// Projects movement toward a target and, when the prior spline finished, sends one packet.
@@ -186,12 +323,7 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
   if (!map || !creature)
     return false;
 
-  MovementInfo const from = creature->GetPosition();
-  application::combat::CreatureChaseConfig config{};
-  config.stopDistanceYards = stopDistanceYards;
-
-  auto const projected = application::combat::ProjectCreatureTowardTarget(
-      from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config);
+  SyncCreatureToActiveSpline(map, creature, runtime, now);
 
   bool const chaseTargetMoved =
       !returnHomeSpline &&
@@ -201,31 +333,47 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
                                                  runtime.lastChaseTargetPos->z, targetX,
                                                  targetY, targetZ));
 
-  if (projected.inStopRange) {
-  // Ref chase: stop spline when already in expected melee range.
-    if (!returnHomeSpline && IsCreatureSplineInFlight(runtime, now)) {
-      ClearCreatureSplineInFlight(runtime);
-      int32_t const stopId = static_cast<int32_t>(++moveCounter);
-      BroadcastCreatureMonsterStop(map, creature, stopId);
+  MovementInfo from = creature->GetPosition();
+  if (chaseTargetMoved && runtime.activeSpline.has_value()) {
+    from = InterpolateActiveSpline(*runtime.activeSpline, now, true);
+    map->UpdateObjectPosition(creature->GetGuid(), from);
+    ClearCreatureSplineInFlight(runtime);
+  }
+  application::combat::CreatureChaseConfig config{};
+  config.stopDistanceYards = stopDistanceYards;
+
+  auto const projected = application::combat::ProjectCreatureTowardTarget(
+      from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config);
+
+  if (!returnHomeSpline) {
+    float const distToPlayerSq =
+        DistanceSquared2d(from.x, from.y, targetX, targetY);
+    float const closeSq =
+        (config.stopDistanceYards + kCreatureChaseStandArrivalYards) *
+        (config.stopDistanceYards + kCreatureChaseStandArrivalYards);
+    if (projected.inStopRange || distToPlayerSq <= closeSq) {
+      return TryFinalizeCreatureChaseStand(map, creature, from, targetX, targetY, targetZ,
+                                           stopDistanceYards, runtime, now, moveCounter,
+                                           faceTargetGuid);
     }
-    if (!returnHomeSpline) {
-      MovementInfo chaseTarget{};
-      chaseTarget.x = targetX;
-      chaseTarget.y = targetY;
-      chaseTarget.z = targetZ;
-      runtime.lastChaseTargetPos = chaseTarget;
-    }
+  } else if (projected.inStopRange) {
+    if (IsCreatureSplineInFlight(runtime, now, true))
+      return false;
+
+    SyncCreatureToActiveSpline(map, creature, runtime, now);
+    int32_t const stopId = static_cast<int32_t>(++moveCounter);
+    BroadcastCreatureMonsterStop(map, creature, stopId);
+    ClearCreatureSplineInFlight(runtime);
     return true;
   }
 
-  if (IsCreatureSplineInFlight(runtime, now) && !chaseTargetMoved)
+  if (IsCreatureSplineInFlight(runtime, now, true) && !chaseTargetMoved)
     return false;
 
   if (!projected.moved || !MovedMeaningfully(from, projected.position))
     return false;
 
   MovementInfo const &to = projected.position;
-  map->UpdateObjectPosition(creature->GetGuid(), to);
   int32_t const splineId = static_cast<int32_t>(++moveCounter);
   uint32_t const durationMs = monster_move_wire::MonsterMoveDurationMs(
       from.x, from.y, from.z, to.x, to.y, to.z, kCreatureRunSpeedYardsPerSec);
@@ -233,7 +381,7 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
     BroadcastCreatureReturnMove(map, creature->GetGuid(), from, to, splineId);
   else
     BroadcastCreatureChaseMove(map, creature->GetGuid(), faceTargetGuid, from, to, splineId);
-  MarkCreatureSplineInFlight(runtime, now, durationMs);
+  StartCreatureActiveSpline(runtime, from, to, now, durationMs);
   if (!returnHomeSpline) {
     MovementInfo chaseTarget{};
     chaseTarget.x = targetX;
@@ -257,17 +405,24 @@ bool StepCreatureReturnToward(std::shared_ptr<Map> const &map,
 
 bool FinalizeCreatureReturnAtHome(std::shared_ptr<Map> const &map, uint64_t creatureGuid,
                                   MovementInfo const &home, uint32_t &moveCounter,
-                                  WorldSession::CreatureCombatRuntime &runtime) {
+                                  WorldSession::CreatureCombatRuntime &runtime,
+                                  WorldSession *observer) {
   if (!map)
     return true;
   auto creature = map->TryGetCreature(creatureGuid);
   if (!creature)
     return true;
 
+  SyncCreatureToActiveSpline(map, creature, runtime, std::chrono::steady_clock::now());
   ClearCreatureSplineInFlight(runtime);
   MovementInfo snapped = home;
   snapped.flags = MOVEMENTFLAG_NONE;
   map->UpdateObjectPosition(creatureGuid, snapped);
+  creature->CompleteEvadeAtHome();
+  BroadcastUnitHealthAfterDelta(map->GetMapId(), map, creatureGuid,
+                                creature->GetLiveHealth(), creature->GetLiveMaxHealth(),
+                                observer);
+  BroadcastCreatureUnitWireState(map->GetMapId(), map, *creature);
   int32_t const stopId = static_cast<int32_t>(++moveCounter);
   BroadcastCreatureMonsterStop(map, creature, stopId);
   return true;
@@ -312,7 +467,7 @@ void WorldSession::BeginCreatureReturnToHome(uint64_t creatureGuid,
   CreatureCombatRuntime scratch{};
   scratch.moveCounter = moveCounter;
   if (DistanceSquared2d(creature->GetX(), creature->GetY(), home.x, home.y) <= arriveSq) {
-    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, moveCounter, scratch);
+    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, moveCounter, scratch, this);
     return;
   }
 
@@ -323,7 +478,8 @@ void WorldSession::BeginCreatureReturnToHome(uint64_t creatureGuid,
   uint32_t &returnCounter = returnRuntime.moveCounter;
   if (StepCreatureReturnToward(map, creature, home, returnRuntime, now, returnCounter)) {
     _creatureReturningHome.erase(creatureGuid);
-    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime);
+    (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime,
+                                     this);
     return;
   }
   ScheduleCreatureCombatMovement();
@@ -336,25 +492,33 @@ void WorldSession::StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopP
 
   MovementInfo const home = it->second.home;
   uint32_t const moveCounter = it->second.moveCounter;
+  CreatureCombatRuntime aggroRuntime = std::move(it->second);
   _creatureAggroed.erase(it);
 
   uint64_t const player = _playerGuid;
 
   if (auto map = runtime().GetMap(_mapId)) {
     if (auto creature = map->TryGetCreature(creatureGuid)) {
+      SyncCreatureToActiveSpline(map, creature, aggroRuntime,
+                                 std::chrono::steady_clock::now());
+      ClearCreatureSplineInFlight(aggroRuntime);
       int32_t const stopId = static_cast<int32_t>(moveCounter + 1u);
       BroadcastCreatureMonsterStop(map, creature, stopId);
+      if (creature->GetLiveHealth() > 0) {
+        creature->ClearInCombat();
+        creature->SetEvading(true);
+        creature->SetChaseTargetPlayerGuid(0);
+        BroadcastCreatureUnitWireState(_mapId, map, *creature);
+      }
     }
     if (sendAttackStopPackets && player != 0) {
       WorldPacket stopCreature =
           combat_wire::BuildAttackStop(creatureGuid, player, false);
       map->BroadcastPacketToNearby(creatureGuid, stopCreature, true);
     }
-    WorldPacket clearTarget;
-    WorldSessionObjectUpdate::BuildUnitTargetValuesUpdate(
-        static_cast<uint16>(_mapId), creatureGuid, 0, clearTarget);
-    map->BroadcastPacketToNearby(creatureGuid, clearTarget, true);
+    BroadcastUnitTargetOnMap(_mapId, map, creatureGuid, 0);
     BeginCreatureReturnToHome(creatureGuid, home, moveCounter);
+    RefreshPlayerCombatWireState(map);
   }
 
   if (_creatureAggroed.empty() && _creatureReturningHome.empty())
@@ -362,6 +526,15 @@ void WorldSession::StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopP
 }
 
 void WorldSession::StopAllCreatureCombat(bool sendAttackStopPackets) {
+  if (auto map = runtime().GetMap(_mapId)) {
+    for (auto const &entry : _creatureReturningHome) {
+      if (auto creature = map->TryGetCreature(entry.first)) {
+        creature->CompleteEvadeAtHome();
+        BroadcastUnitHealthAfterDelta(_mapId, map, entry.first, creature->GetLiveHealth(),
+                                      creature->GetLiveMaxHealth(), this);
+      }
+    }
+  }
   std::vector<uint64_t> const aggroGuids = [&] {
     std::vector<uint64_t> guids;
     guids.reserve(_creatureAggroed.size());
@@ -415,14 +588,17 @@ void WorldSession::StartCreatureAggro(uint64_t creatureGuid) {
   application::adapters::PlayerCombatEntity playerVictim(attackerPl);
   _combatService->StartCombat(creatureAttacker, playerVictim);
 
+  victimCr->MarkInCombat();
+  victimCr->SetEvading(false);
+  victimCr->SetChaseTargetPlayerGuid(_playerGuid);
+  EnterPlayerCombat();
+
   if (!alreadyAggro) {
     WorldPacket creatureStart = combat_wire::BuildAttackStart(creatureGuid, _playerGuid);
     SendPacket(creatureStart);
     map->BroadcastPacketToNearby(creatureGuid, creatureStart, true);
-    WorldPacket targetUpdate;
-    WorldSessionObjectUpdate::BuildUnitTargetValuesUpdate(
-        static_cast<uint16>(_mapId), creatureGuid, _playerGuid, targetUpdate);
-    map->BroadcastPacketToNearby(creatureGuid, targetUpdate, true);
+    BroadcastUnitTargetOnMap(_mapId, map, creatureGuid, _playerGuid);
+    BroadcastCreatureUnitWireState(_mapId, map, *victimCr);
   }
 
   ScheduleCreatureCombatMovement();
@@ -444,9 +620,6 @@ void WorldSession::StopMeleeAutoAttack(bool sendStopPackets) {
   _meleeVictimGuid = 0;
   _meleeVictimIsCreature = false;
 
-  if (victimWasCreature && victim != 0)
-    StopCreatureAggro(victim, sendStopPackets);
-
   if (!sendStopPackets || player == 0 || victim == 0)
     return;
 
@@ -465,6 +638,8 @@ void WorldSession::StopMeleeAutoAttack(bool sendStopPackets) {
   WorldPacket stopPlayer = combat_wire::BuildAttackStop(player, victim, victimDead);
   SendPacket(stopPlayer);
   map->BroadcastPacketToNearby(player, stopPlayer, false);
+  BroadcastUnitTargetOnMap(_mapId, map, player, 0);
+  RefreshPlayerCombatWireState(map);
 }
 
 void WorldSession::EvadeCreatureCombat(uint64_t creatureGuid) {
@@ -514,7 +689,7 @@ void WorldSession::ProcessCreatureCombatAttack(std::shared_ptr<Map> const &map,
 
   if (now < runtime.nextMeleeSwingAt)
     return;
-  if (!IsCreatureInMeleeRangeOfPlayer(*creature, *this))
+  if (!IsCreatureInMeleeRangeOfPlayer(*creature, *this, runtime, now))
     return;
 
   application::adapters::CreatureCombatEntity creatureAttacker(creature);
@@ -527,6 +702,7 @@ void WorldSession::ProcessCreatureCombatAttack(std::shared_ptr<Map> const &map,
 
   runtime.nextMeleeSwingAt = now + kCreatureMeleeSwingInterval;
   uint32_t const playerDmg = HealthDamageDealt(playerHpBefore, target->GetLiveHealth());
+  EnterPlayerCombat();
   BroadcastMeleeHit(map, _mapId, creature->GetGuid(), _playerGuid, playerDmg,
                     target->GetLiveHealth(), target->GetLiveMaxHealth());
 }
@@ -583,6 +759,9 @@ bool WorldSession::TryCastCreatureCombatSpell(std::shared_ptr<Map> const &map,
   map->BroadcastPacketToNearby(creature->GetGuid(), out.spellGo, true);
   ApplySpellCastAuraOnMap(_mapId, map, out, now);
   (void)ApplySpellCastOutcomeOnMap(_mapId, map, creature->GetGuid(), spellId, out, now);
+  if (out.hasDirectHealthEffect && out.directHealthDelta < 0 &&
+      out.directHealthTargetGuid == _playerGuid)
+    EnterPlayerCombat();
   ScheduleSpellImpactVisual(map, creature->GetGuid(), spellId, out.primaryHitTargetGuid,
                             out.spellImpactDelayMs);
 
@@ -597,6 +776,23 @@ bool WorldSession::TryCastCreatureCombatSpell(std::shared_ptr<Map> const &map,
   }
 
   return true;
+}
+
+void WorldSession::SyncAggroedCreatureSplinePosition(uint64_t creatureGuid) {
+  auto it = _creatureAggroed.find(creatureGuid);
+  if (it == _creatureAggroed.end())
+    return;
+
+  auto map = runtime().GetMap(_mapId);
+  if (!map)
+    return;
+
+  auto creature = map->TryGetCreature(creatureGuid);
+  if (!creature)
+    return;
+
+  auto const now = std::chrono::steady_clock::now();
+  SyncCreatureToActiveSpline(map, creature, it->second, now);
 }
 
 void WorldSession::ProcessCreatureCombatMovementTick() {
@@ -629,8 +825,25 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
       continue;
     }
 
+    float const arriveSq = kCreatureHomeArrivalYards * kCreatureHomeArrivalYards;
+    if (DistanceSquared2d(creature->GetX(), creature->GetY(), home.x, home.y) <= arriveSq &&
+        !IsCreatureSplineInFlight(returnRuntime, now, true)) {
+      (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime,
+                                         this);
+      returnIt = _creatureReturningHome.erase(returnIt);
+      continue;
+    }
+
+    uint32_t const hpBefore = creature->GetLiveHealth();
+    creature->TickEvadeHealthRegen(kCreatureMoveTickInterval);
+    if (creature->GetLiveHealth() != hpBefore) {
+      BroadcastUnitHealthAfterDelta(_mapId, map, creatureGuid, creature->GetLiveHealth(),
+                                    creature->GetLiveMaxHealth(), this);
+    }
+
     if (StepCreatureReturnToward(map, creature, home, returnRuntime, now, returnCounter)) {
-      (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime);
+      (void)FinalizeCreatureReturnAtHome(map, creatureGuid, home, returnCounter, returnRuntime,
+                                         this);
       returnIt = _creatureReturningHome.erase(returnIt);
       continue;
     }
@@ -706,10 +919,17 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
       StopMeleeAutoAttack(true);
       return;
     }
-    if (!SessionPlayerInMeleeRangeOfNpc(*this, *victimCr)) {
+    SyncAggroedCreatureSplinePosition(victimGuid);
+    auto const now = std::chrono::steady_clock::now();
+    auto aggroIt = _creatureAggroed.find(victimGuid);
+    bool const inRange =
+        aggroIt != _creatureAggroed.end()
+            ? SessionPlayerInMeleeRangeOfNpc(*this, *victimCr, aggroIt->second, now)
+            : SessionPlayerInMeleeRangeOfNpc(*this, *victimCr);
+    if (!inRange) {
       WorldPacket pkt = combat_wire::BuildAttackSwingNotInRange();
       SendPacket(pkt);
-      StopMeleeAutoAttack(true);
+      ScheduleMeleeAutoAttack();
       return;
     }
     if (victimCr->GetLiveHealth() == 0) {
@@ -722,7 +942,10 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
     auto const hit = _combatService->ApplyMeleeHit(attackerEntity, victimEntity);
     if (hit != application::MeleeSwingResult::Success) {
       SendMeleeSwingFailure(*this, hit);
-      StopMeleeAutoAttack(true);
+      if (hit == application::MeleeSwingResult::NotInRange)
+        ScheduleMeleeAutoAttack();
+      else
+        StopMeleeAutoAttack(true);
       return;
     }
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimCr->GetLiveHealth());
@@ -730,7 +953,7 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
                         victimCr->GetLiveMaxHealth());
 
     if (victimCr->GetLiveHealth() == 0) {
-      OnCreatureKilledByPlayer(victimGuid, hpBefore);
+      FinalizeCreatureDeath(victimGuid, hpBefore);
       StopMeleeAutoAttack(true);
     }
     else
@@ -853,6 +1076,8 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
 
     WorldPacket attackStart = combat_wire::BuildAttackStart(_playerGuid, victimGuid);
     SendPacket(attackStart);
+    EnterPlayerCombat();
+    BroadcastUnitTargetOnMap(_mapId, map, _playerGuid, victimGuid);
 
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimPl->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimPl->GetLiveHealth(),
@@ -862,7 +1087,14 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
   }
 
   if (auto victimCr = map->TryGetCreature(victimGuid)) {
-    if (!SessionPlayerInMeleeRangeOfNpc(*this, *victimCr)) {
+    SyncAggroedCreatureSplinePosition(victimGuid);
+    auto const now = std::chrono::steady_clock::now();
+    auto aggroIt = _creatureAggroed.find(victimGuid);
+    bool const inRange =
+        aggroIt != _creatureAggroed.end()
+            ? SessionPlayerInMeleeRangeOfNpc(*this, *victimCr, aggroIt->second, now)
+            : SessionPlayerInMeleeRangeOfNpc(*this, *victimCr);
+    if (!inRange) {
       WorldPacket pkt = combat_wire::BuildAttackSwingNotInRange();
       SendPacket(pkt);
       return;
@@ -895,14 +1127,16 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
     WorldPacket attackStart = combat_wire::BuildAttackStart(_playerGuid, victimGuid);
     SendPacket(attackStart);
     map->BroadcastPacketToNearby(_playerGuid, attackStart, false);
+    EnterPlayerCombat();
+    BroadcastUnitTargetOnMap(_mapId, map, _playerGuid, victimGuid);
 
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimCr->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                       victimCr->GetLiveMaxHealth());
     if (victimCr->GetLiveHealth() == 0)
-      OnCreatureKilledByPlayer(victimGuid, hpBefore);
-
-    StartCreatureAggro(victimGuid);
+      FinalizeCreatureDeath(victimGuid, hpBefore);
+    else
+      StartCreatureAggro(victimGuid);
 
     ScheduleMeleeAutoAttack();
     return;
@@ -910,6 +1144,66 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
 
   WorldPacket pkt = combat_wire::BuildAttackSwingCantAttack();
   SendPacket(pkt);
+}
+
+bool WorldSession::PlayerShouldShowInCombatOnWire() const {
+  if (_meleeVictimGuid != 0)
+    return true;
+  if (!_creatureAggroed.empty())
+    return true;
+  if (auto map = runtime().GetMap(_mapId)) {
+    if (auto pl = map->TryGetPlayer(_playerGuid)) {
+      if (!pl->IsOutOfCombatForRegen(std::chrono::steady_clock::now()))
+        return true;
+    }
+  }
+  return false;
+}
+
+void WorldSession::EnterPlayerCombat() {
+  auto map = runtime().GetMap(_mapId);
+  if (!map || _playerGuid == 0)
+    return;
+  auto const now = std::chrono::steady_clock::now();
+  if (auto pl = map->TryGetPlayer(_playerGuid))
+    pl->MarkInCombat(now);
+  RefreshPlayerCombatWireState(map);
+}
+
+void WorldSession::RefreshPlayerCombatWireState(std::shared_ptr<Map> const &map) {
+  if (!map || _playerGuid == 0)
+    return;
+  bool const inCombat = PlayerShouldShowInCombatOnWire();
+  uint32 const flags =
+      ComputePlayerWireUnitFieldFlags(GetGmAppearanceForPlayerUpdates(), inCombat);
+  WorldPacket pkt;
+  WorldSessionObjectUpdate::BuildUnitFlagsValuesUpdate(static_cast<uint16>(_mapId),
+                                                       _playerGuid, flags, pkt);
+  SendPacket(pkt);
+  map->BroadcastPacketToNearby(_playerGuid, pkt, true);
+}
+
+void WorldSession::FinalizeCreatureDeath(uint64 creatureGuid, uint32 hpBefore) {
+  if (_playerGuid == 0 || creatureGuid == 0)
+    return;
+  auto map = runtime().GetMap(_mapId);
+  if (!map)
+    return;
+  auto creature = map->TryGetCreature(creatureGuid);
+  if (!creature)
+    return;
+
+  creature->MarkDeadAndLootable();
+  creature->SetChaseTargetPlayerGuid(0);
+  BroadcastUnitTargetOnMap(_mapId, map, creatureGuid, 0);
+  BroadcastCreatureUnitWireState(_mapId, map, *creature);
+
+  if (_creatureAggroed.find(creatureGuid) != _creatureAggroed.end())
+    StopCreatureAggro(creatureGuid, true);
+  else if (_meleeVictimGuid == creatureGuid)
+    StopMeleeAutoAttack(true);
+
+  MaybeGrantKillExperience(*creature, hpBefore);
 }
 
 } // namespace Firelands

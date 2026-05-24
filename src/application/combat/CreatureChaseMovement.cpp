@@ -23,6 +23,33 @@ float OrientationToward(float fromX, float fromY, float toX, float toY) {
 
 } // namespace
 
+MovementInfo ComputeChaseStandPosition(MovementInfo const &from, float targetX,
+                                       float targetY, float targetZ,
+                                       float stopDistanceYards) {
+  float const dx = from.x - targetX;
+  float const dy = from.y - targetY;
+  float const distSq = dx * dx + dy * dy;
+
+  MovementInfo pos = from;
+  if (distSq < 1e-8f) {
+    pos.orientation = OrientationToward(from.x, from.y, targetX, targetY);
+    pos.flags = MOVEMENTFLAG_NONE;
+    return pos;
+  }
+
+  float const dist = std::sqrt(distSq);
+  float const standDist = std::min(dist, stopDistanceYards);
+  float const nx = dx / dist;
+  float const ny = dy / dist;
+
+  pos.x = targetX + nx * standDist;
+  pos.y = targetY + ny * standDist;
+  pos.z = from.z + (targetZ - from.z) * (standDist / dist);
+  pos.orientation = OrientationToward(pos.x, pos.y, targetX, targetY);
+  pos.flags = MOVEMENTFLAG_NONE;
+  return pos;
+}
+
 CreatureChaseStepResult StepCreatureTowardTarget(Firelands::MovementInfo const &current,
                                                 float targetX, float targetY,
                                                 float targetZ,

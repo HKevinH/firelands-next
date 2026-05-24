@@ -58,3 +58,10 @@ TEST(CreatureChaseMovementTest, ChaseTargetRelocatedDetectsMeaningfulMove) {
   EXPECT_FALSE(application::combat::ChaseTargetRelocated(0.f, 0.f, 0.f, 0.2f, 0.f, 0.f));
   EXPECT_TRUE(application::combat::ChaseTargetRelocated(0.f, 0.f, 0.f, 2.f, 0.f, 0.f));
 }
+
+TEST(CreatureChaseMovementTest, StandPositionIsStopDistanceFromTarget) {
+  auto const stand = application::combat::ComputeChaseStandPosition(
+      MakePos(10.f, 0.f, 0.f), 0.f, 0.f, 0.f, 1.0f);
+  EXPECT_NEAR(stand.x, 1.0f, 0.01f);
+  EXPECT_NEAR(stand.y, 0.f, 0.01f);
+}

@@ -118,13 +118,7 @@ void WorldSession::PublishPlayerRestStateUpdate() {
 }
 
 void WorldSession::OnCreatureKilledByPlayer(uint64 creatureGuid, uint32 hpBefore) {
-  if (_playerGuid == 0 || creatureGuid == 0)
-    return;
-  auto map = runtime().GetMap(_mapId);
-  if (!map)
-    return;
-  if (auto cr = map->TryGetCreature(creatureGuid))
-    MaybeGrantKillExperience(*cr, hpBefore);
+  FinalizeCreatureDeath(creatureGuid, hpBefore);
 }
 
 } // namespace Firelands
