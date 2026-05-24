@@ -1,14 +1,25 @@
 #pragma once
 
+#include <domain/world/MapSnapshot.h>
+
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace Firelands {
 
 class AsyncNetworkServer;
 class WorldInteractiveConsole;
 class CommandService;
+
+/// Cached map-status strip for the world TUI (refreshed on the ticker thread).
+struct MapStatusPanelModel {
+  std::vector<MapSnapshot> lines;
+  std::size_t hidden_map_count = 0;
+  int screen_rows = 2;
+};
 
 /// Shared state between the FTXUI main thread (render + tick) and the
 /// background bootstrap thread that builds network services.
@@ -19,6 +30,9 @@ struct WorldFtxuiRuntime {
   std::shared_ptr<AsyncNetworkServer> world_server;
   std::shared_ptr<WorldInteractiveConsole> interactive_console;
   std::shared_ptr<CommandService> command_service;
+
+  std::mutex map_status_mutex;
+  MapStatusPanelModel map_status;
 };
 
 /// Full-screen terminal UI (FTXUI): scrollable log pane and a fixed bottom
