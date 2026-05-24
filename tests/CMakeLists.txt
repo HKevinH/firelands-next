@@ -9,6 +9,7 @@ add_executable(FirelandsUnitTests
     unit/infrastructure/MySqlAccountRepositoryTests.cpp
     unit/infrastructure/MySqlRealmRepositoryTests.cpp
     unit/infrastructure/RealmLiveRegistryTests.cpp
+    unit/infrastructure/SqlStatementSplitterTests.cpp
     unit/shared/ByteBufferTests.cpp
     unit/shared/UpdateDataTests.cpp
     unit/shared/AuthPacketsTests.cpp

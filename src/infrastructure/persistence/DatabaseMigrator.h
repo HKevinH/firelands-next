@@ -4,9 +4,11 @@
 #include <conncpp.hpp>
 #include <filesystem>
 #include <fstream>
+#include <infrastructure/persistence/SqlStatementSplitter.h>
 #include <memory>
 #include <shared/Logger.h>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Firelands {
@@ -37,7 +39,7 @@ public:
 
     auto appendSortedSql = [](std::vector<std::string> &out,
                               const std::filesystem::path &dir,
-                              bool skipZzPrefix) {
+                              bool skipZzPrefix, bool numericMigrationOrder) {
       if (!std::filesystem::exists(dir))
         return;
       std::vector<std::string> chunk;
@@ -49,13 +51,31 @@ public:
           continue;
         chunk.push_back(entry.path().string());
       }
-      std::sort(chunk.begin(), chunk.end());
+      if (numericMigrationOrder) {
+        auto migrationSortKey = [](std::string const &path) -> std::pair<int, std::string> {
+          std::string const name = std::filesystem::path(path).filename().string();
+          auto const underscore = name.find('_');
+          if (underscore != std::string::npos) {
+            try {
+              return {std::stoi(name.substr(0, underscore)), name};
+            } catch (...) {
+            }
+          }
+          return {999999, name};
+        };
+        std::sort(chunk.begin(), chunk.end(),
+                  [&](std::string const &a, std::string const &b) {
+                    return migrationSortKey(a) < migrationSortKey(b);
+                  });
+      } else {
+        std::sort(chunk.begin(), chunk.end());
+      }
       out.insert(out.end(), chunk.begin(), chunk.end());
     };
 
-    appendSortedSql(sqlFiles, bundledPath, true);
-    appendSortedSql(sqlFiles, initPath, false);
-    appendSortedSql(sqlFiles, migrationsPath, false);
+    appendSortedSql(sqlFiles, bundledPath, true, false);
+    appendSortedSql(sqlFiles, initPath, false, false);
+    appendSortedSql(sqlFiles, migrationsPath, false, true);
 
     LOG_DEBUG(
         "Starting database migrations from directory: {} (bundled, then init, "
@@ -160,7 +180,7 @@ std::string content((std::istreambuf_iterator<char>(file)),
           }
         }
 
-        std::vector<std::string> statements = SplitStatements(cleanedContent);
+        std::vector<std::string> statements = SplitSqlStatements(cleanedContent);
         for (const auto &stmt : statements) {
           std::string trimmed = stmt;
           trimmed.erase(0, trimmed.find_first_not_of(" \n\r\t"));
@@ -267,81 +287,6 @@ private:
       LOG_WARN("Could not record migration {} (may already be recorded): {}",
                migrationFilename, e.what());
     }
-  }
-
-  /**
-   * @brief Splits a string of SQL commands into individual statements.
-   * Handles basic string literal escaping to avoid splitting inside strings.
-   */
-  static std::vector<std::string> SplitStatements(const std::string &sql) {
-    std::vector<std::string> statements;
-    std::string current;
-    bool inString = false;
-    char stringChar = 0;
-    /// `--` to end of line: semicolons here must not split statements (e.g.
-    /// comments mentioning "`auth` URL; `USE`" would otherwise produce garbage).
-    bool inLineComment = false;
-
-    for (size_t i = 0; i < sql.length(); ++i) {
-      char c = sql[i];
-
-      if (inLineComment) {
-        current += c;
-        if (c == '\n')
-          inLineComment = false;
-        continue;
-      }
-
-      if (!inString && c == '-' && i + 1 < sql.length() && sql[i + 1] == '-') {
-        current += c;
-        current += sql[++i];
-        inLineComment = true;
-        continue;
-      }
-
-      // Basic string handling (single quote, double quote, backtick)
-      if ((c == '\'' || c == '"' || c == '`') &&
-          (i == 0 || sql[i - 1] != '\\')) {
-        if (!inString) {
-          inString = true;
-          stringChar = c;
-        } else if (stringChar == c) {
-          // SQL string escapes: '' and "" inside quoted literals must not end the
-          // string (otherwise migrations like DEFAULT ''0'' split incorrectly).
-          if (c == '\'' && i + 1 < sql.length() && sql[i + 1] == '\'') {
-            current += c;
-            current += sql[i + 1];
-            i += 2;
-            continue;
-          }
-          if (c == '"' && i + 1 < sql.length() && sql[i + 1] == '"') {
-            current += c;
-            current += sql[i + 1];
-            i += 2;
-            continue;
-          }
-          // Backtick-delimited identifiers: `` → one `
-          if (c == '`' && i + 1 < sql.length() && sql[i + 1] == '`') {
-            current += c;
-            current += sql[i + 1];
-            i += 2;
-            continue;
-          }
-          inString = false;
-        }
-      }
-
-      if (c == ';' && !inString) {
-        statements.push_back(current);
-        current.clear();
-      } else {
-        current += c;
-      }
-    }
-    if (!current.empty()) {
-      statements.push_back(current);
-    }
-    return statements;
   }
 
   /**
