@@ -57,7 +57,7 @@ def migrator_sql_files() -> list[Path]:
         files.extend(init)
     if MIGRATIONS_DIR.is_dir():
         mig = [p for p in MIGRATIONS_DIR.iterdir() if p.is_file() and p.suffix == ".sql"]
-        mig.sort(key=lambda p: str(p))
+        mig.sort(key=migration_sort_key)
         files.extend(mig)
     return files
 

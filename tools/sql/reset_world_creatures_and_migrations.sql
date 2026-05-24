@@ -22,11 +22,16 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 DELETE FROM `firelands_auth`.`schema_migrations`
 WHERE `migration` IN (
+  'creature_ref_import.sql',
   '24_world_creature_tables.sql',
   '25_world_creature_classlevelstats.sql',
+  '26_world_instance_tables.sql',
   '29_world_creature_template_modelids.sql',
   'firelands_world_creature_ref_import.sql',
   '31_world_creature_template_gossip_menu_id.sql',
+  '34_world_npc_text_data.sql',
+  '35_world_gossip_data.sql',
+  '38_world_quest_gossip_data.sql',
   '52_world_creature_template_spells.sql',
   '59_world_creature_trigger_phase_fix.sql'
 );
