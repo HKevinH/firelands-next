@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS `version` (
   PRIMARY KEY (`core_version`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-INSERT IGNORE INTO `version` (`core_version`, `db_version`) VALUES ('Firelands 4.3.4.15595', 'Initial Schema 2026-04-11');
+INSERT IGNORE INTO `version` (`core_version`, `db_version`) VALUES ('Firelands 4.3.4.15595', 'Schema 2026-05-24');
 
 -- Gossip menu definitions (maps menu ID to default NPC text).
 CREATE TABLE IF NOT EXISTS `gossip_menu` (
@@ -152,6 +152,8 @@ CREATE TABLE IF NOT EXISTS `quest_template` (
   `ID` int unsigned NOT NULL DEFAULT '0',
   `QuestLevel` smallint NOT NULL DEFAULT '1',
   `LogTitle` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `QuestDescription` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `LogDescription` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `Flags` int unsigned NOT NULL DEFAULT '0',
   `AllowableClasses` int unsigned NOT NULL DEFAULT '0',
   `AllowableRaces` int unsigned NOT NULL DEFAULT '0',
