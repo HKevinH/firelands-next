@@ -15,6 +15,9 @@ public:
   ~MapCollisionQueriesReal() override = default;
 
   bool IsNavMeshDataAvailable(uint32_t mapId) const override;
+  uint32_t GetLoadedMapCount() const override;
+  uint32_t GetLoadedTileCount() const override;
+  std::vector<std::pair<uint32_t, uint32_t>> GetLoadedTiles(uint32_t mapId) const override;
   bool LineOfSight(uint32_t mapId, float x0, float y0, float z0, float x1,
                    float y1, float z1) const override;
   FindPathResult FindPath(FindPathRequest const& req) const override;

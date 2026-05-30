@@ -13,6 +13,19 @@ bool MapCollisionQueriesReal::IsNavMeshDataAvailable(uint32_t mapId) const {
   return _navMeshManager.LoadMapNavMesh(mapId);
 }
 
+uint32_t MapCollisionQueriesReal::GetLoadedMapCount() const {
+  return _navMeshManager.GetLoadedMapCount();
+}
+
+uint32_t MapCollisionQueriesReal::GetLoadedTileCount() const {
+  return _navMeshManager.GetLoadedTileCount();
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> MapCollisionQueriesReal::GetLoadedTiles(
+    uint32_t mapId) const {
+  return _navMeshManager.GetLoadedTiles(mapId);
+}
+
 bool MapCollisionQueriesReal::LineOfSight(uint32_t mapId, float x0, float y0,
                                            float z0, float x1, float y1,
                                            float z1) const {

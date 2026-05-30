@@ -2,6 +2,7 @@
 
 #include <shared/network/MovementFlags.h>
 #include <application/ports/IMapCollisionQueries.h>
+#include <shared/Logger.h>
 #include <cmath>
 
 using Firelands::MOVEMENTFLAG_FORWARD;
@@ -131,8 +132,10 @@ std::vector<Vec3> ComputeNavMeshPath(uint32_t mapId,
                                      float targetY, float targetZ,
                                      Firelands::IMapCollisionQueries const *collision) {
   std::vector<Vec3> waypoints;
-  if (!collision)
+  if (!collision) {
+    LOG_DEBUG("CHASE navmesh path skipped: mapId={} no collision service", mapId);
     return waypoints;
+  }
 
   Firelands::FindPathRequest req;
   req.mapId = mapId;
@@ -149,6 +152,10 @@ std::vector<Vec3> ComputeNavMeshPath(uint32_t mapId,
   if (result.status == Firelands::FindPathStatus::Complete ||
       result.status == Firelands::FindPathStatus::Partial) {
     waypoints = std::move(result.waypoints);
+  } else {
+    LOG_DEBUG("CHASE navmesh path failed: mapId={} status={} start=({}, {}, {}) end=({}, {}, {})",
+              mapId, static_cast<int>(result.status), start.x, start.y, start.z,
+              targetX, targetY, targetZ);
   }
   return waypoints;
 }
@@ -176,10 +183,20 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
     if (!state.waypoints.empty()) {
       state.waypoints.push_back(Vec3{targetX, targetY, targetZ});
       state.currentWaypoint = 0;
+      LOG_DEBUG("CHASE navmesh path ready: mapId={} waypointCount={} current=({}, {}, {}) target=({}, {}, {})",
+                mapId, state.waypoints.size(), current.x, current.y, current.z,
+                targetX, targetY, targetZ);
+    } else {
+      LOG_DEBUG("CHASE navmesh path empty: mapId={} current=({}, {}, {}) target=({}, {}, {}) fallback=straight-line",
+                mapId, current.x, current.y, current.z, targetX, targetY, targetZ);
     }
   }
 
   if (state.waypoints.empty() || state.currentWaypoint >= state.waypoints.size()) {
+    if (!collision) {
+      LOG_DEBUG("CHASE fallback without collision: mapId={} current=({}, {}, {}) target=({}, {}, {})",
+                mapId, current.x, current.y, current.z, targetX, targetY, targetZ);
+    }
     return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
                                     deltaSeconds, config);
   }
@@ -192,6 +209,8 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
 
     if (distSq < 0.25f) {
       ++state.currentWaypoint;
+      LOG_TRACE("CHASE waypoint reached: mapId={} waypointIndex={} pos=({}, {}, {})",
+                mapId, state.currentWaypoint - 1, wp.x, wp.y, wp.z);
       continue;
     }
 

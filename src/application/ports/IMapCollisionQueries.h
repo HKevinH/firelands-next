@@ -2,6 +2,7 @@
 #define FIRELANDS_APPLICATION_PORTS_I_MAP_COLLISION_QUERIES_H
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace Firelands {
@@ -44,6 +45,16 @@ public:
 
   /// When false, callers should assume no navmesh files are loaded for `mapId`.
   virtual bool IsNavMeshDataAvailable(uint32_t mapId) const = 0;
+
+  /// Total loaded navmesh maps.
+  virtual uint32_t GetLoadedMapCount() const = 0;
+
+  /// Total loaded navmesh tiles across all maps.
+  virtual uint32_t GetLoadedTileCount() const = 0;
+
+  /// Loaded tile coordinates for one map.
+  virtual std::vector<std::pair<uint32_t, uint32_t>> GetLoadedTiles(
+      uint32_t mapId) const = 0;
 
   /// Line of sight between two world points. Stub returns true (open line).
   virtual bool LineOfSight(uint32_t mapId, float x0, float y0, float z0,

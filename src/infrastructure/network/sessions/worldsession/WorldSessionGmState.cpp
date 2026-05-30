@@ -41,6 +41,13 @@ void WorldSession::SetGmTagEnabled(bool on) {
       player->SetGmModeEnabled(on);
   }
 
+  if (on) {
+    LOG_DEBUG("GM mode enabled: clearing active creature combat for playerGuid={} mapId={}",
+              _playerGuid, _mapId);
+    StopAllCreatureCombat(false);
+    StopMeleeAutoAttack(false);
+  }
+
   RefreshNearbyCreaturePhaseVisibility(_position.x, _position.y);
   RefreshNearbyCreatureGmWireFlags();
 }

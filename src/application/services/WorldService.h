@@ -42,6 +42,8 @@ public:
 
   void RemovePlayerFromMap(uint32 mapId, uint64 guid);
 
+  void RemoveCreatureFromMap(uint32 mapId, uint64 guid);
+
   /// Adds a creature to the map grid and notifies Lua (`creature_spawn`).
   void AddCreatureToMap(uint32 mapId, std::shared_ptr<Creature> creature);
 

@@ -113,10 +113,27 @@ bool SessionPlayerInMeleeRangeOf(WorldSession const &session, float targetX, flo
   return IsWithinMeleeRange3d(pos.x, pos.y, pos.z, targetX, targetY, targetZ);
 }
 
+bool HasClearMeleeLineOfSight(uint32 mapId, float fromX, float fromY, float fromZ,
+                              float toX, float toY, float toZ) {
+  auto collision = WorldService::Instance().GetCollisionQueries();
+  if (!collision)
+    return true;
+  bool const clear = collision->LineOfSight(mapId, fromX, fromY, fromZ, toX, toY, toZ);
+  if (!clear) {
+    LOG_DEBUG("MELEE LoS blocked: mapId={} from=({}, {}, {}) to=({}, {}, {})",
+              mapId, fromX, fromY, fromZ, toX, toY, toZ);
+  }
+  return clear;
+}
+
 bool SessionPlayerInMeleeRangeOfNpc(WorldSession const &session, Creature const &creature) {
   MovementInfo const &pos = session.GetPosition();
-  return IsWithinMeleeRangeAgainstNpc(pos.x, pos.y, pos.z, creature.GetX(), creature.GetY(),
-                                      creature.GetZ());
+  if (!IsWithinMeleeRangeAgainstNpc(pos.x, pos.y, pos.z, creature.GetX(), creature.GetY(),
+                                    creature.GetZ())) {
+    return false;
+  }
+  return HasClearMeleeLineOfSight(session.GetMapId(), creature.GetX(), creature.GetY(),
+                                  creature.GetZ(), pos.x, pos.y, pos.z);
 }
 
 void BroadcastCreatureChaseMove(std::shared_ptr<Map> const &map, uint64 creatureGuid,
@@ -212,8 +229,12 @@ bool IsCreatureInMeleeRangeOfPlayer(Creature const &creature, WorldSession const
                                     std::chrono::steady_clock::time_point now) {
   MovementInfo const &playerPos = session.GetPosition();
   MovementInfo const vis = GetCreatureClientVisiblePosition(creature, runtime, now);
-  return IsWithinMeleeRangeAgainstNpc(playerPos.x, playerPos.y, playerPos.z, vis.x, vis.y,
-                                      vis.z);
+  if (!IsWithinMeleeRangeAgainstNpc(playerPos.x, playerPos.y, playerPos.z, vis.x, vis.y,
+                                      vis.z)) {
+    return false;
+  }
+  return HasClearMeleeLineOfSight(session.GetMapId(), vis.x, vis.y, vis.z, playerPos.x,
+                                  playerPos.y, playerPos.z);
 }
 
 bool SessionPlayerInMeleeRangeOfNpc(WorldSession const &session, Creature const &creature,
@@ -576,6 +597,11 @@ void WorldSession::StartCreatureAggro(uint64_t creatureGuid) {
       victimCr->GetLiveHealth() == 0) {
     return;
   }
+  if (attackerPl->IsGmModeEnabled()) {
+    LOG_DEBUG("GM aggro blocked: playerGuid={} creatureGuid={} mapId={}",
+              _playerGuid, creatureGuid, _mapId);
+    return;
+  }
   if (!application::CanMeleeAttack(*attackerPl, *victimCr, _factionTemplateDbc.get()))
     return;
 
@@ -821,6 +847,15 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
   auto attackerPl = map->TryGetPlayer(_playerGuid);
   if (!attackerPl) {
     StopAllCreatureCombat(false);
+    return;
+  }
+  if (attackerPl->IsGmModeEnabled()) {
+    if (!_creatureAggroed.empty() || !_creatureReturningHome.empty()) {
+      LOG_DEBUG("GM combat cleanup: playerGuid={} mapId={} aggroed={} returningHome={}",
+                _playerGuid, _mapId, _creatureAggroed.size(), _creatureReturningHome.size());
+    }
+    StopAllCreatureCombat(false);
+    StopMeleeAutoAttack(false);
     return;
   }
 

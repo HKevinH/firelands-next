@@ -9,6 +9,19 @@ bool MapCollisionQueriesStub::IsNavMeshDataAvailable(uint32_t /*mapId*/) const {
   return !_dataRoot.empty();
 }
 
+uint32_t MapCollisionQueriesStub::GetLoadedMapCount() const {
+  return 0;
+}
+
+uint32_t MapCollisionQueriesStub::GetLoadedTileCount() const {
+  return 0;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> MapCollisionQueriesStub::GetLoadedTiles(
+    uint32_t /*mapId*/) const {
+  return {};
+}
+
 bool MapCollisionQueriesStub::LineOfSight(uint32_t /*mapId*/, float /*x0*/,
                                            float /*y0*/, float /*z0*/,
                                            float /*x1*/, float /*y1*/,

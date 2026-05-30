@@ -25,6 +25,18 @@ void WorldService::RemovePlayerFromMap(uint32 mapId, uint64 guid) {
     map->RemoveObject(guid);
 }
 
+void WorldService::RemoveCreatureFromMap(uint32 mapId, uint64 guid) {
+  std::shared_ptr<MapService> service;
+  {
+    std::lock_guard<std::mutex> lock(m_worldMutex);
+    service = m_mapRegistry.TryGet(mapId);
+  }
+  if (!service)
+    return;
+  if (auto *map = service->GetMap())
+    map->RemoveObject(guid);
+}
+
 void WorldService::AddCreatureToMap(uint32 mapId,
                                     std::shared_ptr<Creature> creature) {
   const uint64 guid = creature->GetGuid();

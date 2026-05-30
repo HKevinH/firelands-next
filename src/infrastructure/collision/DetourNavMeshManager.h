@@ -6,6 +6,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 class dtNavMesh;
 class dtNavMeshQuery;
@@ -30,6 +32,9 @@ public:
   bool LoadMapNavMesh(uint32_t mapId);
   void UnloadMapNavMesh(uint32_t mapId);
   bool IsNavMeshLoaded(uint32_t mapId) const;
+  uint32_t GetLoadedMapCount() const;
+  uint32_t GetLoadedTileCount() const;
+  std::vector<std::pair<uint32_t, uint32_t>> GetLoadedTiles(uint32_t mapId) const;
   bool HasDataRoot() const { return !_dataRoot.empty(); }
   std::string const& GetDataRoot() const { return _dataRoot; }
 
@@ -39,6 +44,7 @@ private:
   struct MapNavMesh {
     dtNavMesh* navMesh = nullptr;
     dtNavMeshQuery* navQuery = nullptr;
+    std::vector<std::pair<uint32_t, uint32_t>> loadedTiles;
   };
 
   bool ReadMmapTile(uint32_t mapId, uint32_t tileX, uint32_t tileY,

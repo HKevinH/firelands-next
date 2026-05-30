@@ -68,10 +68,11 @@ bool DetourNavMeshManager::ReadMmapTile(uint32_t mapId, uint32_t tileX,
           .string();
 
   FILE* file = fopen(fileName.c_str(), "rb");
-  if (!file)
+  if (!file) {
     LOG_DEBUG("MMAP tile missing: mapId={} tileX={} tileY={} path={}", mapId,
               tileX, tileY, fileName);
     return false;
+  }
 
   fseek(file, 0, SEEK_END);
   long fileSize = ftell(file);
@@ -89,9 +90,11 @@ bool DetourNavMeshManager::ReadMmapTile(uint32_t mapId, uint32_t tileX,
   fclose(file);
 
   if (readSize != static_cast<size_t>(fileSize))
+  {
     LOG_ERROR("MMAP tile short read: mapId={} tileX={} tileY={} path={} read={} size={}",
               mapId, tileX, tileY, fileName, readSize, fileSize);
     return false;
+  }
 
   MmapTileHeader const* mmapHeader =
       reinterpret_cast<MmapTileHeader const*>(data.data());
@@ -108,10 +111,11 @@ bool DetourNavMeshManager::ReadMmapTile(uint32_t mapId, uint32_t tileX,
   unsigned char const* tilePayload = data.data() + sizeof(MmapTileHeader);
   dtMeshHeader const* header =
       reinterpret_cast<dtMeshHeader const*>(tilePayload);
-  if (header->magic != DT_NAVMESH_MAGIC || header->version != DT_NAVMESH_VERSION)
+  if (header->magic != DT_NAVMESH_MAGIC || header->version != DT_NAVMESH_VERSION) {
     LOG_ERROR("MMAP tile nav header invalid: mapId={} tileX={} tileY={} path={} magic={} version={}",
               mapId, tileX, tileY, fileName, header->magic, header->version);
     return false;
+  }
 
   auto* tileData =
       static_cast<unsigned char*>(dtAlloc(mmapHeader->mmapSize, DT_ALLOC_PERM));
@@ -142,7 +146,14 @@ bool DetourNavMeshManager::LoadMapNavMesh(uint32_t mapId) {
   params.tileWidth = kTileSize;
   params.tileHeight = kTileSize;
   params.maxTiles = static_cast<int>(kTileCountPerAxis * kTileCountPerAxis);
-  params.maxPolys = 1 << 16;
+  // Detour requires enough salt bits for tile refs. With 4096 tiles, maxPolys
+  // must stay at 1024 or below; larger values make dtNavMesh::init fail with
+  // DT_INVALID_PARAM.
+  params.maxPolys = 1024;
+
+  LOG_DEBUG("MMAP navmesh init params: mapId={} origin=({}, {}, {}) tileSize={} maxTiles={} maxPolys={}",
+            mapId, params.orig[0], params.orig[1], params.orig[2], params.tileWidth,
+            params.maxTiles, params.maxPolys);
 
   dtNavMesh* navMesh = dtAllocNavMesh();
   if (!navMesh)
@@ -152,15 +163,23 @@ bool DetourNavMeshManager::LoadMapNavMesh(uint32_t mapId) {
   if (dtStatusFailed(status)) {
     LOG_ERROR("MMAP navmesh init failed: mapId={} status=0x{:x}", mapId,
               static_cast<unsigned int>(status));
+    if (dtStatusDetail(status, DT_INVALID_PARAM)) {
+      LOG_ERROR("MMAP navmesh init detail: invalid params for mapId={} maxTiles={} maxPolys={}",
+                mapId, params.maxTiles, params.maxPolys);
+    }
     dtFreeNavMesh(navMesh);
     return false;
   }
 
   bool anyTileLoaded = false;
+  MapNavMesh loadedEntry;
+  loadedEntry.navMesh = navMesh;
   for (uint32_t ty = 0; ty < kTileCountPerAxis; ++ty) {
     for (uint32_t tx = 0; tx < kTileCountPerAxis; ++tx) {
-      if (ReadMmapTile(mapId, tx, ty, navMesh))
+      if (ReadMmapTile(mapId, tx, ty, navMesh)) {
         anyTileLoaded = true;
+        loadedEntry.loadedTiles.emplace_back(tx, ty);
+      }
     }
   }
 
@@ -185,8 +204,30 @@ bool DetourNavMeshManager::LoadMapNavMesh(uint32_t mapId) {
     return false;
   }
 
-  _loadedMaps[mapId] = {navMesh, navQuery};
+  loadedEntry.navQuery = navQuery;
+  _loadedMaps[mapId] = std::move(loadedEntry);
   return true;
+}
+
+uint32_t DetourNavMeshManager::GetLoadedMapCount() const {
+  return static_cast<uint32_t>(_loadedMaps.size());
+}
+
+uint32_t DetourNavMeshManager::GetLoadedTileCount() const {
+  uint32_t total = 0;
+  for (auto const& [mapId, entry] : _loadedMaps) {
+    (void)mapId;
+    total += static_cast<uint32_t>(entry.loadedTiles.size());
+  }
+  return total;
+}
+
+std::vector<std::pair<uint32_t, uint32_t>> DetourNavMeshManager::GetLoadedTiles(
+    uint32_t mapId) const {
+  auto it = _loadedMaps.find(mapId);
+  if (it == _loadedMaps.end())
+    return {};
+  return it->second.loadedTiles;
 }
 
 void DetourNavMeshManager::UnloadMapNavMesh(uint32_t mapId) {

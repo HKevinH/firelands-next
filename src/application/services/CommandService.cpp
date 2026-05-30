@@ -14,6 +14,7 @@
 #include <shared/game/AccessLevel.h>
 #include <shared/game/Permissions.h>
 #include <shared/Logger.h>
+#include <shared/game/UnitCombatStats.h>
 #include <shared/network/MovementInfo.h>
 #include <shared/network/UpdateData.h>
 #include <shared/network/WorldPacket.h>
@@ -269,11 +270,173 @@ static std::string FormatVec3(Vec3 const &v) {
   return ss.str();
 }
 
+static constexpr float kMmapGridSize = 533.3333f;
+static constexpr float kMmapNavMeshOrigin = -17066.66656f;
+
+static bool IsMmapSubcommand(std::string const &token, char const *name) {
+  return AsciiEqualsLower(token, name);
+}
+
+static std::pair<int32_t, int32_t> ComputeMmapGridTile(float x, float y) {
+  int32_t gx = 32 - static_cast<int32_t>(x / kMmapGridSize);
+  int32_t gy = 32 - static_cast<int32_t>(y / kMmapGridSize);
+  return {gx, gy};
+}
+
+static std::pair<int32_t, int32_t> ComputeMmapNavTile(float x, float y) {
+  int32_t tileX = static_cast<int32_t>((y - kMmapNavMeshOrigin) / kMmapGridSize);
+  int32_t tileY = static_cast<int32_t>((x - kMmapNavMeshOrigin) / kMmapGridSize);
+  return {tileX, tileY};
+}
+
+static bool HandleMmapLoadedTiles(std::shared_ptr<ICommandSession> const &session,
+                                  IMapCollisionQueries const &collision,
+                                  uint32_t mapId) {
+  if (!collision.IsNavMeshDataAvailable(mapId)) {
+    session->SendNotification("NavMesh not loaded for current map.");
+    return true;
+  }
+
+  session->SendNotification("mmap loadedtiles:");
+  auto tiles = collision.GetLoadedTiles(mapId);
+  if (tiles.empty()) {
+    session->SendNotification("  (none)");
+    return true;
+  }
+
+  for (auto const &[tileX, tileY] : tiles) {
+    session->SendNotification("[" + (tileX < 10 ? std::string("0") : std::string()) +
+                              std::to_string(tileX) + ", " +
+                              (tileY < 10 ? std::string("0") : std::string()) +
+                              std::to_string(tileY) + "]");
+  }
+  return true;
+}
+
+static bool HandleMmapLoc(std::shared_ptr<ICommandSession> const &session,
+                          IMapCollisionQueries const &collision,
+                          uint32_t mapId) {
+  auto const &pos = session->GetPosition();
+  session->SendNotification("mmap tileloc:");
+
+  auto const [gridX, gridY] = ComputeMmapGridTile(pos.x, pos.y);
+  session->SendNotification("" + std::to_string(mapId) + "_" +
+                            (gridX < 10 ? std::string("0") : std::string()) +
+                            std::to_string(gridX) + "_" +
+                            (gridY < 10 ? std::string("0") : std::string()) +
+                            std::to_string(gridY) + ".mmtile");
+  session->SendNotification("tileloc [" + std::to_string(gridY) + ", " +
+                            std::to_string(gridX) + "]");
+
+  if (!collision.IsNavMeshDataAvailable(mapId)) {
+    session->SendNotification("NavMesh not loaded for current map.");
+    return true;
+  }
+
+  auto const [tileX, tileY] = ComputeMmapNavTile(pos.x, pos.y);
+  session->SendNotification("Calc   [" +
+                            (tileX < 10 ? std::string("0") : std::string()) +
+                            std::to_string(tileX) + ", " +
+                            (tileY < 10 ? std::string("0") : std::string()) +
+                            std::to_string(tileY) + "]");
+
+  auto tiles = collision.GetLoadedTiles(mapId);
+  bool const loaded = std::find(tiles.begin(), tiles.end(), std::make_pair(
+                                         static_cast<uint32_t>(tileX),
+                                         static_cast<uint32_t>(tileY))) !=
+                      tiles.end();
+  if (loaded)
+    session->SendNotification("Dt     [" +
+                              (tileX < 10 ? std::string("0") : std::string()) +
+                              std::to_string(tileX) + "," +
+                              (tileY < 10 ? std::string("0") : std::string()) +
+                              std::to_string(tileY) + "]");
+  else
+    session->SendNotification("Dt     [??,??] (no tile loaded)");
+
+  return true;
+}
+
+static bool HandleMmapStats(std::shared_ptr<ICommandSession> const &session,
+                            IMapCollisionQueries const &collision,
+                            uint32_t mapId) {
+  session->SendNotification("mmap stats:");
+  session->SendNotification(std::string("  global mmap pathfinding is ") +
+                            (collision.IsNavMeshDataAvailable(mapId) ? "enabled"
+                                                                    : "disabled"));
+  session->SendNotification(" " + std::to_string(collision.GetLoadedMapCount()) +
+                            " maps loaded with " +
+                            std::to_string(collision.GetLoadedTileCount()) +
+                            " tiles overall");
+  session->SendNotification("Navmesh stats:");
+  session->SendNotification(" " + std::to_string(collision.GetLoadedTiles(mapId).size()) +
+                            " tiles loaded");
+  return true;
+}
+
+static bool HandleMmapTestArea(std::shared_ptr<ICommandSession> const &session,
+                               IMapCollisionQueries const &collision,
+                               std::shared_ptr<Map> const &map,
+                               uint32_t mapId) {
+  if (!map) {
+    session->SendNotification("MMAP: current map is not available.");
+    return true;
+  }
+
+  float radius = 40.0f;
+  float const cellRadius = 1.0f;
+  float const playerX = session->GetPosition().x;
+  float const playerY = session->GetPosition().y;
+  float const playerZ = session->GetPosition().z;
+
+  uint32_t creatureCount = 0;
+  uint32_t pathCount = 0;
+  auto const started = std::chrono::steady_clock::now();
+
+  map->ForEachCreatureNear(playerX, playerY, static_cast<int>(cellRadius),
+                           [&](std::shared_ptr<Creature> const &creature) {
+                             ++creatureCount;
+                             FindPathRequest req;
+                             req.mapId = mapId;
+                             req.startX = creature->GetX();
+                             req.startY = creature->GetY();
+                             req.startZ = creature->GetZ();
+                             req.endX = playerX;
+                             req.endY = playerY;
+                             req.endZ = playerZ;
+                             req.smoothPath = true;
+                             req.allowPartialPath = true;
+                             if (collision.FindPath(req).status != FindPathStatus::NavMeshMissing)
+                               ++pathCount;
+                           });
+
+  auto const elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - started)
+                           .count();
+
+  if (creatureCount != 0) {
+    session->SendNotification("Found " + std::to_string(creatureCount) +
+                              " Creatures.");
+    session->SendNotification("Generated " + std::to_string(pathCount) +
+                              " paths in " + std::to_string(elapsed) + " ms");
+  } else {
+    session->SendNotification("No creatures in " + std::to_string(radius) +
+                              " yard range.");
+  }
+  return true;
+}
+
 static void SendMmapMarkerCreate(std::shared_ptr<ICommandSession> const &session,
                                  uint32_t mapId, uint64_t markerGuid,
                                  Vec3 const &pos, uint32_t entry,
                                  uint32_t displayId,
                                  uint32_t factionTemplate) {
+  auto marker = std::make_shared<Creature>(markerGuid, entry, displayId, 100u, 1u,
+                                            factionTemplate);
+  marker->SetPosition(MovementInfo{.x = pos.x, .y = pos.y, .z = pos.z, .orientation = 0.0f});
+  marker->SetCombatStats(BuildCreatureCombatStats(1u, 1u));
+  WorldService::Instance().AddCreatureToMap(mapId, std::move(marker));
+
   MovementInfo move{};
   move.x = pos.x;
   move.y = pos.y;
@@ -292,6 +455,7 @@ static void SendMmapMarkerCreate(std::shared_ptr<ICommandSession> const &session
 
 static void SendMmapMarkerDespawn(std::shared_ptr<ICommandSession> const &session,
                                   uint32_t mapId, uint64_t markerGuid) {
+  WorldService::Instance().RemoveCreatureFromMap(mapId, markerGuid);
   UpdateData update(static_cast<uint16>(mapId));
   update.AddOutOfRangeObjects({markerGuid});
   WorldPacket pkt(SMSG_UPDATE_OBJECT);
@@ -638,9 +802,21 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   MovementInfo const &playerPos = session->GetPosition();
   uint32_t mapId = session->GetMapId();
   uint64_t const playerGuid = session->GetActiveCharacterObjectGuid();
+  auto map = WorldService::Instance().GetMap(mapId);
 
   LOG_DEBUG("MMAP request: playerGuid={} mapId={} args={}", playerGuid, mapId,
             args.empty() ? std::string("<target>") : JoinArgs(args.begin(), args.end()));
+
+  if (!args.empty()) {
+    if (IsMmapSubcommand(args[0], "loadedtiles"))
+      return HandleMmapLoadedTiles(session, *collision, mapId);
+    if (IsMmapSubcommand(args[0], "loc"))
+      return HandleMmapLoc(session, *collision, mapId);
+    if (IsMmapSubcommand(args[0], "stats"))
+      return HandleMmapStats(session, *collision, mapId);
+    if (IsMmapSubcommand(args[0], "testarea"))
+      return HandleMmapTestArea(session, *collision, map, mapId);
+  }
 
   // Auto-remove expired markers (older than 9s)
   {
@@ -671,6 +847,10 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
     return true;
   }
 
+  std::vector<std::string> pathArgs = args;
+  if (!pathArgs.empty() && IsMmapSubcommand(pathArgs[0], "path"))
+    pathArgs.erase(pathArgs.begin());
+
   // Determine start/end positions for pathfinding
   Vec3 startPos{playerPos.x, playerPos.y, playerPos.z};
   Vec3 endPos{playerPos.x, playerPos.y, playerPos.z};
@@ -678,26 +858,28 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   std::string pathLabel;
 
   try {
-    if (!args.empty()) {
-      if (args.size() < 3) {
-        LOG_WARN("MMAP invalid coordinates: playerGuid={} mapId={} argCount={}",
-                 playerGuid, mapId, args.size());
-        session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap (with target)  |  .mmap clear");
-        return false;
+    if (!pathArgs.empty()) {
+      bool const numericArgs = pathArgs.size() >= 3 &&
+                               IsAllDigitAscii(pathArgs[0].empty() ? std::string() : pathArgs[0]);
+      if (pathArgs.size() < 3) {
+        if (!IsMmapSubcommand(args[0], "path")) {
+          LOG_WARN("MMAP invalid coordinates: playerGuid={} mapId={} argCount={}",
+                   playerGuid, mapId, pathArgs.size());
+          session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap path  |  .mmap loc  |  .mmap stats  |  .mmap loadedtiles  |  .mmap testarea  |  .mmap clear");
+          return false;
+        }
       }
-      endPos.x = std::stof(args[0]);
-      endPos.y = std::stof(args[1]);
-      endPos.z = std::stof(args[2]);
-      if (args.size() > 3)
-        mapId = static_cast<uint32_t>(std::stoul(args[3]));
-      pathLabel = "you -> " + FormatVec3(endPos);
-      checkPath = true;
-    } else {
-      // Check if a creature is targeted: path from creature to player
-      uint64_t const targetGuid = session->GetClientSelectionGuid();
-      if (targetGuid != 0) {
-        auto map = WorldService::Instance().GetMap(mapId);
-        if (map) {
+      if (pathArgs.size() >= 3 && numericArgs) {
+        endPos.x = std::stof(pathArgs[0]);
+        endPos.y = std::stof(pathArgs[1]);
+        endPos.z = std::stof(pathArgs[2]);
+        if (pathArgs.size() > 3)
+          mapId = static_cast<uint32_t>(std::stoul(pathArgs[3]));
+        pathLabel = "you -> " + FormatVec3(endPos);
+        checkPath = true;
+      } else if (IsMmapSubcommand(args[0], "path") || pathArgs.empty()) {
+        uint64_t const targetGuid = session->GetClientSelectionGuid();
+        if (targetGuid != 0 && map) {
           auto creature = map->TryGetCreature(targetGuid);
           if (creature) {
             MovementInfo const &crPos = creature->GetPosition();
@@ -711,16 +893,20 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
           }
         }
         if (!checkPath) {
-          LOG_WARN("MMAP target is not a creature or not on current map: playerGuid={} targetGuid={} mapId={}",
-                   playerGuid, targetGuid, mapId);
           session->SendNotification("MMAP: targeted object is not a creature.");
         }
+      }
+      if (!checkPath && pathArgs.size() >= 3 && !numericArgs) {
+        LOG_WARN("MMAP invalid coordinates: playerGuid={} mapId={} argCount={}",
+                 playerGuid, mapId, pathArgs.size());
+        session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap path  |  .mmap loc  |  .mmap stats  |  .mmap loadedtiles  |  .mmap testarea  |  .mmap clear");
+        return false;
       }
     }
   } catch (std::exception const &) {
     LOG_ERROR("MMAP invalid coordinates parse error: playerGuid={} mapId={} args={}",
               playerGuid, mapId,
-              args.empty() ? std::string("<target>") : JoinArgs(args.begin(), args.end()));
+              pathArgs.empty() ? std::string("<target>") : JoinArgs(pathArgs.begin(), pathArgs.end()));
     session->SendNotification("MMAP: invalid coordinates.");
     return false;
   }
@@ -775,7 +961,7 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
 
   if (!result.waypoints.empty()) {
     constexpr uint32_t kMarkerDisplayId = 11686u;
-    constexpr uint32_t kMarkerEntry = 99999u;
+    constexpr uint32_t kMarkerEntry = 1u;
     uint64_t baseGuid = static_cast<uint64_t>(0xF100000000000000ull) +
                         (static_cast<uint64_t>(playerGuid & 0xFFFFu) << 32);
     auto const now = std::chrono::steady_clock::now();
