@@ -52,6 +52,8 @@ Database:
 Log:
   Level: "Debug"
   File: "logs/firelands-world.log"
+  MmapFile: "logs/firelands-mmaps.log"
+  MmapLevel: "Debug"
   StickyBanner: true
 
 Motd:

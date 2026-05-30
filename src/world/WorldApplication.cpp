@@ -471,6 +471,10 @@ int RunWorldApplication(int argc, char **argv) {
           .WithFile(true, config.GetNested<std::string>(
                               {"Log", "File"}, "logs/firelands-world.log"))
           .WithFileLevel(LogLevel::Debug)
+          .WithMmapFile(config.GetNested<std::string>(
+              {"Log", "MmapFile"}, "logs/firelands-mmaps.log"))
+          .WithMmapFileLevel(config.GetNested<LogLevel>(
+              {"Log", "MmapLevel"}, LogLevel::Debug))
           .WithRotatingFile(10 * 1024 * 1024, 5)
           .Build());
 

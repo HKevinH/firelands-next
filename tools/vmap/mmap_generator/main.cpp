@@ -4,12 +4,16 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <set>
+#include <string>
 
 void PrintUsage() {
   printf("firelands-mmap-generator - Build navmesh tiles from server .map data\n");
-  printf("Usage: firelands-mmap-generator -m <mapId> -i <mapsDir> -o <mmapsDir> [-v <vmapsDir>]\n");
+  printf("Usage: firelands-mmap-generator -m <mapId|all> -i <mapsDir> -o <mmapsDir> [-v <vmapsDir>]\n");
   printf("\n");
   printf("  -m <mapId>   Map ID to generate navmesh for (e.g. 0 for Eastern Kingdoms)\n");
+  printf("  -m all       Generate navmesh for every mapId found in <mapsDir>\n");
+  printf("  --all-maps   Same as -m all\n");
   printf("  -i <dir>     Input directory containing server .map files\n");
   printf("  -o <dir>     Output directory for .mmtile files\n");
   printf("  -v <dir>     Optional: vmaps directory for building collision\n");
@@ -17,9 +21,38 @@ void PrintUsage() {
   printf("  -h           Show this help\n");
 }
 
+std::set<uint32_t> DiscoverMapIds(std::string const& mapsDir) {
+  std::set<uint32_t> mapIds;
+  if (!std::filesystem::is_directory(mapsDir))
+    return mapIds;
+
+  for (auto const& entry : std::filesystem::directory_iterator(mapsDir)) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".map")
+      continue;
+
+    std::string const stem = entry.path().stem().string();
+    if (stem.size() != 7)
+      continue;
+
+    bool numeric = true;
+    for (char c : stem) {
+      if (c < '0' || c > '9') {
+        numeric = false;
+        break;
+      }
+    }
+    if (!numeric)
+      continue;
+
+    mapIds.insert(static_cast<uint32_t>(std::stoul(stem.substr(0, 3))));
+  }
+  return mapIds;
+}
+
 int main(int argc, char* argv[]) {
   Firelands::MmapGeneratorConfig config = Firelands::MmapGeneratorConfig::Default();
   bool hasMapId = false;
+  bool allMaps = false;
   bool hasInput = false;
   bool hasOutput = false;
   bool singleTile = false;
@@ -31,8 +64,16 @@ int main(int argc, char* argv[]) {
       PrintUsage();
       return 0;
     }
-    if (std::strcmp(argv[i], "-m") == 0 && i + 1 < argc) {
-      config.mapId = static_cast<uint32_t>(std::atoi(argv[++i]));
+    if (std::strcmp(argv[i], "--all-maps") == 0) {
+      allMaps = true;
+      hasMapId = true;
+    } else if (std::strcmp(argv[i], "-m") == 0 && i + 1 < argc) {
+      char const* value = argv[++i];
+      if (std::strcmp(value, "all") == 0 || std::strcmp(value, "ALL") == 0) {
+        allMaps = true;
+      } else {
+        config.mapId = static_cast<uint32_t>(std::atoi(value));
+      }
       hasMapId = true;
     } else if (std::strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
       config.mapsDir = argv[++i];
@@ -57,6 +98,45 @@ int main(int argc, char* argv[]) {
   if (!std::filesystem::exists(config.mapsDir)) {
     fprintf(stderr, "Error: maps directory not found: %s\n", config.mapsDir.c_str());
     return 1;
+  }
+
+  if (allMaps && singleTile) {
+    fprintf(stderr, "Error: -t can only be used with one mapId, not -m all.\n");
+    return 1;
+  }
+
+  if (allMaps) {
+    auto const mapIds = DiscoverMapIds(config.mapsDir);
+    if (mapIds.empty()) {
+      fprintf(stderr, "Error: no *.map files found in: %s\n", config.mapsDir.c_str());
+      return 1;
+    }
+
+    printf("\nFirelands mmap generator\n");
+    printf("========================\n");
+    printf("Maps: %zu detected\n", mapIds.size());
+    printf("Tiles: all existing terrain tiles per map\n\n");
+
+    uint32_t generatedMaps = 0;
+    uint32_t failedMaps = 0;
+    for (uint32_t mapId : mapIds) {
+      Firelands::MmapGeneratorConfig mapConfig = config;
+      mapConfig.mapId = mapId;
+      Firelands::MmapGenerator generator(std::move(mapConfig));
+
+      printf("\n============================================================\n");
+      printf("Generating map %u\n", mapId);
+      printf("============================================================\n");
+      if (generator.GenerateAllTiles()) {
+        ++generatedMaps;
+      } else {
+        ++failedMaps;
+      }
+    }
+
+    printf("\nAll-map generation complete: %u map(s) generated, %u map(s) failed.\n",
+           generatedMaps, failedMaps);
+    return failedMaps == 0 ? 0 : 1;
   }
 
   uint32_t const mapId = config.mapId;

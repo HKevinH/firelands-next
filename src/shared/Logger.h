@@ -147,6 +147,16 @@ public:
     return *this;
   }
 
+  LoggerBuilder &WithMmapFile(std::string path) {
+    config_.mmapFilePath = std::move(path);
+    return *this;
+  }
+
+  LoggerBuilder &WithMmapFileLevel(LogLevel level) {
+    config_.mmapFileLevel = level;
+    return *this;
+  }
+
   /**
    * @brief Sets the pattern for the console sink only.
    *
@@ -387,16 +397,16 @@ private:
       std::filesystem::path basePath(config.filePath);
       if (basePath.has_filename()) {
         std::filesystem::path mmapPath = basePath;
-        mmapPath.replace_filename(basePath.stem().string() + "-mmap" +
+        mmapPath.replace_filename(basePath.stem().string() + "-mmaps" +
                                    basePath.extension().string());
         mmapFilePath = mmapPath.string();
       } else {
-        mmapFilePath = "logs/firelands-mmap.log";
+        mmapFilePath = "logs/firelands-mmaps.log";
       }
     }
 
-    auto mmapSink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-        mmapFilePath, config.maxFileSizeBytes, config.maxFiles);
+    auto mmapSink =
+        std::make_shared<spdlog::sinks::basic_file_sink_mt>(mmapFilePath);
     mmapSink->set_level(
         static_cast<spdlog::level::level_enum>(config.mmapFileLevel));
     mmapSink->set_pattern(config.filePattern);
