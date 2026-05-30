@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <vector>
 
 #include <shared/Logger.h>
@@ -278,24 +279,64 @@ bool DetourNavMeshManager::GetNavMeshHeight(uint32_t mapId, float x, float y,
 
   float queryPos[3]{};
   WowToDetour(x, y, zHint, queryPos);
-  // Vertical extent is intentionally large so a flying caller still finds the
-  // ground polygon underneath them.
-  float const extents[3] = {_config.maxSearchRadius, 1000.0f,
-                             _config.maxSearchRadius};
 
+  // We want the floor *below the same XY*, not the closest poly in 3D space.
+  // findNearestPoly would happily pick a nearby cliff peak instead of the
+  // ground straight under the query. Enumerate polys whose XY footprint
+  // covers the query column (tight horizontal extent), then evaluate each
+  // poly's actual surface height at (x, y).
   dtQueryFilter filter;
   filter.setIncludeFlags(0xFFFF);
   filter.setExcludeFlags(0);
 
-  dtPolyRef ref = 0;
-  float nearest[3]{};
-  dtStatus status = it->second.navQuery->findNearestPoly(queryPos, extents,
-                                                         &filter, &ref, nearest);
-  if (dtStatusFailed(status) || ref == 0)
+  constexpr int kMaxCandidates = 32;
+  // Slightly relaxed horizontal so we still find a poly when the query lands
+  // exactly on a tile/poly boundary.
+  float const halfExtents[3] = {1.5f, 1000.0f, 1.5f};
+  dtPolyRef polys[kMaxCandidates];
+  int polyCount = 0;
+  dtStatus status = it->second.navQuery->queryPolygons(queryPos, halfExtents,
+                                                       &filter, polys,
+                                                       &polyCount,
+                                                       kMaxCandidates);
+  if (dtStatusFailed(status) || polyCount == 0)
     return false;
 
-  outZ = nearest[1];
-  return true;
+  // Slop accounts for floating point error and small ledges; anything above
+  // the query Y by more than this is treated as a ceiling we don't want.
+  constexpr float kAboveSlop = 2.0f;
+
+  float bestBelow = -std::numeric_limits<float>::infinity();
+  float bestAbove = std::numeric_limits<float>::infinity();
+  bool hasBelow = false;
+  bool hasAbove = false;
+
+  for (int i = 0; i < polyCount; ++i) {
+    float h = 0.0f;
+    if (dtStatusFailed(
+            it->second.navQuery->getPolyHeight(polys[i], queryPos, &h)))
+      continue;
+
+    if (h <= queryPos[1] + kAboveSlop) {
+      if (!hasBelow || h > bestBelow) {
+        bestBelow = h;
+        hasBelow = true;
+      }
+    } else if (!hasAbove || h < bestAbove) {
+      bestAbove = h;
+      hasAbove = true;
+    }
+  }
+
+  if (hasBelow) {
+    outZ = bestBelow;
+    return true;
+  }
+  if (hasAbove) {
+    outZ = bestAbove;
+    return true;
+  }
+  return false;
 }
 
 void DetourNavMeshManager::RemoveDuplicateWaypoints(
