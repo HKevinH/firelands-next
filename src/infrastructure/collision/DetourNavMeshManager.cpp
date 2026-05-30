@@ -166,11 +166,13 @@ bool DetourNavMeshManager::LoadMapNavMesh(uint32_t mapId) {
   dtVcopy(params.orig, navOrigin);
   params.tileWidth = kTileSize;
   params.tileHeight = kTileSize;
-  params.maxTiles = static_cast<int>(kTileCountPerAxis * kTileCountPerAxis);
-  // Detour requires enough salt bits for tile refs. With 4096 tiles, maxPolys
-  // must stay at 1024 or below; larger values make dtNavMesh::init fail with
-  // DT_INVALID_PARAM.
-  params.maxPolys = 1024;
+  // Detour's poly ref packs tileBits + polyBits + saltBits == 32 with
+  // saltBits >= 10. With maxTiles=1024 (tileBits=10) we can raise maxPolys to
+  // 4096 (polyBits=12). A continent's worst case is ~900 ADTs, so 1024 slots
+  // is enough and gives addTile much more room before DT_INVALID_PARAM fires
+  // on dense terrain.
+  params.maxTiles = 1024;
+  params.maxPolys = 4096;
 
   LOG_MMAP_DEBUG("MMAP navmesh init params: mapId={} origin=({}, {}, {}) tileSize={} maxTiles={} maxPolys={}",
             mapId, params.orig[0], params.orig[1], params.orig[2], params.tileWidth,
@@ -266,6 +268,34 @@ void DetourNavMeshManager::UnloadMapNavMesh(uint32_t mapId) {
 
 bool DetourNavMeshManager::IsNavMeshLoaded(uint32_t mapId) const {
   return _loadedMaps.count(mapId) > 0;
+}
+
+bool DetourNavMeshManager::GetNavMeshHeight(uint32_t mapId, float x, float y,
+                                             float zHint, float& outZ) const {
+  auto it = _loadedMaps.find(mapId);
+  if (it == _loadedMaps.end() || it->second.navQuery == nullptr)
+    return false;
+
+  float queryPos[3]{};
+  WowToDetour(x, y, zHint, queryPos);
+  // Vertical extent is intentionally large so a flying caller still finds the
+  // ground polygon underneath them.
+  float const extents[3] = {_config.maxSearchRadius, 1000.0f,
+                             _config.maxSearchRadius};
+
+  dtQueryFilter filter;
+  filter.setIncludeFlags(0xFFFF);
+  filter.setExcludeFlags(0);
+
+  dtPolyRef ref = 0;
+  float nearest[3]{};
+  dtStatus status = it->second.navQuery->findNearestPoly(queryPos, extents,
+                                                         &filter, &ref, nearest);
+  if (dtStatusFailed(status) || ref == 0)
+    return false;
+
+  outZ = nearest[1];
+  return true;
 }
 
 void DetourNavMeshManager::RemoveDuplicateWaypoints(

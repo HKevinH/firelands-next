@@ -16,6 +16,11 @@ Firelands::MovementInfo MakePos(float x, float y, float z) {
 class MockCollisionQueries : public Firelands::IMapCollisionQueries {
 public:
   bool IsNavMeshDataAvailable(uint32_t) const override { return navMeshAvailable; }
+  uint32_t GetLoadedMapCount() const override { return navMeshAvailable ? 1u : 0u; }
+  uint32_t GetLoadedTileCount() const override { return navMeshAvailable ? 1u : 0u; }
+  std::vector<std::pair<uint32_t, uint32_t>> GetLoadedTiles(uint32_t) const override {
+    return {};
+  }
   bool LineOfSight(uint32_t, float, float, float, float, float, float) const override {
     return true;
   }

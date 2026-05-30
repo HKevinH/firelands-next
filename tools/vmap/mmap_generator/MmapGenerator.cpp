@@ -20,7 +20,6 @@ namespace Firelands {
 namespace {
 
 constexpr float kTileSize = 533.33333f;
-constexpr float kMapOrigin = -17066.66656f;
 constexpr uint32_t kMapMagic = 0x5350414Du;        // 'MAPS'
 constexpr uint32_t kMapHeightMagic = 0x54474D48u;  // 'MHGT'
 constexpr uint32_t kMapHeightNoHeight = 0x0001;
@@ -29,12 +28,18 @@ constexpr uint32_t kMapHeightAsInt8 = 0x0004;
 constexpr int kTerrainGridSize = 128;
 constexpr int kTerrainVertexCount = kTerrainGridSize + 1;
 
-float TileOriginX(uint32_t tileX) {
-  return kMapOrigin + static_cast<float>(tileX) * kTileSize;
+// WoW ADT convention (TrinityCore-compatible):
+//   - WoW X axis points NORTH; row index (tileY in the .map filename) decreases
+//     as X grows. Min WoW X for ADT row R is (31 - R) * TILE.
+//   - WoW Y axis points WEST; column index (tileX in the .map filename)
+//     decreases as Y grows. Min WoW Y for ADT col C is (31 - C) * TILE.
+//   - V9[0][0] is the NW corner: max WoW X, max WoW Y.
+float TileMinWowX(uint32_t tileY) {
+  return (31.0f - static_cast<float>(tileY)) * kTileSize;
 }
 
-float TileOriginY(uint32_t tileY) {
-  return kMapOrigin + static_cast<float>(tileY) * kTileSize;
+float TileMinWowY(uint32_t tileX) {
+  return (31.0f - static_cast<float>(tileX)) * kTileSize;
 }
 
 std::filesystem::path MapTilePath(std::string const& mapsDir, uint32_t mapId,
@@ -148,8 +153,8 @@ bool MmapGenerator::LoadTerrainData(uint32_t tileX, uint32_t tileY,
   out.width = kTerrainVertexCount;
   out.height = kTerrainVertexCount;
   out.cellSize = kTileSize / static_cast<float>(kTerrainGridSize);
-  out.minX = TileOriginX(tileX);
-  out.minY = TileOriginY(tileY);
+  out.minX = TileMinWowX(tileY);
+  out.minY = TileMinWowY(tileX);
   out.minZ = gridHeight;
   out.maxZ = gridMaxHeight;
   out.heights.resize(kTerrainVertexCount * kTerrainVertexCount);
@@ -252,13 +257,19 @@ bool MmapGenerator::BuildTileNavMesh(TileTerrainData const& terrain,
   int const walkableClimb = std::max(1, static_cast<int>(_config.agentMaxClimb / cellHeight));
   int const walkableHeight = std::max(1, static_cast<int>(_config.agentHeight / cellHeight));
 
+  // V9 layout in the .map: cell (cy, cx) holds the height at WoW position
+  //   (maxWowX - cy*cellSize, maxWowY - cx*cellSize).
+  // To produce vertices in increasing detour X/Z we mirror both indices when
+  // sampling the heightmap, so vertex (y, x) lands at (minX + y*cs, minY + x*cs).
   std::vector<float> verts;
   verts.reserve(static_cast<size_t>(terrain.width * terrain.height * 3));
   for (int y = 0; y < terrain.height; ++y) {
+    int const cy = kTerrainGridSize - y;
     for (int x = 0; x < terrain.width; ++x) {
-      float const wx = terrain.minX + static_cast<float>(x) * terrain.cellSize;
-      float const wy = terrain.minY + static_cast<float>(y) * terrain.cellSize;
-      float const wz = terrain.heights[static_cast<size_t>(y * terrain.width + x)];
+      int const cx = kTerrainGridSize - x;
+      float const wx = terrain.minX + static_cast<float>(y) * terrain.cellSize;
+      float const wy = terrain.minY + static_cast<float>(x) * terrain.cellSize;
+      float const wz = terrain.heights[static_cast<size_t>(cy * terrain.width + cx)];
       verts.push_back(wx);
       verts.push_back(wz);
       verts.push_back(wy);
@@ -273,8 +284,9 @@ bool MmapGenerator::BuildTileNavMesh(TileTerrainData const& terrain,
       int const b = y * terrain.width + x + 1;
       int const c = (y + 1) * terrain.width + x;
       int const d = (y + 1) * terrain.width + x + 1;
-      tris.push_back(a); tris.push_back(c); tris.push_back(b);
-      tris.push_back(b); tris.push_back(c); tris.push_back(d);
+      // CCW from above so triangle normals point up (+Y) — required by Recast.
+      tris.push_back(a); tris.push_back(b); tris.push_back(c);
+      tris.push_back(b); tris.push_back(d); tris.push_back(c);
     }
   }
 

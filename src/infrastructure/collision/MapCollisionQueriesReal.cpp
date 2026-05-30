@@ -53,6 +53,16 @@ FindPathResult MapCollisionQueriesReal::FindPath(
 
 float MapCollisionQueriesReal::GetHeight(uint32_t mapId, float x, float y,
                                           float zHint) const {
+  // Prefer the navmesh ground height — it reflects walkable terrain (what AI
+  // should track) and is available wherever creatures path. Fall back to the
+  // raw vmap surface, then to the caller's hint.
+  if (_navMeshManager.IsNavMeshLoaded(mapId) ||
+      _navMeshManager.LoadMapNavMesh(mapId)) {
+    float navHeight = 0.0f;
+    if (_navMeshManager.GetNavMeshHeight(mapId, x, y, zHint, navHeight))
+      return navHeight;
+  }
+
   if (_navMeshManager.HasDataRoot() && !_vmapManager.IsMapLoaded(mapId))
     _vmapManager.LoadMap(mapId, _navMeshManager.GetDataRoot());
   if (_vmapManager.IsMapLoaded(mapId))

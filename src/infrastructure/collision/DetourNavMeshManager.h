@@ -40,6 +40,13 @@ public:
 
   FindPathResult FindPath(FindPathRequest const& req) const;
 
+  /// Sample the navmesh ground height at WoW (x, y). Searches with a wide
+  /// vertical extent so callers above the terrain (flying players) still
+  /// resolve the floor underneath. Returns true and writes the height into
+  /// `outZ` when a poly is found; false otherwise.
+  bool GetNavMeshHeight(uint32_t mapId, float x, float y, float zHint,
+                        float& outZ) const;
+
 private:
   struct MapNavMesh {
     dtNavMesh* navMesh = nullptr;

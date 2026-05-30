@@ -355,6 +355,21 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
 
   SyncCreatureToActiveSpline(map, creature, runtime, now);
 
+  MovementInfo from = creature->GetPosition();
+  auto const collisionQueries = WorldService::Instance().GetCollisionQueries();
+  bool const useNavMesh =
+      collisionQueries && collisionQueries->IsNavMeshDataAvailable(map->GetMapId());
+
+  // Pin the chase target to the navmesh ground so creatures don't follow a
+  // flying player into the air. Done before the relocation check so the
+  // stored grounded Z and the new grounded Z compare consistently across
+  // ticks (otherwise an airborne player would trigger a replan every tick).
+  // Home splines already track a grounded point.
+  if (collisionQueries && !returnHomeSpline) {
+    targetZ = collisionQueries->GetHeight(map->GetMapId(), targetX, targetY,
+                                          from.z);
+  }
+
   bool const chaseTargetMoved =
       !returnHomeSpline &&
       (!runtime.lastChaseTargetPos.has_value() ||
@@ -363,7 +378,6 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
                                                  runtime.lastChaseTargetPos->z, targetX,
                                                  targetY, targetZ));
 
-  MovementInfo from = creature->GetPosition();
   if (chaseTargetMoved && runtime.activeSpline.has_value()) {
     from = InterpolateActiveSpline(*runtime.activeSpline, now, true);
     map->UpdateObjectPosition(creature->GetGuid(), from);
@@ -371,10 +385,6 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
   }
   application::combat::CreatureChaseConfig config{};
   config.stopDistanceYards = stopDistanceYards;
-
-  auto const collisionQueries = WorldService::Instance().GetCollisionQueries();
-  bool const useNavMesh =
-      collisionQueries && collisionQueries->IsNavMeshDataAvailable(map->GetMapId());
 
   application::combat::CreatureChaseStepResult projected;
   if (useNavMesh && !returnHomeSpline) {
@@ -384,6 +394,14 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
   } else {
     projected = application::combat::ProjectCreatureTowardTarget(
         from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config);
+  }
+
+  // Belt-and-suspenders: even when the step skipped Z motion (stop-range case
+  // or 2D-only waypoint), keep the broadcast position on the navmesh floor.
+  if (collisionQueries && !returnHomeSpline) {
+    projected.position.z = collisionQueries->GetHeight(
+        map->GetMapId(), projected.position.x, projected.position.y,
+        projected.position.z);
   }
 
   if (!returnHomeSpline) {
