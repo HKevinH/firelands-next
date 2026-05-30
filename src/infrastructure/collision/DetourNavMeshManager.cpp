@@ -29,6 +29,22 @@ struct MmapTileHeader {
   unsigned char padding[3];
 };
 
+uint32_t RepairMissingPolyFlags(unsigned char* tilePayload) {
+  auto* header = reinterpret_cast<dtMeshHeader*>(tilePayload);
+  unsigned char* cursor = tilePayload + dtAlign4(sizeof(dtMeshHeader));
+  cursor += dtAlign4(sizeof(float) * 3 * header->vertCount);
+  auto* polys = reinterpret_cast<dtPoly*>(cursor);
+
+  uint32_t repaired = 0;
+  for (int i = 0; i < header->polyCount; ++i) {
+    if (polys[i].flags == 0 && polys[i].getType() == DT_POLYTYPE_GROUND) {
+      polys[i].flags = 0x01;
+      ++repaired;
+    }
+  }
+  return repaired;
+}
+
 void WowToDetour(float x, float y, float z, float out[3]) {
   out[0] = x;
   out[1] = z;
@@ -125,6 +141,11 @@ bool DetourNavMeshManager::ReadMmapTile(uint32_t mapId, uint32_t tileX,
     return false;
   }
   std::memcpy(tileData, tilePayload, mmapHeader->mmapSize);
+  uint32_t const repairedFlags = RepairMissingPolyFlags(tileData);
+  if (repairedFlags != 0) {
+    LOG_MMAP_DEBUG("MMAP tile repaired missing poly flags: mapId={} tileX={} tileY={} repaired={}",
+              mapId, tileX, tileY, repairedFlags);
+  }
 
   dtStatus status = navMesh->addTile(tileData, static_cast<int>(mmapHeader->mmapSize),
                                      DT_TILE_FREE_DATA, 0, nullptr);

@@ -13,12 +13,14 @@
 #include <shared/Crypto.h>
 #include <shared/game/AccessLevel.h>
 #include <shared/game/Permissions.h>
+#include <shared/game/WowGuid.h>
 #include <shared/Logger.h>
 #include <shared/game/UnitCombatStats.h>
 #include <shared/network/MovementInfo.h>
 #include <shared/network/UpdateData.h>
 #include <shared/network/WorldPacket.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <atomic>
 #include <cmath>
 #include <cctype>
 #include <chrono>
@@ -34,6 +36,14 @@ namespace {
 
 /// Blood Elf Female civilian — usable placeholder when `.npc add` omits displayId.
 constexpr uint32_t kDefaultGmNpcDisplayId = 15688u;
+
+std::atomic<uint32_t> g_nextMmapMarkerLow{0x71000000u};
+
+uint64_t AllocateMmapMarkerGuid(uint32_t creatureEntry) {
+  uint32_t const low =
+      g_nextMmapMarkerLow.fetch_add(1u, std::memory_order_relaxed);
+  return MakeCreatureObjectGuid(creatureEntry, low);
+}
 
 class DelegatingCommandSession final : public ICommandSession {
   std::shared_ptr<ICommandSession> _subject;
@@ -284,8 +294,10 @@ static std::pair<int32_t, int32_t> ComputeMmapGridTile(float x, float y) {
 }
 
 static std::pair<int32_t, int32_t> ComputeMmapNavTile(float x, float y) {
-  int32_t tileX = static_cast<int32_t>((y - kMmapNavMeshOrigin) / kMmapGridSize);
-  int32_t tileY = static_cast<int32_t>((x - kMmapNavMeshOrigin) / kMmapGridSize);
+  int32_t tileX = static_cast<int32_t>(std::floor((x - kMmapNavMeshOrigin) /
+                                                  kMmapGridSize));
+  int32_t tileY = static_cast<int32_t>(std::floor((y - kMmapNavMeshOrigin) /
+                                                  kMmapGridSize));
   return {tileX, tileY};
 }
 
@@ -319,21 +331,25 @@ static bool HandleMmapLoc(std::shared_ptr<ICommandSession> const &session,
   auto const &pos = session->GetPosition();
   session->SendNotification("mmap tileloc:");
 
-  auto const [gridX, gridY] = ComputeMmapGridTile(pos.x, pos.y);
-  session->SendNotification("" + std::to_string(mapId) + "_" +
-                            (gridX < 10 ? std::string("0") : std::string()) +
-                            std::to_string(gridX) + "_" +
-                            (gridY < 10 ? std::string("0") : std::string()) +
-                            std::to_string(gridY) + ".mmtile");
-  session->SendNotification("tileloc [" + std::to_string(gridY) + ", " +
-                            std::to_string(gridX) + "]");
-
   if (!collision.IsNavMeshDataAvailable(mapId)) {
     session->SendNotification("NavMesh not loaded for current map.");
     return true;
   }
 
   auto const [tileX, tileY] = ComputeMmapNavTile(pos.x, pos.y);
+  session->SendNotification(std::to_string(mapId) + "_" +
+                            std::to_string(tileX) + "_" +
+                            std::to_string(tileY) + ".mmtile");
+  session->SendNotification("tileloc [" +
+                            (tileX < 10 ? std::string("0") : std::string()) +
+                            std::to_string(tileX) + ", " +
+                            (tileY < 10 ? std::string("0") : std::string()) +
+                            std::to_string(tileY) + "]");
+
+  auto const [gridX, gridY] = ComputeMmapGridTile(pos.x, pos.y);
+  session->SendNotification("legacy [" + std::to_string(gridY) + ", " +
+                            std::to_string(gridX) + "]");
+
   session->SendNotification("Calc   [" +
                             (tileX < 10 ? std::string("0") : std::string()) +
                             std::to_string(tileX) + ", " +
@@ -424,6 +440,39 @@ static bool HandleMmapTestArea(std::shared_ptr<ICommandSession> const &session,
                               " yard range.");
   }
   return true;
+}
+
+static std::shared_ptr<Creature> ResolveMmapChaseCreature(
+    std::shared_ptr<ICommandSession> const &session,
+    std::shared_ptr<Map> const &map) {
+  if (!map)
+    return nullptr;
+
+  uint64_t const targetGuid = session->GetClientSelectionGuid();
+  if (targetGuid != 0) {
+    if (auto selected = map->TryGetCreature(targetGuid))
+      return selected;
+  }
+
+  MovementInfo const &playerPos = session->GetPosition();
+  std::shared_ptr<Creature> nearest;
+  float nearestDistSq = std::numeric_limits<float>::max();
+  constexpr int kSearchCellRadius = 2;
+
+  map->ForEachCreatureNear(
+      playerPos.x, playerPos.y, kSearchCellRadius,
+      [&](std::shared_ptr<Creature> const &creature) {
+        float const dx = creature->GetX() - playerPos.x;
+        float const dy = creature->GetY() - playerPos.y;
+        float const dz = creature->GetZ() - playerPos.z;
+        float const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < nearestDistSq) {
+          nearestDistSq = distSq;
+          nearest = creature;
+        }
+      });
+
+  return nearest;
 }
 
 static void SendMmapMarkerCreate(std::shared_ptr<ICommandSession> const &session,
@@ -794,7 +843,7 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   (void)origin;
   auto collision = WorldService::Instance().GetCollisionQueries();
   if (!collision) {
-    LOG_MMAP_ERROR("MMAP: collision service is not configured.");
+    LOG_MMAP_ERROR("[MMAP] collision service is not configured.");
     session->SendNotification("MMAP: collision service is not configured.");
     return true;
   }
@@ -804,7 +853,7 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   uint64_t const playerGuid = session->GetActiveCharacterObjectGuid();
   auto map = WorldService::Instance().GetMap(mapId);
 
-  LOG_MMAP_DEBUG("MMAP request: playerGuid={} mapId={} args={}", playerGuid, mapId,
+  LOG_MMAP_DEBUG("[MMAP] request: playerGuid={} mapId={} args={}", playerGuid, mapId,
             args.empty() ? std::string("<target>") : JoinArgs(args.begin(), args.end()));
 
   if (!args.empty()) {
@@ -841,14 +890,18 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
 
   // .mmap clear — remove visual markers
   if (!args.empty() && args[0] == "clear") {
-    LOG_MMAP_DEBUG("MMAP clear: playerGuid={} mapId={}", playerGuid, mapId);
+    LOG_MMAP_DEBUG("[MMAP] clear: playerGuid={} mapId={}", playerGuid, mapId);
     ClearMmapMarkers(session, playerGuid, mapId);
-    session->SendNotification("MMAP: visual markers removed.");
+    session->SendNotification("[MMAP] visual markers removed.");
     return true;
   }
 
   std::vector<std::string> pathArgs = args;
-  if (!pathArgs.empty() && IsMmapSubcommand(pathArgs[0], "path"))
+  bool const chasePath =
+      !pathArgs.empty() && IsMmapSubcommand(pathArgs[0], "chase");
+  if (!pathArgs.empty() &&
+      (IsMmapSubcommand(pathArgs[0], "path") ||
+       IsMmapSubcommand(pathArgs[0], "chase")))
     pathArgs.erase(pathArgs.begin());
 
   // Determine start/end positions for pathfinding
@@ -858,14 +911,15 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   std::string pathLabel;
 
   try {
-    if (!pathArgs.empty()) {
+    if (!pathArgs.empty() || chasePath ||
+        (!args.empty() && IsMmapSubcommand(args[0], "path"))) {
       bool const numericArgs = pathArgs.size() >= 3 &&
                                IsAllDigitAscii(pathArgs[0].empty() ? std::string() : pathArgs[0]);
       if (pathArgs.size() < 3) {
-        if (!IsMmapSubcommand(args[0], "path")) {
+        if (!IsMmapSubcommand(args[0], "path") && !chasePath) {
           LOG_MMAP_WARN("MMAP invalid coordinates: playerGuid={} mapId={} argCount={}",
                    playerGuid, mapId, pathArgs.size());
-          session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap path  |  .mmap loc  |  .mmap stats  |  .mmap loadedtiles  |  .mmap testarea  |  .mmap clear");
+          session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap path  |  .mmap chase  |  .mmap loc  |  .mmap stats  |  .mmap loadedtiles  |  .mmap testarea  |  .mmap clear");
           return false;
         }
       }
@@ -877,29 +931,36 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
           mapId = static_cast<uint32_t>(std::stoul(pathArgs[3]));
         pathLabel = "you -> " + FormatVec3(endPos);
         checkPath = true;
-      } else if (IsMmapSubcommand(args[0], "path") || pathArgs.empty()) {
-        uint64_t const targetGuid = session->GetClientSelectionGuid();
-        if (targetGuid != 0 && map) {
-          auto creature = map->TryGetCreature(targetGuid);
-          if (creature) {
-            MovementInfo const &crPos = creature->GetPosition();
-            startPos = Vec3{crPos.x, crPos.y, crPos.z};
-            endPos = Vec3{playerPos.x, playerPos.y, playerPos.z};
-            pathLabel = std::string("creature(") + std::to_string(creature->GetEntry()) +
-                        ") -> you";
-            checkPath = true;
-            LOG_MMAP_DEBUG("MMAP target creature resolved: playerGuid={} targetGuid={} entry={} mapId={}",
-                      playerGuid, targetGuid, creature->GetEntry(), mapId);
-          }
+      } else if (IsMmapSubcommand(args[0], "path") || chasePath ||
+                 pathArgs.empty()) {
+        auto creature = chasePath ? ResolveMmapChaseCreature(session, map)
+                                  : nullptr;
+        if (!creature) {
+          uint64_t const targetGuid = session->GetClientSelectionGuid();
+          if (targetGuid != 0 && map)
+            creature = map->TryGetCreature(targetGuid);
+        }
+        if (creature) {
+          MovementInfo const &crPos = creature->GetPosition();
+          startPos = Vec3{crPos.x, crPos.y, crPos.z};
+          endPos = Vec3{playerPos.x, playerPos.y, playerPos.z};
+          pathLabel = std::string("creature(") +
+                      std::to_string(creature->GetEntry()) + ") -> you";
+          checkPath = true;
+          LOG_MMAP_DEBUG("MMAP chase creature resolved: playerGuid={} entry={} mapId={} start=({}, {}, {})",
+                    playerGuid, creature->GetEntry(), mapId, crPos.x, crPos.y,
+                    crPos.z);
         }
         if (!checkPath) {
-          session->SendNotification("MMAP: targeted object is not a creature.");
+          session->SendNotification(
+              chasePath ? "MMAP: no nearby creature found for chase path."
+                        : "MMAP: targeted object is not a creature.");
         }
       }
       if (!checkPath && pathArgs.size() >= 3 && !numericArgs) {
         LOG_MMAP_WARN("MMAP invalid coordinates: playerGuid={} mapId={} argCount={}",
                  playerGuid, mapId, pathArgs.size());
-        session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap path  |  .mmap loc  |  .mmap stats  |  .mmap loadedtiles  |  .mmap testarea  |  .mmap clear");
+        session->SendNotification("Usage: .mmap [x y z [mapId]]  |  .mmap path  |  .mmap chase  |  .mmap loc  |  .mmap stats  |  .mmap loadedtiles  |  .mmap testarea  |  .mmap clear");
         return false;
       }
     }
@@ -962,8 +1023,6 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   if (!result.waypoints.empty()) {
     constexpr uint32_t kMarkerDisplayId = 11686u;
     constexpr uint32_t kMarkerEntry = 1u;
-    uint64_t baseGuid = static_cast<uint64_t>(0xF100000000000000ull) +
-                        (static_cast<uint64_t>(playerGuid & 0xFFFFu) << 32);
     auto const now = std::chrono::steady_clock::now();
     std::vector<std::pair<uint64_t, std::chrono::steady_clock::time_point>> markers;
     markers.reserve(result.waypoints.size());
@@ -971,7 +1030,7 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
     for (size_t i = 0; i < result.waypoints.size(); ++i) {
       auto const &wp = result.waypoints[i];
       float const z = wp.z + 1.0f;
-      uint64_t const markerGuid = baseGuid + i;
+      uint64_t const markerGuid = AllocateMmapMarkerGuid(kMarkerEntry);
       SendMmapMarkerCreate(session, mapId, markerGuid,
                            Vec3{wp.x, wp.y, z}, kMarkerEntry,
                            kMarkerDisplayId, Creature::kDefaultFactionTemplate);
@@ -1127,9 +1186,13 @@ Position
       Print X, Y, Z, and facing. From console, prefix an online character name.
 
   .mmap [x y z [mapId]]
+  .mmap path
+  .mmap chase
   .mmap <OnlineCharName> [x y z [mapId]]   (console)
       Check whether navmesh data is loaded for the current map. With coordinates,
-      calculate a path and print the status plus the first waypoints.
+      calculate a path and print the status plus the first waypoints. In-game,
+      `.mmap path` uses the selected creature, and `.mmap chase` uses the
+      selected creature or nearest creature to draw the path it would take to you.
 )H3"},
     {HelpChunkAudience::Both, ToMask(Permission::CommandTeleport),
      "|cffFFD200· Teleport|r\n"

@@ -189,6 +189,35 @@ bool MmapGenerator::LoadTerrainData(uint32_t tileX, uint32_t tileY,
     }
   }
 
+  float actualMinZ = gridHeight;
+  float actualMaxZ = gridHeight;
+  bool haveValidHeight = false;
+  uint32_t sanitizedHeights = 0;
+  for (float& h : out.heights) {
+    if (!std::isfinite(h) || std::abs(h) > 20000.0f) {
+      h = gridHeight;
+      ++sanitizedHeights;
+    }
+
+    if (!haveValidHeight) {
+      actualMinZ = h;
+      actualMaxZ = h;
+      haveValidHeight = true;
+    } else {
+      actualMinZ = std::min(actualMinZ, h);
+      actualMaxZ = std::max(actualMaxZ, h);
+    }
+  }
+  if (sanitizedHeights != 0) {
+    printf("  tile (%02u,%02u) sanitized %u invalid terrain height sample(s)\n",
+           tileX, tileY, sanitizedHeights);
+  }
+
+  if (haveValidHeight) {
+    out.minZ = actualMinZ;
+    out.maxZ = actualMaxZ;
+  }
+
   fclose(file);
   return true;
 }
@@ -347,7 +376,7 @@ bool MmapGenerator::BuildTileNavMesh(TileTerrainData const& terrain,
   PrintTileProgress(tileX, tileY, 92, "detail mesh built");
 
   for (int i = 0; i < pmesh->npolys; ++i) {
-    if (pmesh->areas[i] == RC_WALKABLE_AREA)
+    if (pmesh->areas[i] != RC_NULL_AREA)
       pmesh->flags[i] = 0x01;
   }
 
