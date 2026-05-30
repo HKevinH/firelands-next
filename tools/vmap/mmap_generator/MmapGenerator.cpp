@@ -9,6 +9,8 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 
 namespace Firelands {
@@ -34,7 +36,8 @@ struct MmapTileHeader {
   unsigned char padding[3];
 };
 
-void SaveNavMeshTile(dtNavMesh const* navMesh, uint32_t tileX, uint32_t tileY,
+void SaveNavMeshTile(dtNavMesh const* navMesh, uint32_t mapId,
+                     uint32_t tileX, uint32_t tileY,
                      std::string const& outputPath) {
   dtMeshTile const* tile = navMesh->getTile(0);
   if (!tile || !tile->data || tile->dataSize == 0)
@@ -47,9 +50,9 @@ void SaveNavMeshTile(dtNavMesh const* navMesh, uint32_t tileX, uint32_t tileY,
   header.usesLiquids = 0;
 
   std::string fileName = outputPath + "/" +
-                         std::to_string(0) + "_" +
-                         std::to_string(tileX) + "_" +
-                         std::to_string(tileY) + ".mmtile";
+                          std::to_string(mapId) + "_" +
+                          std::to_string(tileX) + "_" +
+                          std::to_string(tileY) + ".mmtile";
 
   FILE* file = fopen(fileName.c_str(), "wb");
   if (!file)
@@ -67,11 +70,11 @@ MmapGenerator::MmapGenerator(MmapGeneratorConfig config)
 
 bool MmapGenerator::LoadTerrainData(uint32_t tileX, uint32_t tileY,
                                      TileTerrainData& out) const {
+  std::ostringstream ss;
+  ss << std::setfill('0') << std::setw(3) << _config.mapId
+     << std::setw(2) << tileY << std::setw(2) << tileX << ".map";
   std::string const fileName =
-      (std::filesystem::path(_config.mapsDir) /
-       (std::to_string(_config.mapId) +
-        std::to_string(tileY) +
-        std::to_string(tileX) + ".map")).string();
+      (std::filesystem::path(_config.mapsDir) / ss.str()).string();
 
   FILE* file = fopen(fileName.c_str(), "rb");
   if (!file)
@@ -305,7 +308,7 @@ bool MmapGenerator::BuildTileNavMesh(TileTerrainData const& terrain,
     return false;
   }
 
-  SaveNavMeshTile(tileNavMesh, tileX, tileY, outputPath);
+  SaveNavMeshTile(tileNavMesh, _config.mapId, tileX, tileY, outputPath);
 
   dtFreeNavMesh(tileNavMesh);
   rcFreePolyMeshDetail(dmesh);
