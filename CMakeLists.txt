@@ -137,6 +137,17 @@ FetchContent_MakeAvailable(yaml-cpp)
 FetchContent_Declare(lua_cmake URL https://github.com/walterschell/Lua/archive/refs/tags/v5.4.7.zip)
 FetchContent_MakeAvailable(lua_cmake)
 
+# RecastNavigation (Recast + Detour for navmesh pathfinding)
+FetchContent_Declare(recastnavigation
+    GIT_REPOSITORY https://github.com/recastnavigation/recastnavigation.git
+    GIT_TAG 9a0c2173b6a121db4414d0e4cf8899aeaa7faed7
+)
+set(RECASTNAVIGATION_DEMO OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_TESTS OFF CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_STATIC ON CACHE BOOL "" FORCE)
+set(RECASTNAVIGATION_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(recastnavigation)
+
 # MariaDB Connector/C++
 FetchContent_Declare(mariadb-connector-cpp URL https://github.com/mariadb-corporation/mariadb-connector-cpp/archive/refs/tags/1.1.7.zip)
 FetchContent_Populate(mariadb-connector-cpp)

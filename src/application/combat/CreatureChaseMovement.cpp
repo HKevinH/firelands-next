@@ -1,11 +1,13 @@
 #include "CreatureChaseMovement.h"
 
 #include <shared/network/MovementFlags.h>
+#include <application/ports/IMapCollisionQueries.h>
 #include <cmath>
 
 using Firelands::MOVEMENTFLAG_FORWARD;
 using Firelands::MOVEMENTFLAG_NONE;
 using Firelands::MovementInfo;
+using Firelands::Vec3;
 
 namespace application::combat {
 
@@ -122,6 +124,83 @@ bool ChaseTargetRelocated(float lastX, float lastY, float lastZ, float newX, flo
   float const dz = newZ - lastZ;
   float const thresholdSq = thresholdYards * thresholdYards;
   return (dx * dx + dy * dy + dz * dz) > thresholdSq;
+}
+
+std::vector<Vec3> ComputeNavMeshPath(uint32_t mapId,
+                                     MovementInfo const &start, float targetX,
+                                     float targetY, float targetZ,
+                                     Firelands::IMapCollisionQueries const *collision) {
+  std::vector<Vec3> waypoints;
+  if (!collision)
+    return waypoints;
+
+  Firelands::FindPathRequest req;
+  req.mapId = mapId;
+  req.startX = start.x;
+  req.startY = start.y;
+  req.startZ = start.z;
+  req.endX = targetX;
+  req.endY = targetY;
+  req.endZ = targetZ;
+  req.smoothPath = true;
+  req.allowPartialPath = true;
+
+  auto result = collision->FindPath(req);
+  if (result.status == Firelands::FindPathStatus::Complete ||
+      result.status == Firelands::FindPathStatus::Partial) {
+    waypoints = std::move(result.waypoints);
+  }
+  return waypoints;
+}
+
+CreatureChaseStepResult StepCreatureAlongNavMeshPath(
+    MovementInfo const &current, float targetX, float targetY, float targetZ,
+    float deltaSeconds, CreatureChaseConfig const &config,
+    ChaseNavMeshState &state,
+    Firelands::IMapCollisionQueries const *collision,
+    uint32_t mapId) {
+  bool const targetRelocated =
+      ChaseTargetRelocated(state.lastTargetX, state.lastTargetY,
+                           state.lastTargetZ, targetX, targetY, targetZ);
+
+  if (targetRelocated || state.waypoints.empty()) {
+    state.lastTargetX = targetX;
+    state.lastTargetY = targetY;
+    state.lastTargetZ = targetZ;
+    state.currentWaypoint = 0;
+    state.waypoints.clear();
+  }
+
+  if (targetRelocated && collision) {
+    state.waypoints = ComputeNavMeshPath(mapId, current, targetX, targetY, targetZ, collision);
+    if (!state.waypoints.empty()) {
+      state.waypoints.push_back(Vec3{targetX, targetY, targetZ});
+      state.currentWaypoint = 0;
+    }
+  }
+
+  if (state.waypoints.empty() || state.currentWaypoint >= state.waypoints.size()) {
+    return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
+                                    deltaSeconds, config);
+  }
+
+  while (state.currentWaypoint < state.waypoints.size()) {
+    Vec3 const &wp = state.waypoints[state.currentWaypoint];
+    float const dx = current.x - wp.x;
+    float const dy = current.y - wp.y;
+    float const distSq = dx * dx + dy * dy;
+
+    if (distSq < 0.25f) {
+      ++state.currentWaypoint;
+      continue;
+    }
+
+    auto step = StepCreatureTowardTarget(current, wp.x, wp.y, wp.z, deltaSeconds, config);
+    return step;
+  }
+
+  return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
+                                  deltaSeconds, config);
 }
 
 } // namespace application::combat

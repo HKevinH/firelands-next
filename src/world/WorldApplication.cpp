@@ -50,6 +50,7 @@
 #include <infrastructure/scripting/LuaGameScriptHost.h>
 #include <infrastructure/world/DbCreatureSpawnBootstrap.h>
 #include <infrastructure/world/MapCollisionQueriesStub.h>
+#include <infrastructure/collision/MapCollisionQueriesReal.h>
 #include <memory>
 #include <mutex>
 #include <shared/Banner.h>
@@ -99,8 +100,13 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
 
     const std::string collisionRoot =
         config.GetNested<std::string>({"Collision", "DataRoot"}, "");
-    WorldService::Instance().SetCollisionQueries(
-        std::make_shared<MapCollisionQueriesStub>(collisionRoot));
+    if (!collisionRoot.empty()) {
+      WorldService::Instance().SetCollisionQueries(
+          std::make_shared<MapCollisionQueriesReal>(collisionRoot));
+    } else {
+      WorldService::Instance().SetCollisionQueries(
+          std::make_shared<MapCollisionQueriesStub>(collisionRoot));
+    }
 
     std::string dbUser =
         config.GetNested<std::string>({"Database", "User"}, "firelands");

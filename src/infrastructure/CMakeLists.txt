@@ -63,6 +63,8 @@ add_library(FirelandsInfrastructure STATIC
     network/rest/RestAuthServer.cpp
     scripting/LuaGameScriptHost.cpp
     world/MapCollisionQueriesStub.cpp
+    collision/DetourNavMeshManager.cpp
+    collision/MapCollisionQueriesReal.cpp
 )
 
 set_source_files_properties(scripting/LuaGameScriptHost.cpp
@@ -74,6 +76,7 @@ target_link_libraries(FirelandsInfrastructure
     PUBLIC Boost::thread
     PUBLIC nlohmann_json::nlohmann_json
     PUBLIC Lua::Library
+    PUBLIC Detour
     PRIVATE ZLIB::ZLIB
 )
 target_precompile_headers(FirelandsInfrastructure PRIVATE ${PROJECT_PCH_HEADERS})

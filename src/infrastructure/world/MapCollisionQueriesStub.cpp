@@ -17,4 +17,25 @@ bool MapCollisionQueriesStub::LineOfSight(uint32_t /*mapId*/, float /*x0*/,
   return true;
 }
 
+FindPathResult MapCollisionQueriesStub::FindPath(
+    FindPathRequest const& req) const {
+  (void)_dataRoot;
+  FindPathResult result;
+  result.status = FindPathStatus::NavMeshMissing;
+
+  if (!_dataRoot.empty()) {
+    result.waypoints.push_back(
+        Vec3{req.startX, req.startY, req.startZ});
+    result.waypoints.push_back(Vec3{req.endX, req.endY, req.endZ});
+    result.status = FindPathStatus::Complete;
+  }
+  return result;
+}
+
+float MapCollisionQueriesStub::GetHeight(uint32_t /*mapId*/, float /*x*/,
+                                          float /*y*/, float zHint) const {
+  (void)_dataRoot;
+  return zHint;
+}
+
 } // namespace Firelands

@@ -343,8 +343,19 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
   application::combat::CreatureChaseConfig config{};
   config.stopDistanceYards = stopDistanceYards;
 
-  auto const projected = application::combat::ProjectCreatureTowardTarget(
-      from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config);
+  auto const collisionQueries = WorldService::Instance().GetCollisionQueries();
+  bool const useNavMesh =
+      collisionQueries && collisionQueries->IsNavMeshDataAvailable(map->GetMapId());
+
+  CreatureChaseStepResult projected;
+  if (useNavMesh && !returnHomeSpline) {
+    projected = application::combat::StepCreatureAlongNavMeshPath(
+        from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config,
+        runtime.navMeshState, collisionQueries.get(), map->GetMapId());
+  } else {
+    projected = application::combat::ProjectCreatureTowardTarget(
+        from, targetX, targetY, targetZ, kCreatureSplineHorizonSeconds, config);
+  }
 
   if (!returnHomeSpline) {
     float const distToPlayerSq =
