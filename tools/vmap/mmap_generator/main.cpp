@@ -49,6 +49,26 @@ std::set<uint32_t> DiscoverMapIds(std::string const& mapsDir) {
   return mapIds;
 }
 
+uint32_t CountExistingTiles(std::string const& mapsDir, uint32_t mapId) {
+  uint32_t totalTiles = 0;
+  char stemPrefix[4];
+  std::snprintf(stemPrefix, sizeof(stemPrefix), "%03u", mapId);
+
+  if (!std::filesystem::is_directory(mapsDir))
+    return 0;
+
+  for (auto const& entry : std::filesystem::directory_iterator(mapsDir)) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".map")
+      continue;
+
+    std::string const stem = entry.path().stem().string();
+    if (stem.size() == 7 && stem.rfind(stemPrefix, 0) == 0)
+      ++totalTiles;
+  }
+
+  return totalTiles;
+}
+
 int main(int argc, char* argv[]) {
   Firelands::MmapGeneratorConfig config = Firelands::MmapGeneratorConfig::Default();
   bool hasMapId = false;
@@ -112,30 +132,48 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
+    uint32_t totalTiles = 0;
+    for (uint32_t mapId : mapIds)
+      totalTiles += CountExistingTiles(config.mapsDir, mapId);
+
     printf("\nFirelands mmap generator\n");
     printf("========================\n");
     printf("Maps: %zu detected\n", mapIds.size());
-    printf("Tiles: all existing terrain tiles per map\n\n");
+    printf("Tiles: %u existing terrain tiles total\n\n", totalTiles);
 
     uint32_t generatedMaps = 0;
     uint32_t failedMaps = 0;
+    uint32_t processedMaps = 0;
+    uint32_t processedTiles = 0;
     for (uint32_t mapId : mapIds) {
+      ++processedMaps;
+      uint32_t const mapTiles = CountExistingTiles(config.mapsDir, mapId);
       Firelands::MmapGeneratorConfig mapConfig = config;
       mapConfig.mapId = mapId;
       Firelands::MmapGenerator generator(std::move(mapConfig));
 
       printf("\n============================================================\n");
-      printf("Generating map %u\n", mapId);
+      printf("Generating map %u/%zu: %u (%u tile(s), %u/%u global done)\n",
+             processedMaps, mapIds.size(), mapId, mapTiles, processedTiles,
+             totalTiles);
       printf("============================================================\n");
-      if (generator.GenerateAllTiles()) {
+      Firelands::MmapGenerator::BatchProgress progress;
+      progress.mapIndex = processedMaps;
+      progress.mapCount = static_cast<uint32_t>(mapIds.size());
+      progress.globalProcessedTiles = processedTiles;
+      progress.globalTotalTiles = totalTiles;
+
+      if (generator.GenerateAllTiles(&progress)) {
         ++generatedMaps;
       } else {
         ++failedMaps;
       }
+      processedTiles += mapTiles;
     }
 
-    printf("\nAll-map generation complete: %u map(s) generated, %u map(s) failed.\n",
-           generatedMaps, failedMaps);
+    printf("\nAll-map generation complete: %u/%zu map(s) generated, %u map(s) failed, %u/%u tile(s) processed.\n",
+           generatedMaps, mapIds.size(), failedMaps, processedTiles,
+           totalTiles);
     return failedMaps == 0 ? 0 : 1;
   }
 

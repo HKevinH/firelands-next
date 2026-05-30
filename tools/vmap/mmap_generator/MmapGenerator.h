@@ -32,10 +32,17 @@ struct MmapGeneratorConfig {
 
 class MmapGenerator {
 public:
+  struct BatchProgress {
+    uint32_t mapIndex = 1;
+    uint32_t mapCount = 1;
+    uint32_t globalProcessedTiles = 0;
+    uint32_t globalTotalTiles = 0;
+  };
+
   explicit MmapGenerator(MmapGeneratorConfig config);
 
   bool Generate(uint32_t tileX, uint32_t tileY);
-  bool GenerateAllTiles();
+  bool GenerateAllTiles(BatchProgress const* batchProgress = nullptr);
 
 private:
   struct TileTerrainData {

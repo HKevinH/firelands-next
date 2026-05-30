@@ -450,7 +450,7 @@ bool MmapGenerator::Generate(uint32_t tileX, uint32_t tileY) {
   return BuildTileNavMesh(terrain, tileX, tileY, _config.mmapsDir);
 }
 
-bool MmapGenerator::GenerateAllTiles() {
+bool MmapGenerator::GenerateAllTiles(BatchProgress const* batchProgress) {
   bool anySuccess = false;
   uint32_t processed = 0;
   uint32_t succeeded = 0;
@@ -471,8 +471,14 @@ bool MmapGenerator::GenerateAllTiles() {
     return false;
   }
 
-  printf("Found %u existing terrain tiles for map %u; skipping %u empty tiles.\n",
-         totalTiles, _config.mapId, (64u * 64u) - totalTiles);
+  if (batchProgress != nullptr) {
+    printf("Map %u/%u: map %u has %u existing terrain tiles; skipping %u empty tiles.\n",
+           batchProgress->mapIndex, batchProgress->mapCount, _config.mapId,
+           totalTiles, (64u * 64u) - totalTiles);
+  } else {
+    printf("Found %u existing terrain tiles for map %u; skipping %u empty tiles.\n",
+           totalTiles, _config.mapId, (64u * 64u) - totalTiles);
+  }
 
   for (uint32_t tileY = 0; tileY < 64; ++tileY) {
     for (uint32_t tileX = 0; tileX < 64; ++tileX) {
@@ -483,8 +489,19 @@ bool MmapGenerator::GenerateAllTiles() {
 
       ++processed;
       int const percent = static_cast<int>((processed * 100u) / totalTiles);
-      printf("\n[%3d%%] tile %4u/%u map %u (%02u,%02u)\n",
-             percent, processed, totalTiles, _config.mapId, tileX, tileY);
+      if (batchProgress != nullptr && batchProgress->globalTotalTiles > 0) {
+        uint32_t const globalProcessed =
+            batchProgress->globalProcessedTiles + processed;
+        int const globalPercent = static_cast<int>(
+            (globalProcessed * 100u) / batchProgress->globalTotalTiles);
+        printf("\n[%3d%% all] map %3u/%u [%3d%% map] tile %4u/%u, global %5u/%u map %u (%02u,%02u)\n",
+               globalPercent, batchProgress->mapIndex, batchProgress->mapCount,
+               percent, processed, totalTiles, globalProcessed,
+               batchProgress->globalTotalTiles, _config.mapId, tileX, tileY);
+      } else {
+        printf("\n[%3d%%] tile %4u/%u map %u (%02u,%02u)\n", percent,
+               processed, totalTiles, _config.mapId, tileX, tileY);
+      }
       if (Generate(tileX, tileY)) {
         anySuccess = true;
         ++succeeded;
