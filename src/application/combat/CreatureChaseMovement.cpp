@@ -166,9 +166,15 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
     ChaseNavMeshState &state,
     Firelands::IMapCollisionQueries const *collision,
     uint32_t mapId) {
+  // 3y threshold so the corridor persists across ticks while the player is
+  // walking. With the default 0.5y the path tore down and rebuilt every
+  // single tick, which on tiles with ghost polys made findNearestPoly
+  // alternate between bad start projections and the NPC oscillated.
+  constexpr float kChaseReplanThresholdYards = 3.0f;
   bool const targetRelocated =
       ChaseTargetRelocated(state.lastTargetX, state.lastTargetY,
-                           state.lastTargetZ, targetX, targetY, targetZ);
+                           state.lastTargetZ, targetX, targetY, targetZ,
+                           kChaseReplanThresholdYards);
 
   if (targetRelocated || state.waypoints.empty()) {
     state.lastTargetX = targetX;
@@ -176,6 +182,23 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
     state.lastTargetZ = targetZ;
     state.currentWaypoint = 0;
     state.waypoints.clear();
+  }
+
+  // Short-range bypass: when the target is well within engagement distance,
+  // skip the navmesh corridor entirely. It rarely adds value and is the case
+  // most vulnerable to ghost-poly start projections, which is what makes the
+  // NPC walk toward the player, turn around, replan, and come back.
+  constexpr float kDirectChaseRangeYards = 8.0f;
+  float const directDxFast = targetX - current.x;
+  float const directDyFast = targetY - current.y;
+  float const directDistSqFast =
+      directDxFast * directDxFast + directDyFast * directDyFast;
+  if (directDistSqFast <=
+      kDirectChaseRangeYards * kDirectChaseRangeYards) {
+    state.waypoints.clear();
+    state.currentWaypoint = 0;
+    return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
+                                    deltaSeconds, config);
   }
 
   if (targetRelocated && collision) {
