@@ -308,6 +308,7 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
 
     auto npcTemplateSearchRepo =
         std::make_shared<MySqlNpcTemplateSearchRepository>(worldConn);
+    WorldService::Instance().SetNpcTemplateSearch(npcTemplateSearchRepo);
     auto gossipRepo =
         std::make_shared<MySqlGossipRepository>(worldConn);
     auto npcTextRepo =

@@ -377,18 +377,23 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
     float const projected = collisionQueries->GetHeight(map->GetMapId(),
                                                          targetX, targetY,
                                                          from.z);
-    // If the navmesh ground is wildly different from the creature's current Z
-    // (>15y), the .mmtile data is likely corrupted at this column. Fall back
+    // If the navmesh ground is very different from the creature/target Z,
+    // the .mmtile data likely picked a ghost/upper poly at this column. Fall back
     // to from.z so the creature keeps its current footing instead of being
     // teleported onto a ghost poly.
-    constexpr float kMaxProjectionDriftYards = 15.0f;
-    if (std::fabs(projected - from.z) > kMaxProjectionDriftYards) {
+    // Only distrust the navmesh ground when it sits well ABOVE the creature's
+    // current footing -- that signals a ghost/upper poly in the .mmtile. When
+    // the navmesh ground is at or below the creature (downhill target, or a
+    // flying player whose target we want pulled down to the floor) we trust it,
+    // so creatures never follow a target up into the air.
+    constexpr float kMaxUpwardProjectionYards = 4.0f;
+    if (projected - from.z > kMaxUpwardProjectionYards) {
       LOG_MMAP_WARN(
           "CHASE rejecting navmesh target projection: mapId={} creatureGuid={} "
-          "targetXY=({}, {}) navmeshZ={} fromZ={} delta={} -- using fromZ as "
-          "fallback (likely corrupted .mmtile)",
+          "targetXY=({}, {}) navmeshZ={} fromZ={} rawZ={} deltaFrom={} -- ground "
+          "resolved above footing, keeping fromZ (likely corrupted .mmtile)",
           map->GetMapId(), creature->GetGuid(), targetX, targetY, projected,
-          from.z, projected - from.z);
+          from.z, targetZRaw, projected - from.z);
       targetZ = from.z;
     } else {
       targetZ = projected;
@@ -438,12 +443,17 @@ bool TryBroadcastCreatureSplineStep(std::shared_ptr<Map> const &map,
     // ignore the navmesh value and keep the creature anchored at its current
     // Z. WoW terrain rarely changes more than 5y per step horizontally, so
     // this only kicks in when the .mmtile data is wrong.
-    constexpr float kMaxVerticalStepYards = 5.0f;
-    if (std::fabs(groundZ - from.z) > kMaxVerticalStepYards) {
+    // Asymmetric guard: only reject when the resolved ground is well ABOVE the
+    // creature in a single tick (a ghost/upper poly). Downward corrections are
+    // always allowed -- that is just gravity, and it lets a creature that ended
+    // up airborne (knockback, chasing up a slope) fall back to the floor
+    // instead of getting stuck flying.
+    constexpr float kMaxUpwardStepYards = 5.0f;
+    if (groundZ - from.z > kMaxUpwardStepYards) {
       LOG_MMAP_WARN(
           "CHASE rejecting navmesh ground jump: mapId={} creatureGuid={} "
-          "step=({}, {}, {}) navmeshZ={} fromZ={} delta={} -- using fromZ as "
-          "fallback (likely corrupted .mmtile)",
+          "step=({}, {}, {}) navmeshZ={} fromZ={} delta={} -- ground above "
+          "footing, keeping fromZ (likely corrupted .mmtile)",
           map->GetMapId(), creature->GetGuid(), projected.position.x,
           projected.position.y, projected.position.z, groundZ, from.z,
           groundZ - from.z);

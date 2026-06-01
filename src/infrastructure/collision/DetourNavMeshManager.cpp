@@ -56,6 +56,62 @@ Vec3 DetourToWow(float const* pos) {
   return Vec3{pos[0], pos[2], pos[1]};
 }
 
+bool FindGroundPoly(dtNavMeshQuery* navQuery, float const queryPos[3],
+                    dtQueryFilter const& filter, float maxVerticalSearch,
+                    dtPolyRef& outRef, float outNearest[3]) {
+  constexpr int kMaxCandidates = 64;
+  float const halfExtents[3] = {2.0f, maxVerticalSearch, 2.0f};
+  dtPolyRef polys[kMaxCandidates];
+  int polyCount = 0;
+  dtStatus status = navQuery->queryPolygons(queryPos, halfExtents, &filter,
+                                            polys, &polyCount, kMaxCandidates);
+  if (dtStatusFailed(status) || polyCount == 0)
+    return false;
+
+  dtPolyRef bestRef = 0;
+  float bestNearest[3]{};
+  float bestScore = std::numeric_limits<float>::infinity();
+  bool foundBelow = false;
+
+  for (int i = 0; i < polyCount; ++i) {
+    float polyHeight = 0.0f;
+    if (dtStatusFailed(navQuery->getPolyHeight(polys[i], queryPos, &polyHeight)))
+      continue;
+
+    float nearest[3]{};
+    status = navQuery->closestPointOnPoly(polys[i], queryPos, nearest, nullptr);
+    if (dtStatusFailed(status))
+      continue;
+
+    float const horizontalDx = nearest[0] - queryPos[0];
+    float const horizontalDz = nearest[2] - queryPos[2];
+    float const horizontalScore =
+        horizontalDx * horizontalDx + horizontalDz * horizontalDz;
+    bool const below = polyHeight <= queryPos[1] + 2.0f;
+    float const verticalScore = std::abs(polyHeight - queryPos[1]);
+    float const score = horizontalScore * 25.0f + verticalScore;
+
+    if ((below && !foundBelow) ||
+        (below == foundBelow && score < bestScore)) {
+      bestRef = polys[i];
+      bestNearest[0] = nearest[0];
+      bestNearest[1] = polyHeight;
+      bestNearest[2] = nearest[2];
+      bestScore = score;
+      foundBelow = below;
+    }
+  }
+
+  if (bestRef == 0)
+    return false;
+
+  outRef = bestRef;
+  outNearest[0] = bestNearest[0];
+  outNearest[1] = bestNearest[1];
+  outNearest[2] = bestNearest[2];
+  return true;
+}
+
 } // namespace
 
 DetourNavMeshManager::DetourNavMeshManager(std::string dataRoot,
@@ -75,12 +131,13 @@ DetourNavMeshManager::~DetourNavMeshManager() {
 }
 
 namespace {
-// Path to the extractor's .map file for (mapId, tileX, tileY). Uses the WoW
-// ADT naming convention: <3-digit mapId><2-digit tileY><2-digit tileX>.map.
+// Path to the extractor's .map file for (mapId, tileX, tileY). El extractor nombra
+// {map}{gx}{gy} con gx = 32 - worldX/533 = 63 - tileX y gy = 32 - worldY/533 = 63 - tileY
+// (mismo mapeo que usa el generador en MmapGenerator::MapTilePath). Ambos ejes espejados.
 std::filesystem::path MapFilePath(std::string const& dataRoot, uint32_t mapId,
                                   uint32_t tileX, uint32_t tileY) {
   char buf[32];
-  std::snprintf(buf, sizeof(buf), "%03u%02u%02u.map", mapId, tileY, tileX);
+  std::snprintf(buf, sizeof(buf), "%03u%02u%02u.map", mapId, 63u - tileX, 63u - tileY);
   return std::filesystem::path(dataRoot) / "maps" / buf;
 }
 
@@ -439,10 +496,6 @@ FindPathResult DetourNavMeshManager::FindPath(
   if (!navQuery || !navMesh)
     return result;
 
-  float const searchExtents[3] = {_config.maxSearchRadius,
-                                   _config.maxSearchRadius,
-                                   _config.maxSearchRadius};
-
   dtPolyRef startRef = 0;
   dtPolyRef endRef = 0;
   float startNearest[3]{};
@@ -456,22 +509,22 @@ FindPathResult DetourNavMeshManager::FindPath(
   filter.setIncludeFlags(0xFFFF);
   filter.setExcludeFlags(0);
 
-  dtStatus status = navQuery->findNearestPoly(
-      startPos, searchExtents, &filter, &startRef, startNearest);
-  if (dtStatusFailed(status) || startRef == 0) {
+  bool const foundStart =
+      FindGroundPoly(navQuery, startPos, filter, _config.maxSearchRadius,
+                     startRef, startNearest);
+  if (!foundStart || startRef == 0) {
     LOG_MMAP_DEBUG("MMAP path start not found: mapId={} start=({}, {}, {}) status=0x{:x}",
-              req.mapId, req.startX, req.startY, req.startZ,
-              static_cast<unsigned int>(status));
+              req.mapId, req.startX, req.startY, req.startZ, 0u);
     result.status = FindPathStatus::NoPath;
     return result;
   }
 
-  status = navQuery->findNearestPoly(endPos, searchExtents, &filter,
-                                     &endRef, endNearest);
-  if (dtStatusFailed(status) || endRef == 0) {
+  bool const foundEnd =
+      FindGroundPoly(navQuery, endPos, filter, _config.maxSearchRadius,
+                     endRef, endNearest);
+  if (!foundEnd || endRef == 0) {
     LOG_MMAP_DEBUG("MMAP path end not found: mapId={} end=({}, {}, {}) status=0x{:x}",
-              req.mapId, req.endX, req.endY, req.endZ,
-              static_cast<unsigned int>(status));
+              req.mapId, req.endX, req.endY, req.endZ, 0u);
     result.status = FindPathStatus::NoPath;
     return result;
   }
@@ -484,9 +537,9 @@ FindPathResult DetourNavMeshManager::FindPath(
   int straightPathCount = 0;
 
   int const maxPathPolys = std::clamp(_config.maxPathPolys, 1, 256);
-  status = navQuery->findPath(startRef, endRef, startNearest, endNearest,
-                              &filter, pathPolys, &pathCount,
-                              maxPathPolys);
+  dtStatus status = navQuery->findPath(startRef, endRef, startNearest,
+                                       endNearest, &filter, pathPolys,
+                                       &pathCount, maxPathPolys);
   if (dtStatusFailed(status) || pathCount == 0) {
     LOG_MMAP_DEBUG("MMAP path failed: mapId={} pathCount={} status=0x{:x}", req.mapId,
               pathCount, static_cast<unsigned int>(status));
@@ -514,6 +567,33 @@ FindPathResult DetourNavMeshManager::FindPath(
 
   if (req.smoothPath)
     SmoothPath(result.waypoints);
+
+  // findStraightPath solo devuelve las esquinas del camino, con tramos largos en
+  // terreno abierto. Los partimos en pasos cortos para que la criatura camine bien
+  // (siguiendo de cerca el corredor) y para que los marcadores de .mmap path queden
+  // repartidos a lo largo del camino. La Z se resuelve aparte: la criatura la pega
+  // al suelo cada tick y los marcadores via GetHeight.
+  if (result.waypoints.size() >= 2) {
+    constexpr float kSegmentStep = 5.0f;  // tramos cortos (yardas)
+    constexpr size_t kMaxWaypoints = 256;
+    std::vector<Vec3> dense;
+    dense.reserve(std::min<size_t>(kMaxWaypoints, result.waypoints.size() * 8 + 1));
+    for (size_t i = 0; i + 1 < result.waypoints.size() &&
+                       dense.size() < kMaxWaypoints; ++i) {
+      Vec3 const a = result.waypoints[i];
+      Vec3 const b = result.waypoints[i + 1];
+      float const dx = b.x - a.x, dy = b.y - a.y;
+      float const segLen = std::sqrt(dx * dx + dy * dy);
+      int const steps = std::max(1, static_cast<int>(segLen / kSegmentStep));
+      for (int s = 0; s < steps && dense.size() < kMaxWaypoints; ++s) {
+        float const t = static_cast<float>(s) / static_cast<float>(steps);
+        dense.push_back(
+            Vec3{a.x + dx * t, a.y + dy * t, a.z + (b.z - a.z) * t});
+      }
+    }
+    dense.push_back(result.waypoints.back());
+    result.waypoints = std::move(dense);
+  }
 
   bool const reachedEnd =
       (pathCount > 0 && pathPolys[pathCount - 1] == endRef);

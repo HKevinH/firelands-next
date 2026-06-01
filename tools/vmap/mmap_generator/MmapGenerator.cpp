@@ -20,6 +20,7 @@ namespace Firelands {
 namespace {
 
 constexpr float kTileSize = 533.33333f;
+constexpr float kMapOrigin = -17066.66656f;
 constexpr uint32_t kMapMagic = 0x5350414Du;        // 'MAPS'
 constexpr uint32_t kMapHeightMagic = 0x54474D48u;  // 'MHGT'
 constexpr uint32_t kMapHeightNoHeight = 0x0001;
@@ -28,26 +29,42 @@ constexpr uint32_t kMapHeightAsInt8 = 0x0004;
 constexpr int kTerrainGridSize = 128;
 constexpr int kTerrainVertexCount = kTerrainGridSize + 1;
 
-// WoW ADT convention (TrinityCore-compatible):
-//   - WoW X axis points NORTH; row index (tileY in the .map filename) decreases
-//     as X grows. Min WoW X for ADT row R is (31 - R) * TILE.
-//   - WoW Y axis points WEST; column index (tileX in the .map filename)
-//     decreases as Y grows. Min WoW Y for ADT col C is (31 - C) * TILE.
-//   - V9[0][0] is the NW corner: max WoW X, max WoW Y.
-float TileMinWowX(uint32_t tileY) {
-  return (31.0f - static_cast<float>(tileY)) * kTileSize;
+float TileOriginX(uint32_t tileX) {
+  return kMapOrigin + static_cast<float>(tileX) * kTileSize;
 }
 
-float TileMinWowY(uint32_t tileX) {
-  return (31.0f - static_cast<float>(tileX)) * kTileSize;
+float TileOriginY(uint32_t tileY) {
+  return kMapOrigin + static_cast<float>(tileY) * kTileSize;
 }
 
 std::filesystem::path MapTilePath(std::string const& mapsDir, uint32_t mapId,
                                   uint32_t tileX, uint32_t tileY) {
+  // The runtime loads the tile as tileX = floor(x/533 + 32), tileY = floor(y/533 + 32)
+  // and Detour places it in world space at ((tileX-32)*533, (tileY-32)*533). The extractor's .map
+  // is named {map}{gx}{gy} with gx = 32 - worldX/533 and gy = 32 - worldY/533, that is
+  // gx = 63 - tileX and gy = 63 - tileY. BOTH axes are mirrored; previously mapGridY = tileX
+  // left the X-axis unmirrored and the navmesh was mirrored (e.g., Stormwind tileX=15
+  // took row 15 of the ADT instead of 48 = 63-15) -> it sent you to another zone.
+  uint32_t const mapGridY = 63u - tileX;
+  uint32_t const mapGridX = 63u - tileY;
+
   std::ostringstream ss;
   ss << std::setfill('0') << std::setw(3) << mapId
-     << std::setw(2) << tileY << std::setw(2) << tileX << ".map";
+     << std::setw(2) << mapGridY << std::setw(2) << mapGridX << ".map";
   return std::filesystem::path(mapsDir) / ss.str();
+}
+
+size_t NavHeightIndex(int x, int y) {
+  return static_cast<size_t>(y * kTerrainVertexCount + x);
+}
+
+size_t MapHeightIndex(int x, int y) {
+  // The .map V9 already uses row 0 = iy=0 (maxWowX side), the same order as
+  // NavHeightIndex. The X-axis mirroring within the tile is already applied by the rasterizer
+  // (cy = kTerrainGridSize - y). Flipping here as well would duplicate the flip and leave
+  // the terrain inverted along the X-axis -> on slopes, the height would come from an offset point
+  // -> creatures would end up floating. No extra flip.
+  return static_cast<size_t>(y * kTerrainVertexCount + x);
 }
 
 struct MmapTileHeader {
@@ -153,8 +170,8 @@ bool MmapGenerator::LoadTerrainData(uint32_t tileX, uint32_t tileY,
   out.width = kTerrainVertexCount;
   out.height = kTerrainVertexCount;
   out.cellSize = kTileSize / static_cast<float>(kTerrainGridSize);
-  out.minX = TileMinWowX(tileY);
-  out.minY = TileMinWowY(tileX);
+  out.minX = TileOriginX(tileX);
+  out.minY = TileOriginY(tileY);
   out.minZ = gridHeight;
   out.maxZ = gridMaxHeight;
   out.heights.resize(kTerrainVertexCount * kTerrainVertexCount);
@@ -165,32 +182,45 @@ bool MmapGenerator::LoadTerrainData(uint32_t tileX, uint32_t tileY,
     std::fill(out.heights.begin(), out.heights.end(), gridHeight);
   } else if (heightFlags & kMapHeightAsInt16) {
     float const invStep = heightRange > 0.0f ? heightRange / 65535.0f : 0.0f;
-    for (int i = 0; i < count; ++i) {
-      uint16_t v = 0;
-      if (fread(&v, sizeof(v), 1, file) != 1) {
-        fclose(file);
-        return false;
+    std::vector<uint16_t> rawHeights(static_cast<size_t>(count));
+    if (fread(rawHeights.data(), sizeof(uint16_t), rawHeights.size(), file) !=
+        rawHeights.size()) {
+      fclose(file);
+      return false;
+    }
+    for (int y = 0; y < kTerrainVertexCount; ++y) {
+      for (int x = 0; x < kTerrainVertexCount; ++x) {
+        uint16_t const v = rawHeights[MapHeightIndex(x, y)];
+        out.heights[NavHeightIndex(x, y)] =
+            gridHeight + static_cast<float>(v) * invStep;
       }
-      out.heights[i] = gridHeight + static_cast<float>(v) * invStep;
     }
   } else if (heightFlags & kMapHeightAsInt8) {
     float const invStep = heightRange > 0.0f ? heightRange / 255.0f : 0.0f;
-    for (int i = 0; i < count; ++i) {
-      uint8_t v = 0;
-      if (fread(&v, sizeof(v), 1, file) != 1) {
-        fclose(file);
-        return false;
+    std::vector<uint8_t> rawHeights(static_cast<size_t>(count));
+    if (fread(rawHeights.data(), sizeof(uint8_t), rawHeights.size(), file) !=
+        rawHeights.size()) {
+      fclose(file);
+      return false;
+    }
+    for (int y = 0; y < kTerrainVertexCount; ++y) {
+      for (int x = 0; x < kTerrainVertexCount; ++x) {
+        uint8_t const v = rawHeights[MapHeightIndex(x, y)];
+        out.heights[NavHeightIndex(x, y)] =
+            gridHeight + static_cast<float>(v) * invStep;
       }
-      out.heights[i] = gridHeight + static_cast<float>(v) * invStep;
     }
   } else {
-    for (int i = 0; i < count; ++i) {
-      float h = 0.0f;
-      if (fread(&h, sizeof(h), 1, file) != 1) {
-        fclose(file);
-        return false;
+    std::vector<float> rawHeights(static_cast<size_t>(count));
+    if (fread(rawHeights.data(), sizeof(float), rawHeights.size(), file) !=
+        rawHeights.size()) {
+      fclose(file);
+      return false;
+    }
+    for (int y = 0; y < kTerrainVertexCount; ++y) {
+      for (int x = 0; x < kTerrainVertexCount; ++x) {
+        out.heights[NavHeightIndex(x, y)] = rawHeights[MapHeightIndex(x, y)];
       }
-      out.heights[i] = h;
     }
   }
 
@@ -291,10 +321,16 @@ bool MmapGenerator::BuildTileNavMesh(TileTerrainData const& terrain,
   }
 
   int const triCount = static_cast<int>(tris.size() / 3);
-  std::vector<unsigned char> triAreas(static_cast<size_t>(triCount), RC_WALKABLE_AREA);
-  rcRasterizeTriangles(&ctx, verts.data(), static_cast<int>(verts.size() / 3),
-                       tris.data(), triAreas.data(), triCount, *solid,
-                       walkableClimb);
+  int const vertCount = static_cast<int>(verts.size() / 3);
+  // Mark as walkable ONLY those triangles whose slope is <= agentMaxSlope. The steeper
+  // ones remain as RC_NULL_AREA and are not included in the navmesh, so the creature
+  // goes around them (or doesn't climb them). Previously, everything was marked as RC_WALKABLE_AREA, ignoring
+  // agentMaxSlope, which is why it would climb any slope, even vertical walls.
+  std::vector<unsigned char> triAreas(static_cast<size_t>(triCount), 0);
+  rcMarkWalkableTriangles(&ctx, _config.agentMaxSlope, verts.data(), vertCount,
+                          tris.data(), triCount, triAreas.data());
+  rcRasterizeTriangles(&ctx, verts.data(), vertCount, tris.data(),
+                       triAreas.data(), triCount, *solid, walkableClimb);
   rcFilterLowHangingWalkableObstacles(&ctx, walkableClimb, *solid);
   rcFilterLedgeSpans(&ctx, walkableHeight, walkableClimb, *solid);
   rcFilterWalkableLowHeightSpans(&ctx, walkableHeight, *solid);

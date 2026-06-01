@@ -166,6 +166,21 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
     ChaseNavMeshState &state,
     Firelands::IMapCollisionQueries const *collision,
     uint32_t mapId) {
+  // Set the Z value of the result to the navmesh floor on every tick. Blending with
+  // a delay (zBlendPerTick) toward the waypoint’s Z value causes the creature to
+  // float on slopes (when climbing slowly) or sink into/pass through the slope (the Z value doesn’t rise
+  // as fast as the terrain). Solving the Z value against the actual ground eliminates both
+  // problems, and the creature always stays attached to the terrain.
+  auto snapToGround = [&](CreatureChaseStepResult res) {
+    if (collision && res.moved) {
+      float const ground = collision->GetHeight(mapId, res.position.x,
+                                                res.position.y, res.position.z);
+      if (std::isfinite(ground))
+        res.position.z = ground;
+    }
+    return res;
+  };
+
   // 3y threshold so the corridor persists across ticks while the player is
   // walking. With the default 0.5y the path tore down and rebuilt every
   // single tick, which on tiles with ghost polys made findNearestPoly
@@ -197,8 +212,8 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
       kDirectChaseRangeYards * kDirectChaseRangeYards) {
     state.waypoints.clear();
     state.currentWaypoint = 0;
-    return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
-                                    deltaSeconds, config);
+    return snapToGround(StepCreatureTowardTarget(current, targetX, targetY,
+                                                 targetZ, deltaSeconds, config));
   }
 
   if (targetRelocated && collision) {
@@ -220,8 +235,8 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
       LOG_DEBUG("CHASE fallback without collision: mapId={} current=({}, {}, {}) target=({}, {}, {})",
                 mapId, current.x, current.y, current.z, targetX, targetY, targetZ);
     }
-    return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
-                                    deltaSeconds, config);
+    return snapToGround(StepCreatureTowardTarget(current, targetX, targetY,
+                                                 targetZ, deltaSeconds, config));
   }
 
   float const directDx = targetX - current.x;
@@ -264,11 +279,11 @@ CreatureChaseStepResult StepCreatureAlongNavMeshPath(
     }
 
     auto step = StepCreatureTowardTarget(current, wp.x, wp.y, wp.z, deltaSeconds, config);
-    return step;
+    return snapToGround(step);
   }
 
-  return StepCreatureTowardTarget(current, targetX, targetY, targetZ,
-                                  deltaSeconds, config);
+  return snapToGround(StepCreatureTowardTarget(current, targetX, targetY,
+                                               targetZ, deltaSeconds, config));
 }
 
 } // namespace application::combat

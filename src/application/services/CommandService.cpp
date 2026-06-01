@@ -4,6 +4,8 @@
 #include <application/services/OnlineCharacterSessionRegistry.h>
 #include <application/services/CharacterService.h>
 #include <application/services/WorldService.h>
+#include <application/logic/CreatureSpawnLogic.h>
+#include <domain/repositories/INpcTemplateSearchRepository.h>
 #include <domain/models/Character.h>
 #include <domain/world/Creature.h>
 #include <domain/world/Map.h>
@@ -1027,9 +1029,15 @@ bool CommandService::HandleMmap(std::shared_ptr<ICommandSession> session,
   ClearMmapMarkers(session, playerGuid, mapId);
 
   if (!result.waypoints.empty()) {
-    // Tauren female-ish display: tall, neutral, easy to spot from camera.
-    constexpr uint32_t kMarkerDisplayId = 11686u;
     constexpr uint32_t kMarkerEntry = 1u;
+    uint32_t kMarkerDisplayId = 15688u;
+    if (auto const repo = WorldService::Instance().GetNpcTemplateSearch()) {
+      if (auto const tpl = repo->TryGetByEntry(kMarkerEntry)) {
+        kMarkerDisplayId = ResolveCreatureDisplayId(
+            0, tpl->displayIds[0], tpl->displayIds[1], tpl->displayIds[2],
+            tpl->displayIds[3]);
+      }
+    }
     // Float the marker well above a player model so it's visible even when
     // start ≈ end and the waypoint lands inside the caster or the target.
     constexpr float kMarkerVisualLiftYards = 3.0f;

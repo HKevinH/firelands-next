@@ -63,6 +63,8 @@ private:
     PermissionMask requiredPermissions = 0;
     CommandAvailability availability = CommandAvailability::Both;
     ConsoleArgLayout consoleLayout = ConsoleArgLayout::SameAsInGame;
+    std::string description;
+    std::string syntax;
   };
 
   void RegisterCommand(const std::string &name, CommandEntry entry);

@@ -150,6 +150,18 @@ std::shared_ptr<AreaTableDbc const> WorldService::GetAreaTableDbc() {
   return m_areaTableDbc;
 }
 
+void WorldService::SetNpcTemplateSearch(
+    std::shared_ptr<INpcTemplateSearchRepository const> repo) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_npcTemplateSearch = std::move(repo);
+}
+
+std::shared_ptr<INpcTemplateSearchRepository const>
+WorldService::GetNpcTemplateSearch() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_npcTemplateSearch;
+}
+
 void WorldService::SetExperienceRates(ExperienceRates rates) {
   std::lock_guard<std::mutex> lock(m_auxMutex);
   m_experienceRates = rates;

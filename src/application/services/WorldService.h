@@ -24,6 +24,7 @@ class FactionTemplateDbc;
 class AreaTableDbc;
 class PhaseGroupCatalog;
 class PhaseAreaCatalog;
+class INpcTemplateSearchRepository;
 
 /// Singleton world state (maps, shared script host, collision port).
 /// Populated from `world` executable after config load.
@@ -74,6 +75,10 @@ public:
   void SetAreaTableDbc(std::shared_ptr<AreaTableDbc const> areaTableDbc);
   std::shared_ptr<AreaTableDbc const> GetAreaTableDbc();
 
+  void SetNpcTemplateSearch(
+      std::shared_ptr<INpcTemplateSearchRepository const> repo);
+  std::shared_ptr<INpcTemplateSearchRepository const> GetNpcTemplateSearch();
+
   void SetExperienceRates(ExperienceRates rates);
   ExperienceRates GetExperienceRates();
   /// Explicit teardown hook for process shutdown. Releases map-held objects
@@ -104,6 +109,7 @@ private:
   std::shared_ptr<PhaseGroupCatalog const> m_phaseGroupCatalog;
   std::shared_ptr<PhaseAreaCatalog const> m_phaseAreaCatalog;
   std::shared_ptr<AreaTableDbc const> m_areaTableDbc;
+  std::shared_ptr<INpcTemplateSearchRepository const> m_npcTemplateSearch;
   ExperienceRates m_experienceRates{};
 };
 
