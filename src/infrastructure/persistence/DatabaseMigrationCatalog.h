@@ -43,13 +43,13 @@ DetectMigrationTargetDatabase(std::string const &filename,
     auto const pos = content.find(pattern, 0);
     if (pos == std::string::npos)
       return std::nullopt;
-    auto const tick = content.find('`', pos + patternLen);
-    if (tick == std::string::npos)
+    auto const openingTick = content.find('`', pos);
+    if (openingTick == std::string::npos)
       return std::nullopt;
-    auto const tick2 = content.find('`', tick + 1);
-    if (tick2 == std::string::npos)
+    auto const closingTick = content.find('`', openingTick + 1);
+    if (closingTick == std::string::npos)
       return std::nullopt;
-    return content.substr(tick + 1, tick2 - tick - 1);
+    return content.substr(openingTick + 1, closingTick - openingTick - 1);
   };
 
   if (auto db = findQuotedDb("USE `", 5))
