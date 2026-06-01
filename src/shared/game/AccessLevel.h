@@ -35,16 +35,6 @@ inline uint8_t AccessLevelToStored(AccessLevel level) {
   return static_cast<uint8_t>(level);
 }
 
-inline AccessLevel EffectiveAccess(AccessLevel accountLevel,
-                                   PrivilegeOrigin origin) {
-  return (origin == PrivilegeOrigin::ServerConsole) ? AccessLevel::Console
-                                                     : accountLevel;
-}
-
-inline bool HasAtLeast(AccessLevel actor, AccessLevel required) {
-  return static_cast<uint8_t>(actor) >= static_cast<uint8_t>(required);
-}
-
 } // namespace Firelands
 
 #endif // FIRELANDS_SHARED_GAME_ACCESS_LEVEL_H

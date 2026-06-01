@@ -45,9 +45,9 @@ TEST(QuestGiverLogicTests, ResolveDialogStatus_UsesRepository) {
   summary.allowableClasses = 1024; // Druid only
   summary.allowableRaces = 128;    // Troll only
   EXPECT_CALL(repo, GetStarterQuestsForCreature(38243))
-      .WillOnce(testing::Return(std::vector<QuestGossipSummary>{summary}));
+      .WillRepeatedly(testing::Return(std::vector<QuestGossipSummary>{summary}));
   EXPECT_CALL(repo, GetEnderQuestsForCreature(38243))
-      .WillOnce(testing::Return(std::vector<QuestGossipSummary>{}));
+      .WillRepeatedly(testing::Return(std::vector<QuestGossipSummary>{}));
   EXPECT_EQ(ResolveQuestGiverDialogStatus(&repo, 38243, 11, 8, 80, progress),
             QuestGiverDialogStatus::Available);
   EXPECT_EQ(ResolveQuestGiverDialogStatus(&repo, 38243, 1, 8, 80, progress),

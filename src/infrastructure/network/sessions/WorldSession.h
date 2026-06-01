@@ -25,7 +25,6 @@
 #include <shared/dbc/EmotesTextDbc.h>
 #include <shared/dbc/LanguagesDbc.h>
 #include <shared/game/ActionButton.h>
-#include <shared/game/AccessLevel.h>
 #include <shared/game/PhaseShift.h>
 #include <shared/game/PlayerGmAppearance.h>
 #include <domain/models/Character.h>

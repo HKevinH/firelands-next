@@ -1,6 +1,5 @@
 #pragma once
 #include <application/ports/ICommandService.h>
-#include <shared/game/AccessLevel.h>
 #include <shared/game/Permissions.h>
 #include <chrono>
 #include <functional>
