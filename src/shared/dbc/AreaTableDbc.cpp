@@ -13,6 +13,8 @@ namespace {
 constexpr std::string_view kAreaTableFmt = "niiiiiiiiiisiiiiiffiiiiiii";
 constexpr size_t kFieldMapId = 1;
 constexpr size_t kFieldParentAreaId = 2;
+constexpr size_t kFieldAreaBit = 3;    // exploration bit index
+constexpr size_t kFieldAreaName = 11;  // the 's' (localized area name)
 
 } // namespace
 
@@ -21,6 +23,8 @@ bool AreaTableDbc::Load(std::string const &path) {
   m_parentByAreaId.clear();
   m_mapIdByAreaId.clear();
   m_areaIdsByMapId.clear();
+  m_nameByAreaId.clear();
+  m_areaBitByAreaId.clear();
 
   DbcReader reader;
   if (!reader.Load(path)) {
@@ -39,9 +43,12 @@ bool AreaTableDbc::Load(std::string const &path) {
       continue;
     uint32_t const mapId = reader.ReadUInt32(ri, kFieldMapId, offsets);
     uint32_t const parent = reader.ReadUInt32(ri, kFieldParentAreaId, offsets);
+    uint32_t const nameOffset = reader.ReadUInt32(ri, kFieldAreaName, offsets);
     m_mapIdByAreaId[id] = mapId;
     m_parentByAreaId[id] = parent;
     m_areaIdsByMapId[mapId].push_back(id);
+    m_nameByAreaId[id] = reader.ReadStringAtOffset(nameOffset);
+    m_areaBitByAreaId[id] = reader.ReadUInt32(ri, kFieldAreaBit, offsets);
   }
 
   m_loaded = true;
@@ -63,6 +70,24 @@ uint32_t AreaTableDbc::GetMapId(uint32_t areaId) const {
     return 0;
   auto const it = m_mapIdByAreaId.find(areaId);
   if (it == m_mapIdByAreaId.end())
+    return 0;
+  return it->second;
+}
+
+std::string AreaTableDbc::GetName(uint32_t areaId) const {
+  if (!m_loaded || areaId == 0)
+    return {};
+  auto const it = m_nameByAreaId.find(areaId);
+  if (it == m_nameByAreaId.end())
+    return {};
+  return it->second;
+}
+
+uint32_t AreaTableDbc::GetAreaBit(uint32_t areaId) const {
+  if (!m_loaded || areaId == 0)
+    return 0;
+  auto const it = m_areaBitByAreaId.find(areaId);
+  if (it == m_areaBitByAreaId.end())
     return 0;
   return it->second;
 }

@@ -392,24 +392,34 @@ private:
 
     spdlog::register_logger(spdlogger_);
 
-    std::string mmapFilePath = config.mmapFilePath;
-    if (mmapFilePath.empty()) {
-      std::filesystem::path basePath(config.filePath);
-      if (basePath.has_filename()) {
-        std::filesystem::path mmapPath = basePath;
-        mmapPath.replace_filename(basePath.stem().string() + "-mmaps" +
-                                   basePath.extension().string());
-        mmapFilePath = mmapPath.string();
-      } else {
-        mmapFilePath = "logs/firelands-mmaps.log";
+    spdlog::sink_ptr mmapSink;
+    if (config.enableFile) {
+      std::string mmapFilePath = config.mmapFilePath;
+      if (mmapFilePath.empty()) {
+        std::filesystem::path basePath(config.filePath);
+        if (basePath.has_filename()) {
+          std::filesystem::path mmapPath = basePath;
+          mmapPath.replace_filename(basePath.stem().string() + "-mmaps" +
+                                     basePath.extension().string());
+          mmapFilePath = mmapPath.string();
+        } else {
+          mmapFilePath = "logs/firelands-mmaps.log";
+        }
       }
+      auto fileSink =
+          std::make_shared<spdlog::sinks::basic_file_sink_mt>(mmapFilePath);
+      fileSink->set_level(
+          static_cast<spdlog::level::level_enum>(config.mmapFileLevel));
+      fileSink->set_pattern(config.filePattern);
+      mmapSink = std::move(fileSink);
+    } else {
+      // No file logging configured (e.g. the early console-only Init in main.cpp):
+      // do NOT create a stray mmap file at the default path. Route LOG_MMAP_* to a
+      // disabled sink so the only mmap log file is the one from the real Init.
+      auto offSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+      offSink->set_level(spdlog::level::off);
+      mmapSink = std::move(offSink);
     }
-
-    auto mmapSink =
-        std::make_shared<spdlog::sinks::basic_file_sink_mt>(mmapFilePath);
-    mmapSink->set_level(
-        static_cast<spdlog::level::level_enum>(config.mmapFileLevel));
-    mmapSink->set_pattern(config.filePattern);
 
     mmapSpdlogger_ = std::make_shared<spdlog::logger>(config.name + ".mmap",
                                                       mmapSink);

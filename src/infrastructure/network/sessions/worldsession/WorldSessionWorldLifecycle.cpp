@@ -1,4 +1,5 @@
 #include <application/services/WorldService.h>
+#include <domain/world/ChannelManager.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionMovementChecks.h>
 #include <shared/Logger.h>
@@ -36,6 +37,10 @@ void WorldSession::FinalizeWorldExit() {
 
   uint64 const guid = _playerGuid;
   uint32 const mapId = _mapId;
+
+  // Drop out of every chat channel so members stop receiving our messages and we
+  // are not left as a phantom member.
+  ChannelManager::Instance().LeaveAll(guid);
 
   uint32 const charGuidLow = static_cast<uint32>(guid);
   uint16 const mapIdDb =

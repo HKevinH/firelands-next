@@ -88,6 +88,10 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   _playerGuid = guid;
   _timeSyncNextCounter = 0;
 
+  // RBAC permission mask is already loaded into _accountRolePermissionMask at auth
+  // time (ReloadAccountRolePermissions in HandleAuthSession), which is what the
+  // GetAccountRolePermissionMask() getter returns.
+
   auto characterOpt = _charService->GetCharacterByGuid(guid);
   if (!characterOpt) {
     LOG_ERROR("PlayerLogin failed: Account={} GUID={} Reason=NotFound", _accountId, guid);

@@ -155,6 +155,8 @@ enum WorldOpcode : uint32 {
   MSG_MOVE_START_STRAFE_RIGHT = 0x3A02,
   MSG_MOVE_STOP = 0x320A,
   MSG_MOVE_STOP_STRAFE = 0x3002,
+  /// Pitch (look up/down) update — sent while swimming/flying (build 15595).
+  MSG_MOVE_SET_PITCH = 0x7312,
   MSG_MOVE_START_ASCEND = 0x390A,
   MSG_MOVE_START_DESCEND = 0x3800,
   MSG_MOVE_STOP_ASCEND = 0x7B00,
@@ -184,6 +186,15 @@ enum WorldOpcode : uint32 {
 
   /// Channel join request (e.g. General/Trade on login).
   CMSG_JOIN_CHANNEL = 0x0156,
+  /// Channel leave request (build 15595, from WowPacketParser V4_3_4_15595).
+  CMSG_LEAVE_CHANNEL = 0x2D56,
+  /// Channel join/leave/notice server notice (build 15595). Plain byte layout:
+  /// uint8 notifyType, cstring channelName, then type-specific fields.
+  SMSG_CHANNEL_NOTIFY = 0x0825,
+  /// Client requests a channel's member list (the channel roster).
+  CMSG_CHAT_CHANNEL_DISPLAY_LIST = 0x2144,
+  /// Server reply with the channel member list (build 15595). Plain byte layout.
+  SMSG_CHANNEL_LIST = 0x2214,
   /// Reference: OpcodeClient (build 15595) — one opcode
   /// per chat kind; payload is bit-packed (`ChatHandler::HandleMessagechatOpcode`).
   CMSG_MESSAGECHAT_ADDON_BATTLEGROUND = 0x0D46,

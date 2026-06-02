@@ -260,6 +260,16 @@ public:
   void HandlePlayerLogin(WorldPacket &packet);
   void HandleLogoutRequest(WorldPacket &packet);
   void HandleLogoutCancel(WorldPacket &packet);
+  void HandleJoinChannel(WorldPacket &packet);
+  void HandleLeaveChannel(WorldPacket &packet);
+  void HandleChannelDisplayList(WorldPacket &packet);
+  /// On zone change: leave zone-dependent channels ("<base> - <oldZone>") and join
+  /// the new-zone variant ("<base> - <newZone>"), sending the join/leave notices.
+  void UpdateZoneChannels(std::string const &oldZoneName,
+                          std::string const &newZoneName);
+  /// Map exploration: if `areaId` has an unexplored AreaBit, set it in
+  /// PLAYER_EXPLORED_ZONES (reveals the map) and announce the discovery.
+  void DiscoverArea(uint32_t areaId);
   void HandleNameQuery(WorldPacket &packet);
   void HandleCreatureQuery(WorldPacket &packet);
   void HandleQueryTime(WorldPacket &packet);
@@ -652,6 +662,10 @@ public:
   uint32 _zoneId = 0;
   /// `AreaTable.dbc` id for `phase_area` (`CMSG_ZONEUPDATE` area field / spawn).
   uint32 _areaId = 0;
+  /// Explored-zones bit blocks already sent to the client this session
+  /// (PLAYER_EXPLORED_ZONES field index -> accumulated uint32). In-session only;
+  /// DB persistence is a follow-up, so exploration currently resets on relog.
+  std::unordered_map<uint16_t, uint32_t> _exploredZoneBlocks;
   MovementInfo _position;
   uint8 _readBuffer[2048];
   ByteBuffer _inBuffer;

@@ -73,7 +73,6 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_UNREGISTER_ALL_ADDON_PREFIXES:
   case CMSG_BATTLEFIELD_STATUS:
   case CMSG_QUERY_BATTLEFIELD_STATE:
-  case CMSG_JOIN_CHANNEL:
   case CMSG_CONTACT_LIST:
   case CMSG_SAVE_CUF_PROFILES:
   case CMSG_VOICE_SESSION_ENABLE:
@@ -81,6 +80,16 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_WORLD_STATE_UI_TIMER_UPDATE:
     // Client probes features we haven't implemented yet. For stability we safely
     // ignore these requests (no side effects, no disconnect).
+    break;
+  case CMSG_JOIN_CHANNEL:
+    // City/zone chat channels: track membership so messages fan out to members.
+    HandleJoinChannel(packet);
+    break;
+  case CMSG_LEAVE_CHANNEL:
+    HandleLeaveChannel(packet);
+    break;
+  case CMSG_CHAT_CHANNEL_DISPLAY_LIST:
+    HandleChannelDisplayList(packet);
     break;
   case CMSG_LFG_GET_STATUS:
     HandleLfgGetStatus(packet);
@@ -312,6 +321,7 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case MSG_MOVE_START_PITCH_UP:
   case MSG_MOVE_START_PITCH_DOWN:
   case MSG_MOVE_STOP_PITCH:
+  case MSG_MOVE_SET_PITCH:
   case MSG_MOVE_SET_RUN_MODE:
   case MSG_MOVE_SET_WALK_MODE:
   case MSG_MOVE_START_SWIM:

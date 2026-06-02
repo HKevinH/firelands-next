@@ -1,6 +1,9 @@
 #include <domain/ports/IMapNotifier.h>
 #include <application/services/WorldService.h>
+#include <application/services/OnlineCharacterSessionRegistry.h>
 #include <domain/models/Chat.h>
+#include <domain/world/ChannelManager.h>
+#include <shared/game/PlayerFactionTeam.h>
 #include <application/ports/ICommandSession.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <shared/game/ChatLanguages.h>
@@ -276,6 +279,25 @@ void WorldSession::HandleMessageChat(WorldPacket &packet) {
                                 chatTag);
   LOG_DEBUG("[CHAT] out type={} lang={} receiverGuid={} msgLen={}", type, lang,
             receiverGuid, message.size());
+
+  // Channel messages go to every member of the (faction-scoped) channel, sender
+  // included. The client auto-joins city/zone channels per zone, so membership is
+  // populated by HandleJoinChannel; here we just fan the same packet out.
+  if (type == CHAT_MSG_CHANNEL && !channel.empty()) {
+    uint8 const team =
+        static_cast<uint8>(FactionSideFromPlayableRace(_playerRace));
+    auto const members = ChannelManager::Instance().Members(team, channel);
+    if (members.empty() || !_onlineCharRegistry) {
+      SendPacket(response);  // not joined (e.g. server restarted): echo to self
+      return;
+    }
+    for (uint64_t const memberGuid : members) {
+      if (auto s = _onlineCharRegistry->TryResolveByObjectGuid(memberGuid))
+        s->SendPacket(response);
+    }
+    return;
+  }
+
   SendPacket(response);
 
   if (type == CHAT_MSG_SAY || type == CHAT_MSG_YELL || type == CHAT_MSG_EMOTE) {
