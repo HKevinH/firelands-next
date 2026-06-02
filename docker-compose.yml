@@ -14,11 +14,62 @@ services:
     volumes:
       - db_data:/var/lib/mysql
       - ./docker/mysql-init/docker_grants_firelands_user.sql:/docker-entrypoint-initdb.d/00-grants.sql
-      - ./sql/bundled/firelands_auth.sql:/docker-entrypoint-initdb.d/01-auth.sql
-      - ./sql/bundled/firelands_characters.sql:/docker-entrypoint-initdb.d/02-characters.sql
-      - ./sql/bundled/firelands_world.sql:/docker-entrypoint-initdb.d/03-world.sql
-      - ./sql/bundled/firelands_world_creature_ref_import.sql:/docker-entrypoint-initdb.d/04-creature-import.sql
-      - ./sql/bundled/zz_seed_schema_migrations.sql:/docker-entrypoint-initdb.d/99-seed-schema-migrations.sql
+      - ./sql/init/auth_schema.sql:/docker-entrypoint-initdb.d/01-auth-schema.sql
+      - ./sql/init/auth_seed.sql:/docker-entrypoint-initdb.d/02-auth-seed.sql
+      - ./sql/init/characters_schema.sql:/docker-entrypoint-initdb.d/03-characters-schema.sql
+      - ./sql/init/characters_seed.sql:/docker-entrypoint-initdb.d/04-characters-seed.sql
+      - ./sql/init/world_schema.sql:/docker-entrypoint-initdb.d/05-world-schema.sql
+      - ./sql/init/world_seed.sql:/docker-entrypoint-initdb.d/06-world-seed.sql
+      - ./sql/init/world_schema_quest.sql:/docker-entrypoint-initdb.d/07-world-schema-quest.sql
+      - ./sql/init/world_schema_creature.sql:/docker-entrypoint-initdb.d/08-world-schema-creature.sql
+      - ./sql/init/world_schema_gossip.sql:/docker-entrypoint-initdb.d/09-world-schema-gossip.sql
+      - ./sql/init/world_schema_spell.sql:/docker-entrypoint-initdb.d/10-world-schema-spell.sql
+      - ./sql/init/world_schema_player.sql:/docker-entrypoint-initdb.d/11-world-schema-player.sql
+      - ./sql/init/world_schema_gameobject.sql:/docker-entrypoint-initdb.d/12-world-schema-gameobject.sql
+      - ./sql/init/world_seed_quest_data.sql:/docker-entrypoint-initdb.d/13-world-seed-quest-data.sql
+      - ./sql/init/world_seed_quest_template_addon_data.sql:/docker-entrypoint-initdb.d/14-world-seed-quest-template-addon-data.sql
+      - ./sql/init/world_seed_creature_data.sql:/docker-entrypoint-initdb.d/15-world-seed-creature-data.sql
+      - ./sql/init/world_seed_creature_spawn_data.sql:/docker-entrypoint-initdb.d/16-world-seed-creature-spawn-data.sql
+      - ./sql/init/world_seed_creature_addon_data.sql:/docker-entrypoint-initdb.d/17-world-seed-creature-addon-data.sql
+      - ./sql/init/world_seed_creature_model_info_data.sql:/docker-entrypoint-initdb.d/18-world-seed-creature-model-info-data.sql
+      - ./sql/init/world_seed_creature_queststarter_data.sql:/docker-entrypoint-initdb.d/19-world-seed-creature-queststarter-data.sql
+      - ./sql/init/world_seed_creature_questender_data.sql:/docker-entrypoint-initdb.d/20-world-seed-creature-questender-data.sql
+      - ./sql/init/world_seed_creature_template_addon_data.sql:/docker-entrypoint-initdb.d/20b-world-seed-creature-template-addon-data.sql
+      - ./sql/init/world_seed_creature_equip_template_data.sql:/docker-entrypoint-initdb.d/20c-world-seed-creature-equip-template-data.sql
+      - ./sql/init/world_seed_creature_text_data.sql:/docker-entrypoint-initdb.d/20d-world-seed-creature-text-data.sql
+      - ./sql/init/world_seed_npc_vendor_data.sql:/docker-entrypoint-initdb.d/21-world-seed-npc-vendor-data.sql
+      - ./sql/init/world_seed_gameobject_data.sql:/docker-entrypoint-initdb.d/22-world-seed-gameobject-data.sql
+      - ./sql/init/world_seed_gameobject_template_addon_data.sql:/docker-entrypoint-initdb.d/22b-world-seed-gameobject-template-addon-data.sql
+      - ./sql/init/world_seed_gameobject_spawn_data.sql:/docker-entrypoint-initdb.d/23-world-seed-gameobject-spawn-data.sql
+      - ./sql/init/world_seed_gameobject_addon_data.sql:/docker-entrypoint-initdb.d/24-world-seed-gameobject-addon-data.sql
+      - ./sql/init/world_seed_gameobject_queststarter_data.sql:/docker-entrypoint-initdb.d/25-world-seed-gameobject-queststarter-data.sql
+      - ./sql/init/world_seed_gameobject_questender_data.sql:/docker-entrypoint-initdb.d/26-world-seed-gameobject-questender-data.sql
+      - ./sql/init/world_seed_gossip_data.sql:/docker-entrypoint-initdb.d/27-world-seed-gossip-data.sql
+      - ./sql/init/world_seed_gossip_action_data.sql:/docker-entrypoint-initdb.d/28-world-seed-gossip-action-data.sql
+      - ./sql/init/world_seed_gossip_box_data.sql:/docker-entrypoint-initdb.d/29-world-seed-gossip-box-data.sql
+      - ./sql/init/world_seed_gossip_menu_data.sql:/docker-entrypoint-initdb.d/30-world-seed-gossip-menu-data.sql
+      - ./sql/init/world_seed_npc_text_data.sql:/docker-entrypoint-initdb.d/31-world-seed-npc-text-data.sql
+      - ./sql/init/world_seed_spell_dbc_data.sql:/docker-entrypoint-initdb.d/32-world-seed-spell-dbc-data.sql
+      - ./sql/init/world_seed_spelldbc_data.sql:/docker-entrypoint-initdb.d/33-world-seed-spelleffect-dbc-data.sql
+      - ./sql/init/world_seed_spell_area_data.sql:/docker-entrypoint-initdb.d/34-world-seed-spell-area-data.sql
+      - ./sql/init/world_seed_spell_group_data.sql:/docker-entrypoint-initdb.d/35-world-seed-spell-group-data.sql
+      - ./sql/init/world_seed_spell_group_stack_rules_data.sql:/docker-entrypoint-initdb.d/36-world-seed-spell-group-stack-rules-data.sql
+      - ./sql/init/world_seed_spell_learn_spell_data.sql:/docker-entrypoint-initdb.d/37-world-seed-spell-learn-spell-data.sql
+      - ./sql/init/world_seed_spell_linked_spell_data.sql:/docker-entrypoint-initdb.d/38-world-seed-spell-linked-spell-data.sql
+      - ./sql/init/world_seed_spell_proc_data.sql:/docker-entrypoint-initdb.d/39-world-seed-spell-proc-data.sql
+      - ./sql/init/world_seed_spell_rank_data.sql:/docker-entrypoint-initdb.d/40-world-seed-spell-rank-data.sql
+      - ./sql/init/world_seed_spell_required_data.sql:/docker-entrypoint-initdb.d/41-world-seed-spell-required-data.sql
+      - ./sql/init/world_seed_spell_target_position_data.sql:/docker-entrypoint-initdb.d/42-world-seed-spell-target-position-data.sql
+      - ./sql/init/world_seed_spelldifficulty_dbc_data.sql:/docker-entrypoint-initdb.d/43-world-seed-spelldifficulty-dbc-data.sql
+      - ./sql/init/world_seed_playercreateinfo_data.sql:/docker-entrypoint-initdb.d/44-world-seed-playercreateinfo-data.sql
+      - ./sql/init/world_seed_playercreateinfo_action_data.sql:/docker-entrypoint-initdb.d/45-world-seed-playercreateinfo-action-data.sql
+      - ./sql/init/world_seed_playercreateinfo_cast_spell_data.sql:/docker-entrypoint-initdb.d/46-world-seed-playercreateinfo-cast-spell-data.sql
+      - ./sql/init/world_seed_playercreateinfo_item_data.sql:/docker-entrypoint-initdb.d/47-world-seed-playercreateinfo-item-data.sql
+      - ./sql/init/world_seed_playercreateinfo_skills_data.sql:/docker-entrypoint-initdb.d/48-world-seed-playercreateinfo-skills-data.sql
+      - ./sql/init/world_seed_playercreateinfo_spell_custom_data.sql:/docker-entrypoint-initdb.d/49-world-seed-playercreateinfo-spell-custom-data.sql
+      - ./sql/init/world_seed_player_levelstats_data.sql:/docker-entrypoint-initdb.d/50-world-seed-player-levelstats-data.sql
+      - ./sql/init/world_seed_player_xp_for_level_data.sql:/docker-entrypoint-initdb.d/51-world-seed-player-xp-for-level-data.sql
+      - ./sql/init/world_seed_player_racestats_data.sql:/docker-entrypoint-initdb.d/52-world-seed-player-racestats-data.sql
 
 volumes:
   db_data:
