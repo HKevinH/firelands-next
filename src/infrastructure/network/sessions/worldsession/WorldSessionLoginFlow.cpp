@@ -130,9 +130,11 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   SendRestoredQuestLogToClient();
   LoginFinalizeWorldEntry(guid);
 
-  LOG_INFO("Player entered world: Account={} GUID={} Name='{}' Map={} Pos=({},{:.2},{:.2})",
-           _accountId, guid, character.GetName(), character.GetMapId(),
-           character.GetX(), character.GetY(), character.GetZ());
+  LOG_INFO("Player entered world: sess={} ip={} Account={} GUID={} Name='{}' Map={} "
+           "Pos=({},{:.2},{:.2})",
+           static_cast<void const *>(this), GetIpAddress(), _accountId, guid,
+           character.GetName(), character.GetMapId(), character.GetX(),
+           character.GetY(), character.GetZ());
 }
 
 void WorldSession::LoginSendAccountDataAndPreMapPackets(
@@ -449,7 +451,7 @@ void WorldSession::LoginSendCreateUpdatesAndMutualVisibility(
   ws_obj::MergeQuestLogIntoPlayerFields(selfFields, _questProgress);
   MergeGmAppearanceIntoPlayerFields(selfFields, GetGmAppearanceForPlayerUpdates());
   ws_obj::ApplyMovementHintsToPlayerCreateFields(selfFields, move);
-  update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields);
+  update.AddCreateObject(guid, TYPEID_PLAYER, move, selfFields, /*isSelf=*/true);
 
   MovementInfo itemMove{};
   for (size_t slot = 0; slot < kEquipmentSlotCount; ++slot) {

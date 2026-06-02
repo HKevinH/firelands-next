@@ -33,20 +33,27 @@ public:
    * @param move Movement information.
    * @param fields Update fields.
    */
+  /// `isSelf` marks the create as the RECIPIENT's own player (`UPDATEFLAG_SELF`).
+  /// It must be true ONLY for the create sent to that player's own client — never
+  /// for other players' creates, or the client treats the other unit as itself
+  /// (controls the wrong character: two nearby players swap / freeze).
   void AddCreateObject(uint64 guid, TypeID typeId, MovementInfo const &move,
-                       std::map<uint16, uint32> const &fields) {
+                       std::map<uint16, uint32> const &fields,
+                       bool isSelf = false) {
     _count++;
     _data.Append<uint8>(UPDATETYPE_CREATE_OBJECT2);
     _data.WritePackedGuid(guid);
     _data.Append<uint8>(static_cast<uint8>(typeId));
 
     // Cataclysm 4.3.4 (15595) movement update block.
-    // We currently build the minimal "self living unit" movement update matching reference.
     uint32 flags = 0;
-    if (typeId == TYPEID_PLAYER)
-      flags = UPDATEFLAG_SELF | UPDATEFLAG_LIVING;
-    else if (typeId == TYPEID_UNIT)
+    if (typeId == TYPEID_PLAYER) {
       flags = UPDATEFLAG_LIVING;
+      if (isSelf)
+        flags |= UPDATEFLAG_SELF;
+    } else if (typeId == TYPEID_UNIT) {
+      flags = UPDATEFLAG_LIVING;
+    }
 
     uint8 guidBytes[8];
     for (int i = 0; i < 8; ++i)

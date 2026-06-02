@@ -4,8 +4,9 @@
 namespace Firelands {
 
 bool TryReadClientMovement(WorldPacket &packet, WorldOpcode opcode,
-                           MovementInfo &move) {
-  return TryReadClientMovementMse(packet, static_cast<uint32>(opcode), move);
+                           MovementInfo &move, uint64 *outMoverGuid) {
+  return TryReadClientMovementMse(packet, static_cast<uint32>(opcode), move,
+                                  outMoverGuid);
 }
 
 } // namespace Firelands

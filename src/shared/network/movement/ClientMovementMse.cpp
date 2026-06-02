@@ -77,21 +77,30 @@ template <typename T> bool ReadChecked(ByteBuffer &bb, T &out) {
   return true;
 }
 
-inline bool ConsumeByteSeq(ByteBuffer &bb, bool present) {
+inline bool ConsumeByteSeq(ByteBuffer &bb, bool present,
+                           uint8_t *outByte = nullptr) {
   if (!present)
     return true;
   uint8_t b = 0;
-  return ReadChecked(bb, b);
+  if (!ReadChecked(bb, b))
+    return false;
+  // Packed-guid bytes are stored XOR 1 on the wire (same convention used by the
+  // bit-packed SMSG builders in this project).
+  if (outByte)
+    *outByte = static_cast<uint8_t>(b ^ 1u);
+  return true;
 }
 
 } // namespace
 
-bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode, MovementInfo &move) {
+bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode,
+                              MovementInfo &move, uint64 *outMoverGuid) {
   MovementStatusElements const *sequence = GetClientMovementStatusSequence(opcode);
   if (!sequence)
     return false;
 
   move = MovementInfo{};
+  uint8_t guidBytes[8] = {};
 
   bool hasMovementFlags = false;
   bool hasMovementFlags2 = false;
@@ -144,8 +153,11 @@ bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode, MovementInfo &
     case MSEGuidByte6:
     case MSEGuidByte7:
       br.AlignToByteBoundary();
-      if (!ConsumeByteSeq(packet, guidSend[static_cast<size_t>(el - MSEGuidByte0)]))
-        return false;
+      {
+        size_t const gi = static_cast<size_t>(el - MSEGuidByte0);
+        if (!ConsumeByteSeq(packet, guidSend[gi], &guidBytes[gi]))
+          return false;
+      }
       br.ResyncAfterExternalByteReads();
       break;
     case MSETransportGuidByte0:
@@ -434,6 +446,13 @@ bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode, MovementInfo &
   if (!std::isfinite(move.x) || !std::isfinite(move.y) || !std::isfinite(move.z) ||
       !std::isfinite(move.orientation))
     return false;
+
+  if (outMoverGuid) {
+    uint64 g = 0;
+    for (size_t i = 0; i < 8; ++i)
+      g |= static_cast<uint64>(guidBytes[i]) << (i * 8);
+    *outMoverGuid = g;
+  }
 
   return true;
 }

@@ -242,23 +242,33 @@ void Map::BroadcastPacketToNearby(uint64 senderGuid, WorldPacket &packet,
   std::shared_ptr<WorldObject> sender = it->second;
   GridCoord center = GetCoord(sender->GetX(), sender->GetY());
 
+  uint32_t recipients = 0;
+  uint32_t totalPlayersScanned = 0;
   for (int x = center.x - 1; x <= center.x + 1; ++x) {
     for (int y = center.y - 1; y <= center.y + 1; ++y) {
       if (x < 0 || x >= 64 || y < 0 || y >= 64)
         continue;
 
       for (auto const &[guid, obj] : m_grid[x][y].objects) {
-        if (!includeSelf && guid == senderGuid)
-          continue;
-
         if (auto player = std::dynamic_pointer_cast<Player>(obj)) {
+          ++totalPlayersScanned;
+          if (!includeSelf && guid == senderGuid)
+            continue;
           if (auto notifier = player->GetNotifier()) {
             notifier->SendPacket(packet);
+            ++recipients;
           }
         }
       }
     }
   }
+  // DIAGNOSTIC(others-cant-see-move): how many other players actually got this
+  // broadcast. 0 here while a second player is online means the mover and the
+  // observer are not sharing the 3x3 grid neighbourhood (visibility/grid bug).
+  LOG_DEBUG("[BCAST-DIAG] sender={} op=0x{:04X} centerCell=[{},{}] "
+            "playersInCells={} recipients={}",
+            senderGuid, packet.GetOpcode(), center.x, center.y,
+            totalPlayersScanned, recipients);
 }
 
 } // namespace Firelands

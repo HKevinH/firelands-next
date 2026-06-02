@@ -156,7 +156,19 @@ void WorldSession::HandleMoveTeleportAck(WorldPacket &packet) {
 void WorldSession::HandleMovement(WorldPacket &packet) {
   WorldOpcode const op = static_cast<WorldOpcode>(packet.GetOpcode());
   MovementInfo move{};
-  bool const parsed = TryReadClientMovement(packet, op, move);
+  uint64 moverGuid = 0;
+  bool const parsed = TryReadClientMovement(packet, op, move, &moverGuid);
+
+  // DIAGNOSTIC(player-swap): the embedded mover guid must match this session's
+  // player. A mismatch (or 0) means this session/socket is wired to the wrong
+  // character -> the "two players swap / freeze" bug. `sess`/`ip` correlate the
+  // socket with the CMSG_PLAYER_LOGIN that set this session's character.
+  LOG_DEBUG("[MOVE-DIAG] sess={} ip={} op=0x{:04X} sessionGuid={} "
+            "moverGuidInPacket={} parsed={} pos=({:.2f},{:.2f},{:.2f}) size={}{}",
+            static_cast<void const *>(this), GetIpAddress(),
+            static_cast<uint32>(op), _playerGuid, moverGuid, parsed, move.x,
+            move.y, move.z, packet.Size(),
+            (parsed && moverGuid != _playerGuid) ? " <<< GUID MISMATCH" : "");
 
   // After logout the client may still send movement while transitioning to character
   // select. Echoing those packets breaks that transition (stuck loading).
