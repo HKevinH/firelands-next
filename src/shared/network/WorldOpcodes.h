@@ -195,6 +195,11 @@ enum WorldOpcode : uint32 {
   CMSG_CHAT_CHANNEL_DISPLAY_LIST = 0x2144,
   /// Server reply with the channel member list (build 15595). Plain byte layout.
   SMSG_CHANNEL_LIST = 0x2214,
+  /// Talking to an auctioneer (build 15595). Bank/auction features not implemented;
+  /// recognized so the client probe doesn't log as unknown.
+  MSG_AUCTION_HELLO = 0x2307,
+  /// Opening a bank (build 15595). Not implemented yet (no bank storage).
+  CMSG_BANKER_ACTIVATE = 0x0005,
   /// Reference: OpcodeClient (build 15595) — one opcode
   /// per chat kind; payload is bit-packed (`ChatHandler::HandleMessagechatOpcode`).
   CMSG_MESSAGECHAT_ADDON_BATTLEGROUND = 0x0D46,

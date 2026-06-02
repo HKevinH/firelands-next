@@ -25,28 +25,22 @@ void WorldSession::SetSessionAreaId(uint32_t clientAreaHint) {
   if (resolved != 0 && resolved != _zoneId)
     _zoneId = resolved;
 
-  // Re-bucket zone-dependent chat channels (General/LocalDefense) when the
-  // zone-level name changes. We resolve each area up to its top-level zone so
-  // moving between subzones of the same zone does not churn channels.
-  if (_playerGuid != 0 && resolved != 0 && resolved != previousZoneId) {
+  (void)previousZoneId;
+
+  // Re-bucket zone-dependent chat channels when the area NAME changes. WoW keys
+  // these on the SPECIFIC area — cities use the district (e.g. "Valle de Honor"),
+  // open zones use the zone name — so we track the raw client area name and swap
+  // "<base> - <oldName>" -> "<base> - <newName>".
+  if (_playerGuid != 0 && clientAreaHint != 0) {
     if (auto table = runtime().GetAreaTableDbc(); table && table->IsLoaded()) {
-      auto zoneTop = [&](uint32_t areaId) {
-        uint32_t cur = areaId;
-        for (int i = 0; i < 8 && cur != 0; ++i) {
-          uint32_t const parent = table->GetParentAreaId(cur);
-          if (parent == 0)
-            break;
-          cur = parent;
-        }
-        return cur;
-      };
-      std::string const oldZone = table->GetName(zoneTop(previousZoneId));
-      std::string const newZone = table->GetName(zoneTop(resolved));
-      LOG_DEBUG("[CHANNEL] zone change prevArea={} newArea={} oldZone='{}' "
-                "newZone='{}'",
-                previousZoneId, resolved, oldZone, newZone);
-      if (!oldZone.empty() && !newZone.empty() && oldZone != newZone)
-        UpdateZoneChannels(oldZone, newZone);
+      std::string const newName = table->GetName(clientAreaHint);
+      if (!newName.empty() && newName != _channelZoneName) {
+        LOG_DEBUG("[CHANNEL] area name change '{}' -> '{}' (area={})",
+                  _channelZoneName, newName, clientAreaHint);
+        if (!_channelZoneName.empty())
+          UpdateZoneChannels(_channelZoneName, newName);
+        _channelZoneName = newName;
+      }
     }
   }
 

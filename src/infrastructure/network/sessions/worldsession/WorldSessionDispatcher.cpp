@@ -78,6 +78,8 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_VOICE_SESSION_ENABLE:
   case CMSG_GUILD_SET_ACHIEVEMENT_TRACKING:
   case CMSG_WORLD_STATE_UI_TIMER_UPDATE:
+  case MSG_AUCTION_HELLO:      // auction house — not implemented yet
+  case CMSG_BANKER_ACTIVATE:   // bank — not implemented yet (no bank storage)
     // Client probes features we haven't implemented yet. For stability we safely
     // ignore these requests (no side effects, no disconnect).
     break;

@@ -666,6 +666,9 @@ public:
   /// (PLAYER_EXPLORED_ZONES field index -> accumulated uint32). In-session only;
   /// DB persistence is a follow-up, so exploration currently resets on relog.
   std::unordered_map<uint16_t, uint32_t> _exploredZoneBlocks;
+  /// Area name the player's zone-dependent chat channels currently use (e.g.
+  /// "Vale of Stormwind"); drives the zone-channel swap when the area name changes.
+  std::string _channelZoneName;
   MovementInfo _position;
   uint8 _readBuffer[2048];
   ByteBuffer _inBuffer;
