@@ -17,14 +17,16 @@ namespace {
 constexpr uint8 kChatYouJoinedNotice = 0x02;
 constexpr uint8 kChatYouLeftNotice = 0x03;
 
-// ChannelFlags (4.3.4). The client needs these on a server-pushed YOU_JOINED to
-// slot built-in zone channels correctly; flags=0 makes it silently ignore them.
+// ChannelFlags (4.3.4 `ChannelFlags` enum). The client needs these on a
+// server-pushed YOU_JOINED to slot built-in zone channels correctly; wrong or
+// zero flags make it silently ignore the join (the YOU_LEFT carries no flags,
+// so leaving still works — which is why a zone swap left but never re-joined).
 constexpr uint8 kChannelFlagCustom = 0x01;
-constexpr uint8 kChannelFlagTrade = 0x04;
-constexpr uint8 kChannelFlagNotLfg = 0x08;
-constexpr uint8 kChannelFlagGeneral = 0x10;
-constexpr uint8 kChannelFlagCity = 0x20;
-constexpr uint8 kChannelFlagLfg = 0x40;
+constexpr uint8 kChannelFlagTrade = 0x02;
+constexpr uint8 kChannelFlagNotLfg = 0x04;
+constexpr uint8 kChannelFlagGeneral = 0x08;
+constexpr uint8 kChannelFlagCity = 0x10;
+constexpr uint8 kChannelFlagLfg = 0x20;
 
 // Built-in ChatChannels.dbc ids -> channel flags (matches Channel ctor in a 4.3.4
 // core). channelId 0 = custom channel.

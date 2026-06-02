@@ -4,8 +4,10 @@
 #include <shared/Logger.h>
 #include <shared/dbc/ItemTemplateStore.h>
 #include <shared/game/InventorySlots.h>
+#include <shared/game/WowGuid.h>
 #include <shared/network/BitReader.h>
 #include <shared/network/UpdateData.h>
+#include <shared/network/UpdateFields.h>
 #include <algorithm>
 #include <array>
 #include <ctime>
@@ -519,6 +521,45 @@ void WorldSession::PublishBag0AndCoinageAfterTransaction() {
   PublishSelfCoinageUpdate();
 }
 
+void WorldSession::PublishItemGrantAfterTransaction(uint32_t itemEntry,
+                                                    uint32_t newItemGuidLow,
+                                                    uint8_t newBag0Slot) {
+  auto refreshed = _charService->GetCharacterByGuid(_playerGuid);
+  if (!refreshed)
+    return;
+  _moneyCopper = refreshed->GetMoney();
+
+  // Stack actually stored at the destination slot (may differ from requested
+  // count if it merged onto an existing stack).
+  uint32_t stackShown = 1;
+  if (newBag0Slot >= INVENTORY_SLOT_ITEM_START &&
+      newBag0Slot < INVENTORY_SLOT_ITEM_END) {
+    size_t const pi = static_cast<size_t>(newBag0Slot - INVENTORY_SLOT_ITEM_START);
+    if (pi < kPackSlotCount)
+      stackShown = refreshed->GetPackItemStackCount(pi);
+  }
+
+  UpdateData update(_mapId);
+  // Without the item-object CREATE the client knows the slot holds a GUID but
+  // has no item data for it, so the icon only appears after a relog.
+  if (newItemGuidLow != 0) {
+    MovementInfo itemMove{};
+    uint64 const itemOg = MakeItemObjectGuid(newItemGuidLow);
+    update.AddCreateObject(
+        itemOg, TYPEID_ITEM, itemMove,
+        WorldSessionObjectUpdate::BuildItemCreateFields(itemOg, _playerGuid,
+                                                        itemEntry, stackShown));
+  }
+  update.AddValuesUpdate(
+      _playerGuid,
+      WorldSessionObjectUpdate::BuildPlayerBag0InventoryValues(*refreshed));
+  WorldPacket pkt(SMSG_UPDATE_OBJECT);
+  update.Build(pkt);
+  SendPacket(pkt);
+
+  PublishSelfCoinageUpdate();
+}
+
 void WorldSession::HandleSellItem(WorldPacket &packet) {
   if (_playerGuid == 0)
     return;
@@ -647,8 +688,10 @@ void WorldSession::HandleBuyItem(WorldPacket &packet) {
   LOG_DEBUG("HandleBuyItem: guid={} vendor={:#x} item={} count={} cost={}",
             _playerGuid, vendorGuid, item, count, totalCost);
 
+  uint32_t newItemGuidLow = 0;
+  uint8_t newBag0Slot = 0;
   if (!_charService->GrantItemToBag0(static_cast<uint32_t>(_playerGuid), item,
-                                     count)) {
+                                     count, &newItemGuidLow, &newBag0Slot)) {
     SendBuyFailed(vendorGuid, item, kBuyErrCantCarryMore);
     return;
   }
@@ -656,7 +699,7 @@ void WorldSession::HandleBuyItem(WorldPacket &packet) {
   _charService->AddCharacterMoneyDelta(_accountId,
                                        static_cast<uint32_t>(_playerGuid),
                                        -static_cast<int64>(totalCost));
-  PublishBag0AndCoinageAfterTransaction();
+  PublishItemGrantAfterTransaction(item, newItemGuidLow, newBag0Slot);
 }
 
 void WorldSession::HandleBuybackItem(WorldPacket &packet) {
@@ -686,8 +729,11 @@ void WorldSession::HandleBuybackItem(WorldPacket &packet) {
     return;
   }
 
+  uint32_t newItemGuidLow = 0;
+  uint8_t newBag0Slot = 0;
   if (!_charService->GrantItemToBag0(static_cast<uint32_t>(_playerGuid),
-                                     entry.itemEntry, entry.count)) {
+                                     entry.itemEntry, entry.count,
+                                     &newItemGuidLow, &newBag0Slot)) {
     SendBuyFailed(vendorGuid, entry.itemEntry, kBuyErrCantCarryMore);
     return;
   }
@@ -697,7 +743,7 @@ void WorldSession::HandleBuybackItem(WorldPacket &packet) {
       -static_cast<int64>(entry.totalRefund));
   _buybackItems.erase(_buybackItems.begin() + static_cast<long>(index));
 
-  PublishBag0AndCoinageAfterTransaction();
+  PublishItemGrantAfterTransaction(entry.itemEntry, newItemGuidLow, newBag0Slot);
 }
 
 } // namespace Firelands

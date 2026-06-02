@@ -18,9 +18,12 @@ namespace Firelands {
     public:
         /// `characterConnection` — `firelands_characters`. `worldConnection` — optional
         /// `firelands_world` for `item_template` (recommended; falls back to character DB).
+        /// `dbcBasePath` — already-resolved DBC directory (from `Data.DbcPath`); used for
+        /// Item.db2 / CharStartOutfit.dbc / ChrRaces.dbc lookups.
         explicit MySqlCharacterRepository(
             std::shared_ptr<sql::Connection> characterConnection,
-            std::shared_ptr<sql::Connection> worldConnection = nullptr);
+            std::shared_ptr<sql::Connection> worldConnection = nullptr,
+            std::string dbcBasePath = "data/dbc");
 
         std::vector<std::shared_ptr<Character>> GetCharactersByAccount(uint32_t accountId) override;
         std::optional<uint32_t> CreateCharacter(const Character& character) override;

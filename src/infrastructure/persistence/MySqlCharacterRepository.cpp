@@ -697,7 +697,8 @@ void MySqlCharacterRepository::ApplyInitialFactionTemplate(Character &character,
 
 MySqlCharacterRepository::MySqlCharacterRepository(
     std::shared_ptr<sql::Connection> characterConnection,
-    std::shared_ptr<sql::Connection> worldConnection)
+    std::shared_ptr<sql::Connection> worldConnection,
+    std::string dbcBasePath)
     : _connection(std::move(characterConnection)),
       _worldConnection(std::move(worldConnection)) {
   EnsureCharactersOrientationColumn(_connection);
@@ -709,18 +710,30 @@ MySqlCharacterRepository::MySqlCharacterRepository(
   EnsureCharactersActionBarTogglesColumn(_connection);
   EnsureCharacterSpellTable(_connection);
   EnsureCharacterSpellCooldownTables(_connection);
+  // Use the injected (already-resolved, config-driven) DBC directory. Loading
+  // from a hardcoded relative "data/dbc" only worked when the server was
+  // launched from the repo root; elsewhere FetchItemProto could not resolve
+  // item templates, so vendor buys failed with BUY_ERR_CANT_CARRY_MORE.
+  if (dbcBasePath.empty())
+    dbcBasePath = "data/dbc";
   _charStartOutfitLoaded =
-      _charStartOutfitDbc.Load("data/dbc/CharStartOutfit.dbc");
+      _charStartOutfitDbc.Load(dbcBasePath + "/CharStartOutfit.dbc");
   if (!_charStartOutfitLoaded) {
-    LOG_WARN("MySqlCharacterRepository: could not load data/dbc/CharStartOutfit.dbc; "
-             "item visual fallback disabled.");
+    LOG_WARN("MySqlCharacterRepository: could not load {}/CharStartOutfit.dbc; "
+             "item visual fallback disabled.",
+             dbcBasePath);
   }
-  _itemDb2.Load("data/dbc/Item.db2");
-  if (!_chrRacesDbc.Load("data/dbc/ChrRaces.dbc")) {
+  if (!_itemDb2.Load(dbcBasePath + "/Item.db2")) {
+    LOG_WARN("MySqlCharacterRepository: Item.db2 not loaded from {}; vendor buys "
+             "and roster visuals fall back to item_template only.",
+             dbcBasePath);
+  }
+  if (!_chrRacesDbc.Load(dbcBasePath + "/ChrRaces.dbc")) {
     LOG_WARN(
-        "MySqlCharacterRepository: ChrRaces.dbc not loaded from data/dbc/ (copy from a "
+        "MySqlCharacterRepository: ChrRaces.dbc not loaded from {} (copy from a "
         "4.3.4.15595 client); player FactionTemplate falls back to generic Alliance=1 "
-        "Horde=2 until the file is present.");
+        "Horde=2 until the file is present.",
+        dbcBasePath);
   }
 }
 

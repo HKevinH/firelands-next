@@ -306,6 +306,10 @@ public:
   void SendBuyFailed(uint64_t vendorGuid, uint32_t itemEntry, uint8_t reason);
   /// Re-sends `SMSG_UPDATE_OBJECT` bag0 values + coinage after an inventory/money change.
   void PublishBag0AndCoinageAfterTransaction();
+  /// After granting an item (buy / buyback): sends the new item object CREATE plus
+  /// bag0 slot values + coinage so it appears in the bag without relogging.
+  void PublishItemGrantAfterTransaction(uint32_t itemEntry, uint32_t newItemGuidLow,
+                                        uint8_t newBag0Slot);
   void HandleQuestGiverHello(WorldPacket &packet);
   void HandleQuestGiverQueryQuest(WorldPacket &packet);
   void HandleQuestQuery(WorldPacket &packet);

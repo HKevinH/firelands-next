@@ -152,11 +152,12 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     auto accountDataRepo =
         std::make_shared<MySqlAccountDataRepository>(authConn, charConn);
 
-    auto charRepo = std::make_shared<MySqlCharacterRepository>(charConn);
+    const std::string dbcBasePath = Config::ResolveDataDirectory(
+        config.GetNested<std::string>({"Data", "DbcPath"}, "data/dbc"));
+    auto charRepo =
+        std::make_shared<MySqlCharacterRepository>(charConn, nullptr, dbcBasePath);
     auto playerCreateInfoRepo =
         std::make_shared<MySqlPlayerCreateInfoRepository>(worldConn);
-        const std::string dbcBasePath = Config::ResolveDataDirectory(
-                config.GetNested<std::string>({"Data", "DbcPath"}, "data/dbc"));
     const std::string charStartOutfitDbcPath =
         dbcBasePath + "/CharStartOutfit.dbc";
     auto playerCreateInfoService = std::make_shared<PlayerCreateInfoService>(
