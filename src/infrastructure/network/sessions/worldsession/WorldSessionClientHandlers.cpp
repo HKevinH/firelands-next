@@ -4,6 +4,8 @@
 #include <domain/repositories/IGossipRepository.h>
 #include <domain/repositories/INpcTextRepository.h>
 #include <domain/repositories/INpcTemplateSearchRepository.h>
+#include <domain/repositories/IVendorRepository.h>
+#include <shared/dbc/ItemTemplateStore.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
 #include <shared/game/WowGuid.h>
@@ -545,7 +547,42 @@ void WorldSession::HandleListInventory(WorldPacket &packet) {
 }
 
 void WorldSession::SendVendorInventory(uint64_t vendorGuid) {
-  WorldPacket pkt = vendor_wire::BuildVendorInventory(vendorGuid, {});
+  std::vector<vendor_wire::VendorWireItem> items;
+
+  // Cap matches the 21-bit count field; real vendors are well under this.
+  constexpr size_t kMaxVendorListItems = 150;
+
+  if (_vendorRepo && _itemTemplateStore && _itemTemplateStore->isLoaded()) {
+    if (auto vendorEntry = TryResolveCreatureTemplateEntry(vendorGuid)) {
+      int32_t muid = 1;
+      for (VendorItemEntry const &row : _vendorRepo->GetVendorItems(*vendorEntry)) {
+        if (row.type != 1) // only plain item sales for now (no currency / ext cost)
+          continue;
+        if (row.extendedCost != 0)
+          continue;
+        auto tpl = _itemTemplateStore->lookup(row.item);
+        if (!tpl)
+          continue;
+
+        vendor_wire::VendorWireItem w;
+        w.muId = muid++;
+        w.durability = 0;
+        w.itemId = static_cast<int32_t>(row.item);
+        w.type = 1;
+        w.price = static_cast<int32_t>(tpl->buyPrice);
+        w.itemDisplayInfoId = static_cast<int32_t>(tpl->displayId);
+        w.quantity = row.maxCount > 0 ? row.maxCount : -1;
+        w.stackCount = static_cast<int32_t>(tpl->buyCount);
+        items.push_back(w);
+        if (items.size() >= kMaxVendorListItems)
+          break;
+      }
+    }
+  }
+
+  LOG_DEBUG("SMSG_VENDOR_INVENTORY vendor={:#x} items={}", vendorGuid,
+            items.size());
+  WorldPacket pkt = vendor_wire::BuildVendorInventory(vendorGuid, items);
   SendPacket(pkt);
 }
 
@@ -573,6 +610,13 @@ void WorldSession::HandleGossipSelectOption(WorldPacket &packet) {
   if (_gossipRepo) {
     auto const options = _gossipRepo->GetMenuOptions(menuId);
     if (auto const *item = FindGossipMenuItem(options, listId)) {
+      // A vendor option opens the merchant window instead of chaining gossip.
+      if (item->optionType == GossipOptionType::Vendor) {
+        LOG_DEBUG("CMSG_GOSSIP_SELECT_OPTION vendor menu={} listId={} npc={:#x}",
+                  menuId, listId, npcGuid);
+        SendVendorInventory(npcGuid);
+        return;
+      }
       if (item->actionMenuId != 0) {
         auto const chainedOptions = _gossipRepo->GetMenuOptions(item->actionMenuId);
         auto const textId = _gossipRepo->GetMenuTextId(item->actionMenuId);

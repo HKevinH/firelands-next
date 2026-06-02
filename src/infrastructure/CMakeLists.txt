@@ -13,6 +13,7 @@ add_library(FirelandsInfrastructure STATIC
     persistence/MySqlGmTicketRepository.cpp
     persistence/MySqlGossipRepository.cpp
     persistence/MySqlNpcTextRepository.cpp
+    persistence/MySqlVendorRepository.cpp
     persistence/MySqlQuestGossipRepository.cpp
     persistence/MySqlPlayerCreateInfoRepository.cpp
     persistence/MySqlNpcTemplateSearchRepository.cpp

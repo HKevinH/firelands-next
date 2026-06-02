@@ -63,6 +63,8 @@
 #include <shared/dbc/FactionTemplateDbc.h>
 #include <shared/game/SkillLineCategories.h>
 #include <shared/dbc/ItemDbHotfixStore.h>
+#include <shared/dbc/ItemTemplateStore.h>
+#include <infrastructure/persistence/MySqlVendorRepository.h>
 #include <shared/dbc/EmotesTextDbc.h>
 #include <shared/dbc/LanguagesDbc.h>
 #include <shared/dbc/NameGenDbc.h>
@@ -283,6 +285,15 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     auto itemDbHotfix = std::make_shared<ItemDbHotfixStore>();
     itemDbHotfix->load(dbcBasePath);
 
+    auto itemTemplateStoreOwned = std::make_shared<ItemTemplateStore>();
+    if (!itemTemplateStoreOwned->load(dbcBasePath)) {
+      LOG_WARN("ItemTemplateStore not loaded from {} — vendor buy/sell disabled "
+               "(needs client Item.db2 + Item-sparse.db2).",
+               dbcBasePath);
+    }
+    std::shared_ptr<ItemTemplateStore const> itemTemplateStore =
+        itemTemplateStoreOwned;
+
     auto spellManager =
         std::make_shared<SpellManager>(spellDefinitions, spellCastTables);
 
@@ -318,6 +329,7 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
         std::make_shared<MySqlNpcTextRepository>(worldConn);
     auto questGossipRepo =
         std::make_shared<MySqlQuestGossipRepository>(worldConn);
+    auto vendorRepo = std::make_shared<MySqlVendorRepository>(worldConn);
     auto creatureStatsRepo =
         std::make_shared<MySqlCreatureClassLevelStatsRepository>(worldConn);
     auto creatureSpawnRepo =
@@ -346,7 +358,8 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
          languagesDbc, spellDefinitions, realmRepo,
          onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
          combatService, npcTemplateSearchRepo, factionTemplateDbc, gossipRepo, npcTextRepo,
-         questGossipRepo, questProgressRepo, emotesTextDbc, rbacRepo](
+         questGossipRepo, questProgressRepo, emotesTextDbc, rbacRepo,
+         itemTemplateStore, vendorRepo](
             boost::asio::ip::tcp::socket socket) {
           std::make_shared<WorldSession>(
               std::move(socket), authService, charService, commandService,
@@ -354,7 +367,7 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
               onlineCharRegistry, gmTicketService, itemDbHotfix, spellManager,
               combatService, npcTemplateSearchRepo, factionTemplateDbc, gossipRepo,
               npcTextRepo, questGossipRepo, questProgressRepo, emotesTextDbc, rbacRepo,
-              WorldRuntimePtr())
+              WorldRuntimePtr(), itemTemplateStore, vendorRepo)
               ->Start();
         };
 

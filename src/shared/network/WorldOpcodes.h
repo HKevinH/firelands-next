@@ -315,6 +315,14 @@ enum WorldOpcode : uint32 {
   /// WowPacketParser `V4_3_4_15595` — open vendor stock after gossip (8-byte unit guid).
   CMSG_LIST_INVENTORY = 0x2806,
   SMSG_VENDOR_INVENTORY = 0x7CB0,
+  /// WowPacketParser `V4_3_4_15595` — vendor buy / sell / buyback. These CMSGs
+  /// read raw uint64 guids + uint32 fields (not bit-packed) on this build.
+  CMSG_BUY_ITEM = 0x0736,
+  CMSG_SELL_ITEM = 0x4E15,
+  CMSG_BUY_BACK_ITEM = 0x6C17,
+  SMSG_BUY_FAILED = 0x6435,
+  SMSG_BUY_SUCCEEDED = 0x0F26,
+  SMSG_SELL_ITEM = 0x6105,
 
   /// Reference: WowPacketParser V4_3_4_15595 — quest giver interaction.
   CMSG_QUESTGIVER_HELLO = 0x0D17,

@@ -1,9 +1,12 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
+#include <domain/repositories/IVendorRepository.h>
 #include <shared/Logger.h>
+#include <shared/dbc/ItemTemplateStore.h>
 #include <shared/game/InventorySlots.h>
 #include <shared/network/BitReader.h>
 #include <shared/network/UpdateData.h>
+#include <algorithm>
 #include <array>
 #include <ctime>
 #include <optional>
@@ -92,6 +95,52 @@ std::optional<uint8_t> FindBag0SlotByItemLowGuid(Character const &ch,
   }
     return std::nullopt;
   }
+
+// `BuyResult` (SMSG_BUY_FAILED reason). Subset used by the vendor handlers.
+uint8_t constexpr kBuyErrCantFindItem = 0;
+uint8_t constexpr kBuyErrNotEnoughMoney = 2;
+uint8_t constexpr kBuyErrCantCarryMore = 8;
+
+// `SellResult` (SMSG_SELL_ITEM reason).
+uint8_t constexpr kSellErrCantFindItem = 1;
+uint8_t constexpr kSellErrCantSellItem = 2;
+
+// Buyback UI slots start here (`PLAYER_FIELD_VENDORBUYBACK_SLOT_1` index base).
+uint32_t constexpr kBuybackSlotStart = 74;
+
+struct BackpackItemRef {
+  uint8_t packIndex = 0;
+  uint32_t entry = 0;
+  uint32_t stack = 0;
+};
+
+/// Finds a main-backpack (bag 0 grid) item by its low GUID. Equipment slots are
+/// intentionally excluded — equipped items are not sellable from the bag UI.
+std::optional<BackpackItemRef> FindBackpackItemByLowGuid(Character const &ch,
+                                                         uint32_t itemLowGuid) {
+  if (itemLowGuid == 0)
+    return std::nullopt;
+  for (size_t p = 0; p < kPackSlotCount; ++p) {
+    if (ch.GetPackItemGuidLow(p) == itemLowGuid) {
+      BackpackItemRef r;
+      r.packIndex = static_cast<uint8_t>(p);
+      r.entry = ch.GetPackItemEntry(p);
+      r.stack = ch.GetPackItemStackCount(p);
+      return r;
+    }
+  }
+  return std::nullopt;
+}
+
+void SendSellResult(WorldSession &session, uint64_t vendorGuid,
+                    uint64_t itemGuid, uint8_t reason) {
+  // `WorldSession::SendSellError` (4.3.4): vendor guid, item guid, reason byte.
+  WorldPacket pkt(SMSG_SELL_ITEM, 8 + 8 + 1);
+  pkt.Append<uint64_t>(vendorGuid);
+  pkt.Append<uint64_t>(itemGuid);
+  pkt.Append<uint8_t>(reason);
+  session.SendPacket(pkt);
+}
 
 } // namespace
 
@@ -442,5 +491,213 @@ void WorldSession::HandleUseItem(WorldPacket &packet) {
   update.Build(pkt);
   SendPacket(pkt);
   }
+
+void WorldSession::SendBuyFailed(uint64_t vendorGuid, uint32_t itemEntry,
+                                 uint8_t reason) {
+  // `WorldSession::SendBuyError` (4.3.4, param == 0 form).
+  WorldPacket pkt(SMSG_BUY_FAILED, 8 + 4 + 1);
+  pkt.Append<uint64_t>(vendorGuid);
+  pkt.Append<uint32_t>(itemEntry);
+  pkt.Append<uint8_t>(reason);
+  SendPacket(pkt);
+}
+
+void WorldSession::PublishBag0AndCoinageAfterTransaction() {
+  auto refreshed = _charService->GetCharacterByGuid(_playerGuid);
+  if (!refreshed)
+    return;
+  _moneyCopper = refreshed->GetMoney();
+
+  UpdateData update(_mapId);
+  update.AddValuesUpdate(
+      _playerGuid,
+      WorldSessionObjectUpdate::BuildPlayerBag0InventoryValues(*refreshed));
+  WorldPacket pkt(SMSG_UPDATE_OBJECT);
+  update.Build(pkt);
+  SendPacket(pkt);
+
+  PublishSelfCoinageUpdate();
+}
+
+void WorldSession::HandleSellItem(WorldPacket &packet) {
+  if (_playerGuid == 0)
+    return;
+  // CMSG_SELL_ITEM (4.3.4): uint64 vendorGuid, uint64 itemGuid, uint32 count.
+  if (packet.Size() - packet.GetReadPos() < sizeof(uint64) * 2 + sizeof(uint32))
+    return;
+  uint64 const vendorGuid = packet.Read<uint64>();
+  uint64 const itemGuid = packet.Read<uint64>();
+  uint32 const count = packet.Read<uint32>();
+
+  auto ch = _charService->GetCharacterByGuid(_playerGuid);
+  if (!ch)
+    return;
+
+  uint32 const itemLowGuid = static_cast<uint32>(itemGuid & 0xFFFFFFFFu);
+  auto ref = FindBackpackItemByLowGuid(*ch, itemLowGuid);
+  if (!ref || ref->entry == 0) {
+    SendSellResult(*this, vendorGuid, itemGuid, kSellErrCantFindItem);
+    return;
+  }
+
+  // count == 0 means "sell the whole stack"; clamp oversized requests.
+  uint32 const sellCount =
+      (count == 0 || count > ref->stack) ? ref->stack : count;
+
+  auto tpl = _itemTemplateStore ? _itemTemplateStore->lookup(ref->entry)
+                                : std::nullopt;
+  if (!tpl || tpl->sellPrice == 0) {
+    // SellPrice 0 -> item has no merchant value and cannot be sold.
+    SendSellResult(*this, vendorGuid, itemGuid, kSellErrCantSellItem);
+    return;
+  }
+
+  uint64 const refund = static_cast<uint64>(tpl->sellPrice) * sellCount;
+
+  LOG_DEBUG("HandleSellItem: guid={} vendor={:#x} itemLow={} entry={} count={} "
+            "refund={}",
+            _playerGuid, vendorGuid, itemLowGuid, ref->entry, sellCount, refund);
+
+  if (!_charService->DestroyBag0BackpackItem(_accountId,
+                                             static_cast<uint32_t>(_playerGuid),
+                                             0, ref->packIndex, sellCount)) {
+    SendSellResult(*this, vendorGuid, itemGuid, kSellErrCantFindItem);
+    return;
+  }
+
+  _charService->AddCharacterMoneyDelta(_accountId,
+                                       static_cast<uint32_t>(_playerGuid),
+                                       static_cast<int64>(refund));
+
+  // Track for buyback (front = most recent, capped at kMaxBuybackSlots).
+  BuybackEntry entry;
+  entry.itemEntry = ref->entry;
+  entry.count = sellCount;
+  entry.totalRefund =
+      static_cast<uint32_t>(std::min<uint64>(refund, 0xFFFFFFFFu));
+  _buybackItems.push_front(entry);
+  while (_buybackItems.size() > kMaxBuybackSlots)
+    _buybackItems.pop_back();
+
+  PublishBag0AndCoinageAfterTransaction();
+}
+
+void WorldSession::HandleBuyItem(WorldPacket &packet) {
+  if (_playerGuid == 0)
+    return;
+  // CMSG_BUY_ITEM (4.3.4): uint64 vendorGuid, uint8 itemType, uint32 item,
+  //   uint32 vendorSlot, uint32 count, uint64 bagGuid, uint8 bagSlot.
+  if (packet.Size() - packet.GetReadPos() <
+      sizeof(uint64) + sizeof(uint8) + sizeof(uint32) * 3 + sizeof(uint64) +
+          sizeof(uint8))
+    return;
+  uint64 const vendorGuid = packet.Read<uint64>();
+  uint8 const itemType = packet.Read<uint8>();
+  uint32 const item = packet.Read<uint32>();
+  uint32 const vendorSlot = packet.Read<uint32>();
+  uint32 count = packet.Read<uint32>();
+  (void)packet.Read<uint64>(); // bagGuid (auto-store into backpack)
+  (void)packet.Read<uint8>();  // bagSlot
+  (void)vendorSlot;
+
+  if (itemType != 1) {
+    // 2 = currency; not supported.
+    SendBuyFailed(vendorGuid, item, kBuyErrCantFindItem);
+    return;
+  }
+  if (count == 0)
+    count = 1;
+
+  // The vendor must actually offer this item.
+  bool offered = false;
+  if (_vendorRepo) {
+    if (auto vendorEntry = TryResolveCreatureTemplateEntry(vendorGuid)) {
+      for (VendorItemEntry const &row : _vendorRepo->GetVendorItems(*vendorEntry)) {
+        if (row.type == 1 && row.item == item) {
+          offered = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!offered) {
+    SendBuyFailed(vendorGuid, item, kBuyErrCantFindItem);
+    return;
+  }
+
+  auto tpl = _itemTemplateStore ? _itemTemplateStore->lookup(item)
+                                : std::nullopt;
+  if (!tpl) {
+    SendBuyFailed(vendorGuid, item, kBuyErrCantFindItem);
+    return;
+  }
+
+  // Cost is per requested unit. Items with BuyCount > 1 (e.g. stacked ammo)
+  // would need the stack divided into price; vendors here are BuyCount 1.
+  uint64 const totalCost = static_cast<uint64>(tpl->buyPrice) * count;
+
+  auto ch = _charService->GetCharacterByGuid(_playerGuid);
+  if (!ch)
+    return;
+  if (static_cast<uint64>(ch->GetMoney()) < totalCost) {
+    SendBuyFailed(vendorGuid, item, kBuyErrNotEnoughMoney);
+    return;
+  }
+
+  LOG_DEBUG("HandleBuyItem: guid={} vendor={:#x} item={} count={} cost={}",
+            _playerGuid, vendorGuid, item, count, totalCost);
+
+  if (!_charService->GrantItemToBag0(static_cast<uint32_t>(_playerGuid), item,
+                                     count)) {
+    SendBuyFailed(vendorGuid, item, kBuyErrCantCarryMore);
+    return;
+  }
+
+  _charService->AddCharacterMoneyDelta(_accountId,
+                                       static_cast<uint32_t>(_playerGuid),
+                                       -static_cast<int64>(totalCost));
+  PublishBag0AndCoinageAfterTransaction();
+}
+
+void WorldSession::HandleBuybackItem(WorldPacket &packet) {
+  if (_playerGuid == 0)
+    return;
+  // CMSG_BUY_BACK_ITEM (4.3.4): uint64 vendorGuid, uint32 buybackSlot.
+  if (packet.Size() - packet.GetReadPos() < sizeof(uint64) + sizeof(uint32))
+    return;
+  uint64 const vendorGuid = packet.Read<uint64>();
+  uint32 const slot = packet.Read<uint32>();
+
+  size_t const index = slot >= kBuybackSlotStart
+                           ? static_cast<size_t>(slot - kBuybackSlotStart)
+                           : static_cast<size_t>(slot);
+  if (index >= _buybackItems.size()) {
+    SendBuyFailed(vendorGuid, 0, kBuyErrCantFindItem);
+    return;
+  }
+
+  BuybackEntry const entry = _buybackItems[index];
+
+  auto ch = _charService->GetCharacterByGuid(_playerGuid);
+  if (!ch)
+    return;
+  if (static_cast<uint64>(ch->GetMoney()) < entry.totalRefund) {
+    SendBuyFailed(vendorGuid, entry.itemEntry, kBuyErrNotEnoughMoney);
+    return;
+  }
+
+  if (!_charService->GrantItemToBag0(static_cast<uint32_t>(_playerGuid),
+                                     entry.itemEntry, entry.count)) {
+    SendBuyFailed(vendorGuid, entry.itemEntry, kBuyErrCantCarryMore);
+    return;
+  }
+
+  _charService->AddCharacterMoneyDelta(
+      _accountId, static_cast<uint32_t>(_playerGuid),
+      -static_cast<int64>(entry.totalRefund));
+  _buybackItems.erase(_buybackItems.begin() + static_cast<long>(index));
+
+  PublishBag0AndCoinageAfterTransaction();
+}
 
 } // namespace Firelands
