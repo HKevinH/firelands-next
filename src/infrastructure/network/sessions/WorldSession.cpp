@@ -31,7 +31,9 @@ WorldSession::WorldSession(
     std::shared_ptr<IPlayerQuestProgressRepository> questProgressRepo,
     std::shared_ptr<EmotesTextDbc const> emotesTextDbc,
     std::shared_ptr<IRbacRepository> rbacRepo,
-    std::shared_ptr<IWorldRuntime> worldRuntime)
+    std::shared_ptr<IWorldRuntime> worldRuntime,
+    std::shared_ptr<ItemTemplateStore const> itemTemplateStore,
+    std::shared_ptr<IVendorRepository> vendorRepo)
     : _socket(std::move(socket)), _authService(std::move(authService)),
       _charService(std::move(charService)),
       _commandService(std::move(commandService)),
@@ -53,6 +55,8 @@ WorldSession::WorldSession(
       _emotesTextDbc(std::move(emotesTextDbc)),
       _rbacRepo(std::move(rbacRepo)),
       _worldRuntime(worldRuntime ? std::move(worldRuntime) : WorldRuntimePtr()),
+      _itemTemplateStore(std::move(itemTemplateStore)),
+      _vendorRepo(std::move(vendorRepo)),
       _serverSeed(0),
       _accountId(0), _timeSyncPeriodicTimer(_socket.get_executor()),
       _pendingSpellCastTimer(_socket.get_executor()),

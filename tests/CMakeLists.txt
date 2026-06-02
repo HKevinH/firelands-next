@@ -20,6 +20,7 @@ add_executable(FirelandsUnitTests
     unit/shared/FtxuiTextClipboardTests.cpp
     unit/shared/ConfigTests.cpp
     unit/shared/ItemDb2Wdb2Tests.cpp
+    unit/shared/ItemTemplateStoreTests.cpp
     unit/shared/FactionTemplateDbcTests.cpp
     unit/shared/EmotesTextDbcTests.cpp
     unit/shared/StarterSpellFiltersTests.cpp

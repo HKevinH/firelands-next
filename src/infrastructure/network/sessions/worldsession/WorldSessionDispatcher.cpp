@@ -170,6 +170,15 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_LIST_INVENTORY:
     HandleListInventory(packet);
     break;
+  case CMSG_BUY_ITEM:
+    HandleBuyItem(packet);
+    break;
+  case CMSG_SELL_ITEM:
+    HandleSellItem(packet);
+    break;
+  case CMSG_BUY_BACK_ITEM:
+    HandleBuybackItem(packet);
+    break;
   case CMSG_QUESTGIVER_HELLO:
     HandleQuestGiverHello(packet);
     break;

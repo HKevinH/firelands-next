@@ -93,6 +93,8 @@ class IGossipRepository;
 class INpcTextRepository;
 class IQuestGossipRepository;
 class IPlayerQuestProgressRepository;
+class IVendorRepository;
+class ItemTemplateStore;
 class Creature;
 class Map;
 class Player;
@@ -123,7 +125,9 @@ public:
       std::shared_ptr<IPlayerQuestProgressRepository> questProgressRepo,
       std::shared_ptr<EmotesTextDbc const> emotesTextDbc,
       std::shared_ptr<IRbacRepository> rbacRepo = {},
-      std::shared_ptr<IWorldRuntime> worldRuntime = {});
+      std::shared_ptr<IWorldRuntime> worldRuntime = {},
+      std::shared_ptr<ItemTemplateStore const> itemTemplateStore = {},
+      std::shared_ptr<IVendorRepository> vendorRepo = {});
 
   ~WorldSession();
 
@@ -295,6 +299,13 @@ public:
   void HandleNpcTextQuery(WorldPacket &packet);
   void HandleListInventory(WorldPacket &packet);
   void SendVendorInventory(uint64_t vendorGuid);
+  void HandleBuyItem(WorldPacket &packet);
+  void HandleSellItem(WorldPacket &packet);
+  void HandleBuybackItem(WorldPacket &packet);
+  /// `SMSG_BUY_FAILED` (vendorGuid, itemEntry, reason) — greys the buy attempt.
+  void SendBuyFailed(uint64_t vendorGuid, uint32_t itemEntry, uint8_t reason);
+  /// Re-sends `SMSG_UPDATE_OBJECT` bag0 values + coinage after an inventory/money change.
+  void PublishBag0AndCoinageAfterTransaction();
   void HandleQuestGiverHello(WorldPacket &packet);
   void HandleQuestGiverQueryQuest(WorldPacket &packet);
   void HandleQuestQuery(WorldPacket &packet);
@@ -617,6 +628,17 @@ public:
   std::shared_ptr<EmotesTextDbc const> _emotesTextDbc;
   std::shared_ptr<IRbacRepository> _rbacRepo;
   std::shared_ptr<IWorldRuntime> _worldRuntime;
+  std::shared_ptr<ItemTemplateStore const> _itemTemplateStore;
+  std::shared_ptr<IVendorRepository> _vendorRepo;
+  /// Items the player sold this session, available for buyback (front = newest, max 12).
+  struct BuybackEntry {
+    uint32_t itemEntry = 0;
+    uint32_t count = 0;
+    /// Total copper refunded to re-buy this exact stack (what we paid on sell).
+    uint32_t totalRefund = 0;
+  };
+  std::deque<BuybackEntry> _buybackItems;
+  static constexpr size_t kMaxBuybackSlots = 12;
   PlayerQuestProgressStore _questProgress;
   bool _questProgressDirty = false;
 
