@@ -25,6 +25,7 @@
 #include <shared/network/WorldPacket.h>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <ctime>
 #include <optional>
 #include <unordered_set>
@@ -418,10 +419,17 @@ void WorldSession::HandleSwapItem(WorldPacket &packet) {
 void WorldSession::HandleTimeSyncResp(WorldPacket &packet) {
   WorldPackets::Client::TimeSyncResponse ts{};
   WorldPackets::Client::TimeSyncResponse::Read(packet, ts);
-  // RESP updates clock skew only; the following
-  // SMSG_TIME_SYNC_REQ is sent on a periodic timer — not here.
-  LOG_TRACE("CMSG_TIME_SYNC_RESP counter={} clientTime={}", ts.counter,
-            ts.clientTime);
+  // Track this client's clock skew so we can convert its movement timestamps to
+  // server time before relaying to other clients (they interpret another unit's
+  // movement time in the server clock). Without this, relayed players freeze.
+  uint32 const serverMs = static_cast<uint32>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+  _timeSyncClockDelta = static_cast<int32>(serverMs - ts.clientTime);
+  _timeSyncClockDeltaKnown = true;
+  LOG_TRACE("CMSG_TIME_SYNC_RESP counter={} clientTime={} clockDelta={}",
+            ts.counter, ts.clientTime, _timeSyncClockDelta);
 }
 
 void WorldSession::HandleMoveTimeSkipped(WorldPacket &packet) {

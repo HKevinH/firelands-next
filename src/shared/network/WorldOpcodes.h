@@ -48,7 +48,7 @@ enum WorldOpcode : uint32 {
   /// Reference: SMSG_UPDATE_ACTION_BUTTONS
   SMSG_ACTION_BUTTONS = 0x38B5,
   SMSG_UPDATE_OBJECT = 0x4715,
-  /// TrinityCore WowPacketParser `V4_3_4_15595/Opcodes.cs` — player/creature phase sync.
+  /// WowPacketParser `V4_3_4_15595/Opcodes.cs` — player/creature phase sync.
   SMSG_PHASE_SHIFT_CHANGE = 0x70A0,
   /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs` (server move acks).
   SMSG_MOVE_SET_RUN_SPEED = 0x3DB5,
@@ -176,6 +176,9 @@ enum WorldOpcode : uint32 {
   MSG_MOVE_TELEPORT = 0x55A0,
   MSG_MOVE_TELEPORT_ACK = 0x390C,
   SMSG_MOVE_UPDATE_TELEPORT = 0x50B2,
+  /// WowPacketParser `V4_3_4_15595` — relays another unit's MovementInfo to
+  /// players' movement from this, NOT from a relayed MSG_MOVE_*).
+  SMSG_MOVE_UPDATE = 0x79A2,
   /// Reference: WowPacketParser `V4_3_4_15595` — creature spline chase.
   SMSG_ON_MONSTER_MOVE = 0x6E17,
   /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs` — client applies

@@ -7,10 +7,13 @@
 #include <shared/network/BitReader.h>
 #include <shared/network/MovementFlags.h>
 #include <shared/network/MovementStateQueries.h>
+#include <shared/network/MoveUpdatePackets.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/MovementTeleportPackets.h>
 #include <shared/network/MovementWire.h>
 #include <shared/network/movement/ClientMovementMse.h>
+
+#include <chrono>
 
 namespace Firelands {
 
@@ -156,19 +159,7 @@ void WorldSession::HandleMoveTeleportAck(WorldPacket &packet) {
 void WorldSession::HandleMovement(WorldPacket &packet) {
   WorldOpcode const op = static_cast<WorldOpcode>(packet.GetOpcode());
   MovementInfo move{};
-  uint64 moverGuid = 0;
-  bool const parsed = TryReadClientMovement(packet, op, move, &moverGuid);
-
-  // DIAGNOSTIC(player-swap): the embedded mover guid must match this session's
-  // player. A mismatch (or 0) means this session/socket is wired to the wrong
-  // character -> the "two players swap / freeze" bug. `sess`/`ip` correlate the
-  // socket with the CMSG_PLAYER_LOGIN that set this session's character.
-  LOG_DEBUG("[MOVE-DIAG] sess={} ip={} op=0x{:04X} sessionGuid={} "
-            "moverGuidInPacket={} parsed={} pos=({:.2f},{:.2f},{:.2f}) size={}{}",
-            static_cast<void const *>(this), GetIpAddress(),
-            static_cast<uint32>(op), _playerGuid, moverGuid, parsed, move.x,
-            move.y, move.z, packet.Size(),
-            (parsed && moverGuid != _playerGuid) ? " <<< GUID MISMATCH" : "");
+  bool const parsed = TryReadClientMovement(packet, op, move, nullptr);
 
   // After logout the client may still send movement while transitioning to character
   // select. Echoing those packets breaks that transition (stuck loading).
@@ -220,10 +211,46 @@ void WorldSession::HandleMovement(WorldPacket &packet) {
         map->UpdateObjectPosition(_playerGuid, move);
       else if (mergeMovementState)
         map->UpdateObjectPosition(_playerGuid, _position);
-      WorldPacket broadcast(packet.GetOpcode(), packet.Size());
-      broadcast.Append(packet.GetBuffer(), packet.Size());
-      map->BroadcastPacketToNearby(_playerGuid, broadcast);
-      SendPacket(broadcast);
+
+      // Relay this player's movement to OTHER clients exactly
+      // re-encode the movement as SMSG_MOVE_UPDATE using its own MovementUpdate
+      // status-element sequence and broadcast it. The 4.3.4 client renders
+      // another unit's movement from SMSG_MOVE_UPDATE. (The earlier hand-rolled
+      // SMSG_MOVE_UPDATE builder wrote the position floats first instead of
+      // interleaved near the end per the sequence, so observers parsed garbage
+      // and the unit froze.)
+      //
+      // Relay the freshly parsed packet (TC broadcasts the movementInfo it just
+      // read). Using the live packet instead of the merged `_position` removes
+      // the one-update lag that made relayed players look delayed for the
+      // non-trusted opcodes (jumps, turns, start/stop), and it carries the
+      // jump/fall arc. Fall back to `_position` only when the packet didn't
+      // parse or its coordinates are out of range.
+      MovementInfo relayMove =
+          (parsed && WsIsSaneWorldPosition(move)) ? move : _position;
+      // The relayed timestamp must be in SERVER time. Mirror TC's conversion and
+      // its fallback to server game time when the per-client clock delta is
+      // unknown or yields an out-of-range value.
+      {
+        int64 const adjusted =
+            static_cast<int64>(relayMove.time) + _timeSyncClockDelta;
+        if (!_timeSyncClockDeltaKnown || _timeSyncClockDelta == 0 ||
+            adjusted < 0 || adjusted > 0xFFFFFFFFLL)
+          relayMove.time = static_cast<uint32>(
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                  std::chrono::steady_clock::now().time_since_epoch())
+                  .count());
+        else
+          relayMove.time = static_cast<uint32>(adjusted);
+      }
+      WorldPacket relay;
+      if (BuildServerMovement(relay, SMSG_MOVE_UPDATE, relayMove, _playerGuid))
+        map->BroadcastPacketToNearby(_playerGuid, relay);
+
+      // The moving client still expects its own opcode echoed back (state machine).
+      WorldPacket selfEcho(packet.GetOpcode(), packet.Size());
+      selfEcho.Append(packet.GetBuffer(), packet.Size());
+      SendPacket(selfEcho);
     }
     // `MSG_MOVE_START_SWIM` / `MSG_MOVE_STOP_SWIM` often carry the transition before
     // `MOVEMENTFLAG_SWIMMING` appears on merged heartbeats — mirror breath from opcode too.

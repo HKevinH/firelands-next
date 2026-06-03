@@ -1,6 +1,7 @@
 #include <shared/network/movement/ClientMovementMse.h>
 #include <shared/network/movement/MovementStatusElements.h>
 #include <shared/network/BitReader.h>
+#include <shared/network/BitWriter.h>
 #include <shared/network/MovementFlags.h>
 #include <shared/network/WorldOpcodes.h>
 
@@ -15,6 +16,8 @@ namespace {
 
 MovementStatusElements const *GetClientMovementStatusSequence(uint32 opcode) {
   switch (opcode) {
+  case SMSG_MOVE_UPDATE:
+    return MovementUpdate;
   case MSG_MOVE_FALL_LAND:
     return MovementFallLand;
   case MSG_MOVE_HEARTBEAT:
@@ -204,10 +207,13 @@ bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode,
       break;
     case MSEHasFallData:
       hasFallData = br.ReadBit();
+      move.hasFallData = hasFallData;
       break;
     case MSEHasFallDirection:
-      if (hasFallData)
+      if (hasFallData) {
         hasFallDirection = br.ReadBit();
+        move.hasFallDirection = hasFallDirection;
+      }
       break;
     case MSEHasSplineElevation:
       hasSplineElevation = !br.ReadBit();
@@ -369,40 +375,32 @@ bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode,
     case MSEFallVerticalSpeed:
       if (hasFallData) {
         br.AlignToByteBoundary();
-        float v = 0.0f;
-        if (!ReadChecked(packet, v))
+        if (!ReadChecked(packet, move.jumpVerticalSpeed))
           return false;
-        (void)v;
         br.ResyncAfterExternalByteReads();
       }
       break;
     case MSEFallCosAngle:
       if (hasFallData && hasFallDirection) {
         br.AlignToByteBoundary();
-        float v = 0.0f;
-        if (!ReadChecked(packet, v))
+        if (!ReadChecked(packet, move.jumpCosAngle))
           return false;
-        (void)v;
         br.ResyncAfterExternalByteReads();
       }
       break;
     case MSEFallSinAngle:
       if (hasFallData && hasFallDirection) {
         br.AlignToByteBoundary();
-        float v = 0.0f;
-        if (!ReadChecked(packet, v))
+        if (!ReadChecked(packet, move.jumpSinAngle))
           return false;
-        (void)v;
         br.ResyncAfterExternalByteReads();
       }
       break;
     case MSEFallHorizontalSpeed:
       if (hasFallData && hasFallDirection) {
         br.AlignToByteBoundary();
-        float v = 0.0f;
-        if (!ReadChecked(packet, v))
+        if (!ReadChecked(packet, move.jumpHorizontalSpeed))
           return false;
-        (void)v;
         br.ResyncAfterExternalByteReads();
       }
       break;
@@ -454,6 +452,222 @@ bool TryReadClientMovementMse(WorldPacket &packet, uint32 opcode,
     *outMoverGuid = g;
   }
 
+  return true;
+}
+
+bool BuildServerMovementMse(WorldPacket &out, uint32 opcode,
+                            MovementInfo const &move, uint64 moverGuid) {
+  MovementStatusElements const *sequence = GetClientMovementStatusSequence(opcode);
+  if (!sequence)
+    return false;
+
+  out.SetOpcode(opcode);
+
+  uint8_t guidBytes[8] = {};
+  for (size_t i = 0; i < 8; ++i)
+    guidBytes[i] = static_cast<uint8_t>((moverGuid >> (i * 8)) & 0xFFu);
+
+  // What this relay sends: position, movement flags, timestamp and orientation.
+  // Transport / pitch / fall / spline are not relayed (the reader discards them
+  // too), so their presence bits are written as "absent".
+  uint32 const movementFlags0 = move.flags & kMovementFlagsWireMask;
+  uint16 const movementFlags1 =
+      static_cast<uint16>(move.flags2 & kMovementFlags2WireMask);
+  bool const hasMovementFlags = movementFlags0 != 0;
+  bool const hasMovementFlags2 = movementFlags1 != 0;
+  bool const hasTimestamp = true;
+  bool const hasOrientation = true;
+  bool const hasTransportData = false;
+  bool const hasPitch = false;
+  bool const hasFallData = move.hasFallData;
+  bool const hasFallDirection = move.hasFallData && move.hasFallDirection;
+  bool const hasSplineElevation = false;
+
+  BitWriter bw(out);
+
+  for (MovementStatusElements const *it = sequence; *it != MSEEnd; ++it) {
+    switch (*it) {
+    case MSEHasGuidByte0:
+    case MSEHasGuidByte1:
+    case MSEHasGuidByte2:
+    case MSEHasGuidByte3:
+    case MSEHasGuidByte4:
+    case MSEHasGuidByte5:
+    case MSEHasGuidByte6:
+    case MSEHasGuidByte7:
+      bw.WriteBit(guidBytes[static_cast<size_t>(*it - MSEHasGuidByte0)] != 0);
+      break;
+    case MSEHasTransportGuidByte0:
+    case MSEHasTransportGuidByte1:
+    case MSEHasTransportGuidByte2:
+    case MSEHasTransportGuidByte3:
+    case MSEHasTransportGuidByte4:
+    case MSEHasTransportGuidByte5:
+    case MSEHasTransportGuidByte6:
+    case MSEHasTransportGuidByte7:
+      if (hasTransportData)
+        bw.WriteBit(false);
+      break;
+    case MSEGuidByte0:
+    case MSEGuidByte1:
+    case MSEGuidByte2:
+    case MSEGuidByte3:
+    case MSEGuidByte4:
+    case MSEGuidByte5:
+    case MSEGuidByte6:
+    case MSEGuidByte7: {
+      bw.Flush();
+      uint8_t const b = guidBytes[static_cast<size_t>(*it - MSEGuidByte0)];
+      if (b != 0)
+        out.Append<uint8_t>(static_cast<uint8_t>(b ^ 1u));
+      break;
+    }
+    case MSETransportGuidByte0:
+    case MSETransportGuidByte1:
+    case MSETransportGuidByte2:
+    case MSETransportGuidByte3:
+    case MSETransportGuidByte4:
+    case MSETransportGuidByte5:
+    case MSETransportGuidByte6:
+    case MSETransportGuidByte7:
+      // transport not relayed
+      break;
+    case MSEHasMovementFlags:
+      bw.WriteBit(!hasMovementFlags);
+      break;
+    case MSEHasMovementFlags2:
+      bw.WriteBit(!hasMovementFlags2);
+      break;
+    case MSEHasTimestamp:
+      bw.WriteBit(!hasTimestamp);
+      break;
+    case MSEHasOrientation:
+      bw.WriteBit(!hasOrientation);
+      break;
+    case MSEHasTransportData:
+      bw.WriteBit(hasTransportData);
+      break;
+    case MSEHasTransportTime2:
+    case MSEHasVehicleId:
+      if (hasTransportData)
+        bw.WriteBit(false);
+      break;
+    case MSEHasPitch:
+      bw.WriteBit(!hasPitch);
+      break;
+    case MSEHasFallData:
+      bw.WriteBit(hasFallData);
+      break;
+    case MSEHasFallDirection:
+      if (hasFallData)
+        bw.WriteBit(hasFallDirection);
+      break;
+    case MSEHasSplineElevation:
+      bw.WriteBit(!hasSplineElevation);
+      break;
+    case MSEHasSpline:
+    case MSEHasHeightChangeFailed:
+    case MSEZeroBit:
+      bw.WriteBit(false);
+      break;
+    case MSEOneBit:
+      bw.WriteBit(true);
+      break;
+    case MSEFlushBits:
+      bw.Flush();
+      break;
+    case MSEMovementFlags:
+      if (hasMovementFlags)
+        bw.WriteBits(movementFlags0, 30);
+      break;
+    case MSEMovementFlags2:
+      if (hasMovementFlags2)
+        bw.WriteBits(movementFlags1, 12);
+      break;
+    case MSETimestamp:
+      if (hasTimestamp) {
+        bw.Flush();
+        out.Append<uint32>(static_cast<uint32>(move.time));
+      }
+      break;
+    case MSEPositionX:
+      bw.Flush();
+      out.Append<float>(move.x);
+      break;
+    case MSEPositionY:
+      bw.Flush();
+      out.Append<float>(move.y);
+      break;
+    case MSEPositionZ:
+      bw.Flush();
+      out.Append<float>(move.z);
+      break;
+    case MSEOrientation:
+      if (hasOrientation) {
+        bw.Flush();
+        out.Append<float>(move.orientation);
+      }
+      break;
+    case MSEFallTime:
+      if (hasFallData) {
+        bw.Flush();
+        out.Append<uint32>(move.fallTime);
+      }
+      break;
+    case MSEFallVerticalSpeed:
+      if (hasFallData) {
+        bw.Flush();
+        out.Append<float>(move.jumpVerticalSpeed);
+      }
+      break;
+    case MSEFallCosAngle:
+      if (hasFallData && hasFallDirection) {
+        bw.Flush();
+        out.Append<float>(move.jumpCosAngle);
+      }
+      break;
+    case MSEFallSinAngle:
+      if (hasFallData && hasFallDirection) {
+        bw.Flush();
+        out.Append<float>(move.jumpSinAngle);
+      }
+      break;
+    case MSEFallHorizontalSpeed:
+      if (hasFallData && hasFallDirection) {
+        bw.Flush();
+        out.Append<float>(move.jumpHorizontalSpeed);
+      }
+      break;
+    case MSETransportPositionX:
+    case MSETransportPositionY:
+    case MSETransportPositionZ:
+    case MSETransportOrientation:
+    case MSETransportSeat:
+    case MSETransportTime:
+    case MSETransportTime2:
+    case MSETransportVehicleId:
+    case MSEPitch:
+    case MSESplineElevation:
+      // not relayed (corresponding "has" bit written false above)
+      break;
+    case MSECounter:
+      bw.Flush();
+      out.Append<uint32>(0);
+      break;
+    case MSEExtraElement:
+    case MSEExtraFloat:
+      bw.Flush();
+      out.Append<float>(0.0f);
+      break;
+    case MSEExtraInt8:
+    case MSEExtraTwoBits:
+      return false;
+    default:
+      return false;
+    }
+  }
+
+  bw.Flush();
   return true;
 }
 

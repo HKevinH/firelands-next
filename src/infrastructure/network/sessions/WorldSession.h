@@ -713,6 +713,11 @@ public:
 
   /// Monotonic counter for SMSG_TIME_SYNC_REQ (see WorldSession::SendTimeSync in reference).
   uint32 _timeSyncNextCounter = 0;
+  /// Server-time minus this client's reported time (ms), from CMSG_TIME_SYNC_RESP.
+  /// Used to convert this player's movement timestamps to the server clock before
+  /// relaying to other clients (they interpret movement time in server time).
+  int32 _timeSyncClockDelta = 0;
+  bool _timeSyncClockDeltaKnown = false;
 
   boost::asio::steady_timer _timeSyncPeriodicTimer;
   boost::asio::steady_timer _pendingSpellCastTimer;
@@ -767,6 +772,12 @@ public:
   bool _gmFlyEnabled = false;
   float _gmRunSpeed = 7.0f;
   uint32 _moveCounterForGmPackets = 0;
+  /// Incrementing spline id for relaying this player's movement to other clients
+  /// via `SMSG_ON_MONSTER_MOVE` (other clients don't render relayed MSG_MOVE_*).
+  uint32 _playerMoveSplineCounter = 0;
+  /// Client movement timestamp of the last relayed spline; the next spline's
+  /// duration is the real elapsed time (this - previous) so it paces smoothly.
+  uint32 _lastRelaySplineClientTime = 0;
 
   /// Near teleport (same map): waiting for `MSG_MOVE_TELEPORT_ACK` before committing pos.
   bool _awaitingTeleportNear = false;

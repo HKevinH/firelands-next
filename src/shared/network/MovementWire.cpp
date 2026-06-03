@@ -9,4 +9,10 @@ bool TryReadClientMovement(WorldPacket &packet, WorldOpcode opcode,
                                   outMoverGuid);
 }
 
+bool BuildServerMovement(WorldPacket &out, WorldOpcode opcode,
+                         MovementInfo const &move, uint64 moverGuid) {
+  return BuildServerMovementMse(out, static_cast<uint32>(opcode), move,
+                                moverGuid);
+}
+
 } // namespace Firelands

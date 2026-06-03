@@ -14,4 +14,10 @@ namespace Firelands {
 bool TryReadClientMovement(WorldPacket &packet, WorldOpcode opcode,
                            MovementInfo &move, uint64 *outMoverGuid = nullptr);
 
+/// Builds a clean server->client `MSG_MOVE_*` packet to relay another player's
+/// movement to nearby clients. Echoing the raw client packet does not render on
+/// other 4.3.4 clients; this re-serializes the movement for the given mover.
+bool BuildServerMovement(WorldPacket &out, WorldOpcode opcode,
+                         MovementInfo const &move, uint64 moverGuid);
+
 } // namespace Firelands
