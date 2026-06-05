@@ -149,6 +149,7 @@ InitScriptPathsForDatabase(std::filesystem::path const &sqlDir,
     paths.push_back(initDir / "world_seed_player_levelstats_data.sql");
     paths.push_back(initDir / "world_seed_player_xp_for_level_data.sql");
     paths.push_back(initDir / "world_seed_player_racestats_data.sql");
+    paths.push_back(initDir / "world_seed_game_tele.sql");
     paths.push_back(initDir / "world_seed.sql");
   }
   std::vector<std::filesystem::path> existing;
