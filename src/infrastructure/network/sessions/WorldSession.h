@@ -346,6 +346,9 @@ public:
   bool PrepareMeleeRetarget(uint64_t victimGuid);
   void ScheduleMeleeAutoAttack();
   void ProcessMeleeAutoAttackTick();
+  /// Grants rage to the attacking player after a landed melee swing (4.3.4
+  /// formula). No-op unless the player's power type is Rage.
+  void GrantMeleeSwingRage(std::shared_ptr<Map> const &map);
 
   void StartCreatureAggro(uint64_t creatureGuid);
   void StopCreatureAggro(uint64_t creatureGuid, bool sendAttackStopPackets);

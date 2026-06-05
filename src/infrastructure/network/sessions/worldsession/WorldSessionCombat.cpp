@@ -18,6 +18,7 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
+#include <shared/game/PlayerPowerType.h>
 #include <shared/game/MeleeRange.h>
 #include <shared/game/PlayerGmAppearance.h>
 #include <shared/game/UnitFieldFlags.h>
@@ -1105,6 +1106,8 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimCr->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                         victimCr->GetLiveMaxHealth());
+    if (dmg > 0)
+      GrantMeleeSwingRage(map);
 
     if (victimCr->GetLiveHealth() == 0) {
       FinalizeCreatureDeath(victimGuid, hpBefore);
@@ -1143,10 +1146,34 @@ void WorldSession::ProcessMeleeAutoAttackTick() {
   uint32_t const dmg = HealthDamageDealt(hpBefore, victimPl->GetLiveHealth());
   BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimPl->GetLiveHealth(),
                     victimPl->GetLiveMaxHealth());
+  if (dmg > 0)
+    GrantMeleeSwingRage(map);
   if (victimPl->GetLiveHealth() == 0)
     StopMeleeAutoAttack(true);
   else
     ScheduleMeleeAutoAttack();
+}
+
+void WorldSession::GrantMeleeSwingRage(std::shared_ptr<Map> const &map) {
+  if (!map || _playerGuid == 0)
+    return;
+  auto pl = map->TryGetPlayer(_playerGuid);
+  if (!pl || pl->GetPowerType() != static_cast<uint8>(PlayerPowerType::Rage))
+    return;
+
+  // Cataclysm 4.3.4 auto-attack rage: speed(s) * 6.5, low-level reduction below
+  // 10, stored as rage*10 (POWER1 is 0..1000). Main-hand swing speed only.
+  uint32 rage = static_cast<uint32>(
+      static_cast<float>(kDefaultMainhandSwingMs) / 1000.f * 6.5f);
+  if (_playerLevel < 10 && rage > 0)
+    rage -= static_cast<uint32>((rage / 2.f) *
+                                (1.0f - static_cast<float>(_playerLevel) / 10.f));
+  int32 const delta = static_cast<int32>(rage * 10u);
+  if (delta <= 0)
+    return;
+  if (ApplyPlayerPower1DeltaOnMap(map, _playerGuid, delta))
+    BroadcastPlayerPower1OnMap(_mapId, map, _playerGuid,
+                               static_cast<uint8>(PlayerPowerType::Rage));
 }
 
 void WorldSession::ScheduleMeleeAutoAttack() {
@@ -1236,6 +1263,8 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimPl->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimPl->GetLiveHealth(),
                       victimPl->GetLiveMaxHealth());
+    if (dmg > 0)
+      GrantMeleeSwingRage(map);
     ScheduleMeleeAutoAttack();
     return;
   }
@@ -1287,6 +1316,8 @@ void WorldSession::HandleAttackSwing(WorldPacket &packet) {
     uint32_t const dmg = HealthDamageDealt(hpBefore, victimCr->GetLiveHealth());
     BroadcastMeleeHit(map, _mapId, _playerGuid, victimGuid, dmg, victimCr->GetLiveHealth(),
                       victimCr->GetLiveMaxHealth());
+    if (dmg > 0)
+      GrantMeleeSwingRage(map);
     if (victimCr->GetLiveHealth() == 0)
       FinalizeCreatureDeath(victimGuid, hpBefore);
     else
