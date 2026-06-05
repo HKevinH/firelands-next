@@ -294,32 +294,32 @@ public:
 
   template <typename... Args>
   void MmapTrace(spdlog::format_string_t<Args...> fmt, Args &&...args) {
-    mmapSpdlogger_->trace(fmt, std::forward<Args>(args)...);
+    MmapSink()->trace(fmt, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   void MmapDebug(spdlog::format_string_t<Args...> fmt, Args &&...args) {
-    mmapSpdlogger_->debug(fmt, std::forward<Args>(args)...);
+    MmapSink()->debug(fmt, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   void MmapInfo(spdlog::format_string_t<Args...> fmt, Args &&...args) {
-    mmapSpdlogger_->info(fmt, std::forward<Args>(args)...);
+    MmapSink()->info(fmt, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   void MmapWarn(spdlog::format_string_t<Args...> fmt, Args &&...args) {
-    mmapSpdlogger_->warn(fmt, std::forward<Args>(args)...);
+    MmapSink()->warn(fmt, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   void MmapError(spdlog::format_string_t<Args...> fmt, Args &&...args) {
-    mmapSpdlogger_->error(fmt, std::forward<Args>(args)...);
+    MmapSink()->error(fmt, std::forward<Args>(args)...);
   }
 
   template <typename... Args>
   void MmapCritical(spdlog::format_string_t<Args...> fmt, Args &&...args) {
-    mmapSpdlogger_->critical(fmt, std::forward<Args>(args)...);
+    MmapSink()->critical(fmt, std::forward<Args>(args)...);
   }
 
   // ── Runtime configuration ─────────────────────────────────────────────
@@ -392,30 +392,31 @@ private:
 
     spdlog::register_logger(spdlogger_);
 
-    std::string mmapFilePath = config.mmapFilePath;
-    if (mmapFilePath.empty()) {
-      std::filesystem::path basePath(config.filePath);
-      if (basePath.has_filename()) {
-        std::filesystem::path mmapPath = basePath;
-        mmapPath.replace_filename(basePath.stem().string() + "-mmaps" +
-                                   basePath.extension().string());
-        mmapFilePath = mmapPath.string();
-      } else {
-        mmapFilePath = "logs/firelands-mmaps.log";
-      }
+    // The mmap navmesh log is opt-in: only the world server requests it via
+    // WithMmapFile(). Without an explicit path (e.g. the auth server, or the
+    // early bootstrap logger) we skip the sink entirely so no stray
+    // "<name>-mmaps.log" file is created. MmapXxx() falls back to the main
+    // logger when this is null.
+    if (!config.mmapFilePath.empty()) {
+      auto mmapSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(
+          config.mmapFilePath);
+      mmapSink->set_level(
+          static_cast<spdlog::level::level_enum>(config.mmapFileLevel));
+      mmapSink->set_pattern(config.filePattern);
+
+      mmapSpdlogger_ = std::make_shared<spdlog::logger>(config.name + ".mmap",
+                                                        mmapSink);
+      mmapSpdlogger_->set_level(spdlog::level::trace);
+      mmapSpdlogger_->flush_on(spdlog::level::err);
+      spdlog::register_logger(mmapSpdlogger_);
     }
+  }
 
-    auto mmapSink =
-        std::make_shared<spdlog::sinks::basic_file_sink_mt>(mmapFilePath);
-    mmapSink->set_level(
-        static_cast<spdlog::level::level_enum>(config.mmapFileLevel));
-    mmapSink->set_pattern(config.filePattern);
-
-    mmapSpdlogger_ = std::make_shared<spdlog::logger>(config.name + ".mmap",
-                                                      mmapSink);
-    mmapSpdlogger_->set_level(spdlog::level::trace);
-    mmapSpdlogger_->flush_on(spdlog::level::err);
-    spdlog::register_logger(mmapSpdlogger_);
+  // mmap logging is opt-in (only the world server configures an mmap file).
+  // When no mmap sink exists, route MmapXxx() to the main logger instead of
+  // dereferencing a null logger.
+  const std::shared_ptr<spdlog::logger> &MmapSink() const noexcept {
+    return mmapSpdlogger_ ? mmapSpdlogger_ : spdlogger_;
   }
 
   std::shared_ptr<spdlog::logger> spdlogger_;
