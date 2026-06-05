@@ -264,7 +264,9 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
   SendContactListEmpty();
   SendForcedReactions();
   SendSetupCurrency();
-  SendAllAchievementDataEmpty();
+  LoadAchievementsForCharacter(static_cast<uint32_t>(character.GetGuid()));
+  CheckLevelAchievements(false); // persist retroactive awards silently
+  SendAllAchievementData();
   SendLoginSetTimeSpeed();
   SendEquipmentSetListEmpty();
 }

@@ -548,6 +548,7 @@ bool WorldSession::GmSetLevel(uint8 level) {
   // Re-derive talent points for the new level and refresh the client.
   RecalculateTalentPoints();
   SendTalentsInfo();
+  CheckLevelAchievements(true);
   SendNotification("Level set to " + std::to_string(static_cast<int>(lv)) + ".");
   return true;
 }

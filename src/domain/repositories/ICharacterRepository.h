@@ -101,6 +101,13 @@ public:
   /// Sets (or clears, glyph=0) one glyph slot.
   virtual bool SetCharacterGlyph(uint32_t characterGuid, uint8_t slot,
                                  uint32_t glyph, uint8_t spec = 0) = 0;
+  /// Earned achievements for a character.
+  virtual std::vector<CharacterAchievementRow> GetCharacterAchievements(
+      uint32_t characterGuid) = 0;
+  /// Records an earned achievement (no-op if already present).
+  virtual bool AddCharacterAchievement(uint32_t characterGuid,
+                                       uint32_t achievementId,
+                                       uint32_t earnedDate) = 0;
   /// True if `itemEntry` resolves from `item_template`, item DB2 hotfix, or CharStartOutfit DBC.
   virtual bool HasItemTemplate(uint32_t itemEntry) const = 0;
   /// Creates `item_instance` + `character_inventory` row in bag 0 (equipment or backpack).

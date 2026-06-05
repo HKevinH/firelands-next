@@ -22,6 +22,7 @@
 #include <infrastructure/dbc/SpellCastTablesDbc.h>
 #include <infrastructure/dbc/SpellEntryDbcStore.h>
 #include <infrastructure/dbc/TalentDbcStore.h>
+#include <infrastructure/dbc/AchievementDbcStore.h>
 #include <shared/dbc/SpellVisualDbc.h>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
 #include <infrastructure/network/realm_link/RealmLinkOutbound.h>
@@ -289,6 +290,19 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
       LOG_WARN("Talent/TalentTab/NumTalentsAtLevel.dbc not fully loaded from {} "
                "— talent learning disabled.",
                dbcBasePath);
+    }
+
+    {
+      auto achievementStore = std::make_shared<AchievementDbcStore>();
+      if (achievementStore->Load(dbcBasePath + "/Achievement.dbc",
+                                 dbcBasePath + "/Achievement_Criteria.dbc")) {
+        LOG_DEBUG("Achievement DBCs ready ({} level achievements).",
+                  achievementStore->LevelAchievementCount());
+        WorldService::Instance().SetAchievementStore(achievementStore);
+      } else {
+        LOG_WARN("Achievement DBCs not loaded from {} — achievements disabled.",
+                 dbcBasePath);
+      }
     }
 
     SpellDifficultyDbc spellDifficultyDbc;

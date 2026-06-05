@@ -323,6 +323,17 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
     return m_repository->SetCharacterGlyph(characterGuid, slot, glyph, spec);
   }
 
+  std::vector<CharacterAchievementRow> GetCharacterAchievements(
+      uint32_t characterGuid) {
+    return m_repository->GetCharacterAchievements(characterGuid);
+  }
+
+  bool AddCharacterAchievement(uint32_t characterGuid, uint32_t achievementId,
+                               uint32_t earnedDate) {
+    return m_repository->AddCharacterAchievement(characterGuid, achievementId,
+                                                 earnedDate);
+  }
+
   bool HasItemTemplate(uint32_t itemEntry) const {
     return m_repository->HasItemTemplate(itemEntry);
   }

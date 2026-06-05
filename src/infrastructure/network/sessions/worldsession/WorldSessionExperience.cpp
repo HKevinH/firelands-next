@@ -81,6 +81,8 @@ void WorldSession::MaybeGrantKillExperience(Creature &creature, uint32 hpBefore)
     // New levels may grant talent points; re-derive and push to the client.
     RecalculateTalentPoints();
     SendTalentsInfo();
+    // Award REACH_LEVEL achievements unlocked by the new level (with popup).
+    CheckLevelAchievements(true);
   }
 }
 

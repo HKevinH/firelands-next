@@ -98,6 +98,17 @@ CREATE TABLE IF NOT EXISTS `character_glyph` (
     FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Earned achievements per character. earned_date is a unix timestamp.
+CREATE TABLE IF NOT EXISTS `character_achievement` (
+  `guid` int unsigned NOT NULL,
+  `achievement` int unsigned NOT NULL,
+  `earned_date` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`guid`, `achievement`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_achievement_guid`
+    FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `character_spell_cooldown` (
   `character_guid` int unsigned NOT NULL,
   `spell_id` int unsigned NOT NULL,

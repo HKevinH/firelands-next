@@ -310,6 +310,26 @@ bool EnsureCharacterGlyphTable(std::shared_ptr<sql::Connection> conn) {
   }
 }
 
+bool EnsureCharacterAchievementTable(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS firelands_characters.character_achievement ("
+        "guid INT UNSIGNED NOT NULL,"
+        "achievement INT UNSIGNED NOT NULL,"
+        "earned_date INT UNSIGNED NOT NULL DEFAULT 0,"
+        "PRIMARY KEY (guid, achievement),"
+        "KEY idx_guid (guid),"
+        "CONSTRAINT fk_character_achievement_guid FOREIGN KEY (guid) REFERENCES "
+        "characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return true;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("EnsureCharacterAchievementTable failed: {}", e.what());
+    return false;
+  }
+}
+
 bool EnsureCharacterActionTable(std::shared_ptr<sql::Connection> conn) {
   try {
     std::unique_ptr<sql::Statement> st(conn->createStatement());
@@ -1729,6 +1749,51 @@ bool MySqlCharacterRepository::SetCharacterGlyph(uint32_t characterGuid,
     return true;
   } catch (sql::SQLException const &e) {
     LOG_ERROR("SetCharacterGlyph failed: {}", e.what());
+    return false;
+  }
+}
+
+std::vector<CharacterAchievementRow>
+MySqlCharacterRepository::GetCharacterAchievements(uint32_t characterGuid) {
+  std::vector<CharacterAchievementRow> out;
+  if (!EnsureCharacterAchievementTable(_connection))
+    return out;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "SELECT achievement, earned_date FROM character_achievement WHERE "
+        "guid = ?"));
+    ps->setUInt(1, characterGuid);
+    std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+    while (rs->next()) {
+      CharacterAchievementRow row;
+      row.achievementId = rs->getUInt("achievement");
+      row.earnedDate = rs->getUInt("earned_date");
+      out.push_back(row);
+    }
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("GetCharacterAchievements failed: {}", e.what());
+  }
+  return out;
+}
+
+bool MySqlCharacterRepository::AddCharacterAchievement(uint32_t characterGuid,
+                                                      uint32_t achievementId,
+                                                      uint32_t earnedDate) {
+  if (achievementId == 0)
+    return false;
+  if (!EnsureCharacterAchievementTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "INSERT IGNORE INTO character_achievement (guid, achievement, "
+        "earned_date) VALUES (?, ?, ?)"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, achievementId);
+    ps->setUInt(3, earnedDate);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("AddCharacterAchievement failed: {}", e.what());
     return false;
   }
 }

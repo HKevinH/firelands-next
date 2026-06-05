@@ -62,6 +62,10 @@ public:
                 (uint32_t, uint8_t), (override));
     MOCK_METHOD(bool, SetCharacterGlyph, (uint32_t, uint8_t, uint32_t, uint8_t),
                 (override));
+    MOCK_METHOD(std::vector<CharacterAchievementRow>, GetCharacterAchievements,
+                (uint32_t), (override));
+    MOCK_METHOD(bool, AddCharacterAchievement, (uint32_t, uint32_t, uint32_t),
+                (override));
     MOCK_METHOD(bool, HasItemTemplate, (uint32_t), (const, override));
     MOCK_METHOD(bool, GrantItemToBag0,
                 (uint32_t, uint32_t, uint32_t, uint32_t *, uint8_t *), (override));

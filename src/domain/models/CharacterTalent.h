@@ -21,4 +21,11 @@ struct CharacterGlyphRow {
   uint8_t spec = 0;
 };
 
+/// One earned achievement. `earnedDate` is a unix timestamp (sent to the client
+/// as a packed time on login).
+struct CharacterAchievementRow {
+  uint32_t achievementId = 0;
+  uint32_t earnedDate = 0;
+};
+
 } // namespace Firelands

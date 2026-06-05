@@ -449,6 +449,18 @@ public:
   void SendHotfixNotifyBlobEmpty();
   void SendContactListEmpty();
   void SendAllAchievementDataEmpty();
+  /// Login achievement data: earned achievements (no criteria progress in v1).
+  void SendAllAchievementData();
+  /// SMSG_ACHIEVEMENT_EARNED for a single achievement.
+  void SendAchievementEarned(uint32 achievementId, uint32 earnedDate);
+  /// Loads earned achievements for `characterGuid` from persistence.
+  void LoadAchievementsForCharacter(uint32 characterGuid);
+  /// Awards any REACH_LEVEL achievement now satisfied by the character's level.
+  /// `announce` sends the earned popup (true on level-up, false for retroactive
+  /// awards at login).
+  void CheckLevelAchievements(bool announce);
+  /// Records and persists a newly earned achievement; pops it when `announce`.
+  void AwardAchievement(uint32 achievementId, bool announce);
   void SendEquipmentSetListEmpty();
   void SendActionButtons(uint8_t reason);
   void SendInitialActionButtons();
@@ -794,6 +806,8 @@ public:
   std::array<uint32, ActionButton::kMaxActionBarSpecs> _primaryTalentTree{};
   /// Socketed glyphs (GlyphProperties id) per slot, active spec; 0 = empty.
   std::array<uint32, 9> _glyphs{};
+  /// Earned achievements (id → earned unix timestamp), loaded on login.
+  std::unordered_map<uint32, uint32> _earnedAchievements;
 
   ActionButton::PackedActionBar &ActiveActionBar() {
     return _actionButtonBySpec[std::min<size_t>(_activeActionBarSpec,
