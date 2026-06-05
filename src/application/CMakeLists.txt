@@ -17,6 +17,7 @@ add_library(FirelandsApplication STATIC
     services/CharacterActionButtons.cpp
     services/RealmListService.cpp
     services/CommandService.cpp
+    services/MmapDebugCommands.cpp
     services/GmTicketService.cpp
     services/OnlineCharacterSessionRegistry.cpp
     services/MapService.cpp
