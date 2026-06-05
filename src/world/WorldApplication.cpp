@@ -62,6 +62,7 @@
 #include <shared/system/SystemBeep.h>
 #include <shared/dbc/AreaTableDbc.h>
 #include <shared/dbc/FactionTemplateDbc.h>
+#include <shared/game/GameTele.h>
 #include <shared/game/SkillLineCategories.h>
 #include <shared/dbc/ItemDbHotfixStore.h>
 #include <shared/dbc/ItemTemplateStore.h>
