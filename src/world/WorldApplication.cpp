@@ -355,6 +355,32 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     auto npcTemplateSearchRepo =
         std::make_shared<MySqlNpcTemplateSearchRepository>(worldConn);
     WorldService::Instance().SetNpcTemplateSearch(npcTemplateSearchRepo);
+
+    // Named teleport destinations for `.tele <name>` (game_tele world table).
+    {
+      auto gameTeleStore = std::make_shared<GameTeleStore>();
+      try {
+        std::unique_ptr<sql::Statement> st(worldConn->createStatement());
+        std::unique_ptr<sql::ResultSet> rs(st->executeQuery(
+            "SELECT name, map, position_x, position_y, position_z, orientation "
+            "FROM game_tele"));
+        while (rs->next()) {
+          GameTele t;
+          t.name = rs->getString("name");
+          t.mapId = static_cast<uint32>(rs->getUInt("map"));
+          t.x = static_cast<float>(rs->getDouble("position_x"));
+          t.y = static_cast<float>(rs->getDouble("position_y"));
+          t.z = static_cast<float>(rs->getDouble("position_z"));
+          t.o = static_cast<float>(rs->getDouble("orientation"));
+          gameTeleStore->Add(std::move(t));
+        }
+        LOG_DEBUG("game_tele: loaded {} named destinations.",
+                  gameTeleStore->Size());
+      } catch (sql::SQLException const &e) {
+        LOG_WARN("game_tele not loaded ({}); .tele <name> disabled.", e.what());
+      }
+      WorldService::Instance().SetGameTeleStore(gameTeleStore);
+    }
     auto gossipRepo =
         std::make_shared<MySqlGossipRepository>(worldConn);
     auto npcTextRepo =

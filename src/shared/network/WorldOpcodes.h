@@ -48,6 +48,9 @@ enum WorldOpcode : uint32 {
   /// Reference: SMSG_UPDATE_ACTION_BUTTONS
   SMSG_ACTION_BUTTONS = 0x38B5,
   SMSG_UPDATE_OBJECT = 0x4715,
+  SMSG_NEW_WORLD = 0x79B1,
+  SMSG_TRANSFER_PENDING = 0x18A6,
+  MSG_MOVE_WORLDPORT_ACK = 0x2411,
   /// WowPacketParser `V4_3_4_15595/Opcodes.cs` — player/creature phase sync.
   SMSG_PHASE_SHIFT_CHANGE = 0x70A0,
   /// Reference: WowPacketParser `V4_3_4_15595/Opcodes.cs` (server move acks).

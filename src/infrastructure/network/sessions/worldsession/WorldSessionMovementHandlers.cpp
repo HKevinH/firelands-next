@@ -1,3 +1,4 @@
+#include <application/services/CharacterService.h>
 #include <application/services/WorldService.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionMovementChecks.h>
@@ -43,8 +44,21 @@ void WorldSession::TeleportTo(uint32 mapId, float x, float y, float z,
     return;
 
   if (mapId != _mapId) {
-    SendNotification(
-        "Cross-map teleport is not implemented yet; stay on your current map.");
+    // Far teleport (cross-map): drive the world-port flow. Stash the destination,
+    // tell the client to load the new map, and finish in HandleMoveWorldportAck
+    // once the client acks.
+    if (_awaitingWorldport || _awaitingTeleportNear) {
+      SendNotification("A teleport is already in progress.");
+      return;
+    }
+    _worldportMapId = mapId;
+    _worldportX = x;
+    _worldportY = y;
+    _worldportZ = z;
+    _worldportO = orientation;
+    _awaitingWorldport = true;
+    SendNewWorld(mapId, x, y, z, orientation);
+    SendNotification("Teleporting to map " + std::to_string(mapId) + "...");
     return;
   }
 
@@ -158,6 +172,65 @@ void WorldSession::HandleMoveTeleportAck(WorldPacket &packet) {
   RefreshNearbyCreaturePhaseVisibility(_teleportPendingX, _teleportPendingY);
   _lastVisibilityRefreshX = _teleportPendingX;
   _lastVisibilityRefreshY = _teleportPendingY;
+}
+
+void WorldSession::SendNewWorld(uint32 mapId, float x, float y, float z,
+                                float orientation) {
+  // 4.3.4 SMSG_NEW_WORLD field order: x, orientation, z, mapId(int32), y.
+  WorldPacket data(SMSG_NEW_WORLD);
+  data.Append<float>(x);
+  data.Append<float>(orientation);
+  data.Append<float>(z);
+  data.Append<int32>(static_cast<int32>(mapId));
+  data.Append<float>(y);
+  SendPacket(data);
+}
+
+void WorldSession::HandleMoveWorldportAck(WorldPacket & /*packet*/) {
+  if (!_awaitingWorldport || _playerGuid == 0)
+    return;
+  _awaitingWorldport = false;
+
+  uint64 const guid = _playerGuid;
+  uint32 const oldMapId = _mapId;
+  uint32 const newMapId = _worldportMapId;
+
+  // Take the player object off the old map before re-homing it on the new one.
+  std::shared_ptr<Player> player;
+  if (auto oldMap = runtime().GetMap(oldMapId))
+    player = oldMap->TryGetPlayer(guid);
+  runtime().RemovePlayerFromMap(oldMapId, guid);
+
+  _mapId = newMapId;
+  _position.x = _worldportX;
+  _position.y = _worldportY;
+  _position.z = _worldportZ;
+  _position.orientation = _worldportO;
+  _position.flags = 0;
+  _position.flags2 = 0;
+  _position.time = 0;
+  _position.fallTime = 0;
+  _visibleCreatureGuids.clear();
+  _lastVisibilityRefreshX = _worldportX;
+  _lastVisibilityRefreshY = _worldportY;
+
+  MovementInfo move{};
+  move.x = _worldportX;
+  move.y = _worldportY;
+  move.z = _worldportZ;
+  move.orientation = _worldportO;
+
+  if (player) {
+    player->SetPosition(move);
+    runtime().AddPlayerToMap(newMapId, player);
+  }
+
+  SendLoginVerifyWorld(newMapId, move.x, move.y, move.z, move.orientation);
+
+  // Re-create the player and nearby objects on the new map (mini-login). The
+  // character snapshot is reloaded since the session doesn't keep it around.
+  if (auto character = _charService->GetCharacterByGuid(guid))
+    LoginSendCreateUpdatesAndMutualVisibility(guid, *character, move);
 }
 
 void WorldSession::HandleMovement(WorldPacket &packet) {

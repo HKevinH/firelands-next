@@ -281,6 +281,12 @@ public:
   void HandlePlayedTime(WorldPacket &packet);
   void HandleMovement(WorldPacket &packet);
   void HandleMoveTeleportAck(WorldPacket &packet);
+  /// SMSG_NEW_WORLD: tells the client to load `mapId` and place the player at the
+  /// destination (drives a cross-map / world-port teleport).
+  void SendNewWorld(uint32 mapId, float x, float y, float z, float orientation);
+  /// MSG_MOVE_WORLDPORT_ACK: client finished loading the new map — move the player
+  /// object there and re-send the world state.
+  void HandleMoveWorldportAck(WorldPacket &packet);
   /// Ack for server-initiated run/flight speed changes (`MovementHandler` parity).
   void HandleForceSpeedChangeAck(WorldPacket &packet);
   void HandlePing(WorldPacket &packet);
@@ -839,6 +845,14 @@ public:
   float _teleportPendingY = 0.f;
   float _teleportPendingZ = 0.f;
   float _teleportPendingO = 0.f;
+
+  /// Far teleport (cross-map): waiting for MSG_MOVE_WORLDPORT_ACK after SMSG_NEW_WORLD.
+  bool _awaitingWorldport = false;
+  uint32 _worldportMapId = 0;
+  float _worldportX = 0.f;
+  float _worldportY = 0.f;
+  float _worldportZ = 0.f;
+  float _worldportO = 0.f;
 
   /// Underwater breath (`MirrorTimerType::Breath`); driven from movement `MOVEMENTFLAG_SWIMMING`.
   bool _breathMirrorActive = false;

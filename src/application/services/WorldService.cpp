@@ -183,6 +183,16 @@ std::shared_ptr<AchievementDbcStore const> WorldService::GetAchievementStore() {
   return m_achievementStore;
 }
 
+void WorldService::SetGameTeleStore(std::shared_ptr<GameTeleStore const> store) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_gameTeleStore = std::move(store);
+}
+
+std::shared_ptr<GameTeleStore const> WorldService::GetGameTeleStore() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_gameTeleStore;
+}
+
 void WorldService::SetExperienceRates(ExperienceRates rates) {
   std::lock_guard<std::mutex> lock(m_auxMutex);
   m_experienceRates = rates;
