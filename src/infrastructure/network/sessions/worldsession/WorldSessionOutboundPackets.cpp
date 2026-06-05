@@ -311,7 +311,9 @@ void WorldSession::SendTalentsInfo() {
   data.Append<uint8>(0); // active spec index (only one spec exists)
 
   uint32 const primaryTree =
-      _primaryTalentTree.empty() ? 0u : _primaryTalentTree[0];
+      (_activeActionBarSpec < _primaryTalentTree.size())
+          ? _primaryTalentTree[_activeActionBarSpec]
+          : 0u;
   data.Append<uint32>(primaryTree); // chosen specialization (TalentTab id)
 
   data.Append<uint8>(static_cast<uint8>(_characterTalents.size()));

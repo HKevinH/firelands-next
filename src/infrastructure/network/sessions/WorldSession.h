@@ -487,6 +487,16 @@ public:
   void HandleLearnTalent(WorldPacket &packet);
   /// CMSG_LEARN_PREVIEW_TALENTS (0x2415): batch commit from the talent preview UI.
   void HandleLearnPreviewTalents(WorldPacket &packet);
+  /// Switches the active talent group (dual spec): swaps spellbook, talents,
+  /// glyphs and action bars to `group` and refreshes the client. True on change.
+  /// NOTE: 4.3.4 has no dedicated activate-spec opcode (the reference core leaves
+  /// the spec opcodes unhandled), so this currently has no client trigger — it is
+  /// the switch mechanism, awaiting a trigger (GM command or the Cata preview path).
+  bool ActivateTalentGroup(uint8 group);
+  /// Spellbook ids a talent group grants (talent-rank spells + spec signature /
+  /// mastery), used to swap spells when the active group changes.
+  std::vector<uint32> CollectTalentGroupSpells(
+      std::vector<CharacterTalentRow> const &talents, uint32 primaryTree) const;
   /// Validates+applies one talent learn (active spec). True if a rank was learned.
   bool LearnTalent(uint32 talentId, uint32 requestedRank);
   /// Picks the active spec's primary tree by class tab index (0/1/2): sets the
@@ -506,6 +516,15 @@ public:
   /// Applies glyph `glyphId` to slot `slotIndex` (validates type/level), persists,
   /// and refreshes the client. Returns true on success.
   bool ApplyGlyph(uint8 slotIndex, uint32 glyphId);
+  /// Applies (apply=true) or removes (apply=false) a glyph's effect spell as a
+  /// permanent passive aura on the player. No-op if the spell is absent from the
+  /// server Spell.dbc (the socket field alone is then harmless).
+  void ApplyGlyphSpellAura(uint32 glyphSpellId, bool apply);
+  /// Re-applies the effect spells of every socketed glyph (login / spec load).
+  void ApplySocketedGlyphAuras();
+  /// Strips the effect spells of every socketed glyph (spec switch / reload),
+  /// counterpart to ApplySocketedGlyphAuras.
+  void RemoveSocketedGlyphAuras();
   void SendInitialFactions();
   void SendLoginVerifyWorld(uint32 mapId, float x, float y, float z, float o);
   void SendMailListToClient(uint32_t characterGuid);

@@ -382,6 +382,9 @@ void WorldSession::LoginSpawnInWorld(uint64 guid, Character const &character,
       ApplyPassiveAurasForKnownSpellsOnMap(_mapId, map, guid, _playerLevel,
                                            passiveCandidates, now);
 }
+    // Glyph effect spells are not in the spellbook; grant them from the loaded
+    // socket layout so socketed glyphs actually take effect after login.
+    ApplySocketedGlyphAuras();
     SendActiveAurasOnMap(map, guid, now);
 }
 

@@ -1,17 +1,26 @@
 #include <application/services/CharacterService.h>
 #include <application/services/WorldService.h>
+#include <application/spell/SpellHitEffects.h>
+#include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
+#include <domain/world/Map.h>
+#include <domain/world/Player.h>
 #include <infrastructure/dbc/TalentDbcStore.h>
 #include <infrastructure/network/sessions/WorldSession.h>
+#include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
 #include <shared/Logger.h>
+#include <shared/game/ActionButton.h>
 #include <shared/network/UpdateData.h>
 #include <shared/network/UpdateFields.h>
 #include <shared/network/WorldOpcodes.h>
 #include <shared/network/WorldPacket.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <map>
+#include <optional>
+#include <vector>
 
 namespace Firelands {
 
@@ -310,6 +319,114 @@ void WorldSession::HandleLearnPreviewTalents(WorldPacket &packet) {
   SendTalentsInfo();
 }
 
+// ── Dual specialization (talent groups) ──────────────────────────────────────
+
+// Spellbook ids granted by a talent group: each talent's learned-rank spell plus
+// the group's chosen specialization signature spells and (level 80+) mastery.
+// Used to swap the spellbook when the active group changes.
+std::vector<uint32>
+WorldSession::CollectTalentGroupSpells(std::vector<CharacterTalentRow> const &talents,
+                                       uint32 primaryTree) const {
+  std::vector<uint32> out;
+  auto store = WorldService::Instance().GetTalentStore();
+  if (!store)
+    return out;
+
+  for (CharacterTalentRow const &t : talents) {
+    if (t.rank >= kMaxTalentRank)
+      continue;
+    if (TalentEntry const *te = store->GetTalent(t.talentId)) {
+      uint32 const sp = te->spellRank[t.rank];
+      if (sp != 0)
+        out.push_back(sp);
+    }
+  }
+
+  if (primaryTree != 0) {
+    if (std::vector<uint32> const *sig = store->GetPrimaryTreeSpells(primaryTree))
+      out.insert(out.end(), sig->begin(), sig->end());
+    if (_playerLevel >= 80) {
+      if (TalentTabEntry const *tab = store->GetTalentTab(primaryTree))
+        for (uint8 i = 0; i < 2; ++i)
+          if (tab->masterySpell[i] != 0)
+            out.push_back(tab->masterySpell[i]);
+    }
+  }
+  return out;
+}
+
+// Switches the active talent group (dual spec). Unlearns the leaving group's
+// talent/spec spells, swaps in the entering group's persisted talents, glyphs and
+// action bars, and pushes the refreshed state to the client.
+//
+// NOTE (staged): 4.3.4 (build 15595) has NO dedicated activate-spec opcode — the
+// reference Cataclysm core leaves the spec opcodes (set-primary-tree,
+// unlearn-specialization) unhandled — so this has no client trigger yet. It is the
+// complete switch mechanism, awaiting a trigger (a GM command, or routing through
+// the handled CMSG_LEARN_PREVIEW_TALENTS path). Persistence of the active group
+// across logins is also pending (needs a `characters` column); a relog resets to
+// group 0.
+bool WorldSession::ActivateTalentGroup(uint8 group) {
+  if (_playerGuid == 0)
+    return false;
+  if (group >= ActionButton::kMaxActionBarSpecs) {
+    LOG_DEBUG("[TALENT] activate rejected: group {} out of range", group);
+    return false;
+  }
+  if (group == _activeActionBarSpec)
+    return false; // already active
+
+  uint32 const lowGuid = static_cast<uint32>(_playerGuid);
+
+  // 1) Unlearn the spells the leaving group granted (talent ranks + spec spells).
+  uint32 const oldTree = (_activeActionBarSpec < _primaryTalentTree.size())
+                             ? _primaryTalentTree[_activeActionBarSpec]
+                             : 0u;
+  std::vector<uint32> removed;
+  for (uint32 const sp : CollectTalentGroupSpells(_characterTalents, oldTree)) {
+    if (sp == 0 || _knownSpellIds.count(sp) == 0u)
+      continue;
+    _charService->RemoveCharacterSpell(lowGuid, sp);
+    _knownSpellIds.erase(sp);
+    _knownSpells.erase(std::remove(_knownSpells.begin(), _knownSpells.end(), sp),
+                       _knownSpells.end());
+    removed.push_back(sp);
+  }
+  if (!removed.empty())
+    SendUnlearnSpells(removed);
+
+  // 2) Switch group and reload its persisted talents / glyphs / action bars.
+  //    LoadGlyphsForCharacter strips the leaving group's glyph auras (its socket
+  //    table is still in place at this point) before loading the new layout.
+  _activeActionBarSpec = group;
+  LoadTalentsForCharacter(lowGuid);
+  LoadGlyphsForCharacter(lowGuid);
+  LoadActionButtonsForCharacter(lowGuid);
+
+  // 3) Learn the entering group's spells.
+  uint32 const newTree = (_activeActionBarSpec < _primaryTalentTree.size())
+                             ? _primaryTalentTree[_activeActionBarSpec]
+                             : 0u;
+  for (uint32 const sp : CollectTalentGroupSpells(_characterTalents, newTree)) {
+    if (sp == 0 || _knownSpellIds.count(sp) != 0u)
+      continue;
+    if (_charService->AddCharacterSpell(lowGuid, sp)) {
+      _knownSpells.push_back(sp);
+      _knownSpellIds.insert(sp);
+      SendLearnedSpell(sp);
+    }
+  }
+
+  // 4) Apply the entering group's glyph effect auras and refresh the client.
+  ApplySocketedGlyphAuras();
+  RecalculateTalentPoints();
+  SendGlyphSlotFields();
+  SendTalentsInfo();
+  SendActionButtons(/*reason=*/2); // 2 = updated (vs 0 = initial login burst)
+  LOG_INFO("[TALENT] active group switched to {} (guid {})", group, lowGuid);
+  return true;
+}
+
 // ── Glyphs ──────────────────────────────────────────────────────────────────
 
 namespace {
@@ -335,6 +452,10 @@ uint8 GlyphSlotMinLevel(uint8 slotIndex) {
 } // namespace
 
 void WorldSession::LoadGlyphsForCharacter(uint32 characterGuid) {
+  // Strip the effect auras of the spec we are leaving before swapping the socket
+  // table. On a spec switch the caller reloads the new spec's glyphs here and then
+  // calls ApplySocketedGlyphAuras(); at login `_glyphs` is empty so this no-ops.
+  RemoveSocketedGlyphAuras();
   _glyphs = {};
   if (_charService && characterGuid != 0u) {
     for (CharacterGlyphRow const &r :
@@ -410,13 +531,95 @@ bool WorldSession::ApplyGlyph(uint8 slotIndex, uint32 glyphId) {
     }
   }
 
+  // Drop the effect spell of whatever glyph currently occupies the slot, then
+  // grant the new one's. The socket field (sent below) is only the UI side; the
+  // gameplay effect comes from the GlyphProperties spell applied as an aura.
+  uint32 const prevGlyphId = _glyphs[slotIndex];
+  if (prevGlyphId != 0 && prevGlyphId != glyphId) {
+    if (GlyphPropertiesEntry const *prev = store->GetGlyphProperties(prevGlyphId))
+      ApplyGlyphSpellAura(prev->spellId, /*apply=*/false);
+  }
+
   _glyphs[slotIndex] = glyphId;
   _charService->SetCharacterGlyph(static_cast<uint32>(_playerGuid), slotIndex,
                                   glyphId, _activeActionBarSpec);
+
+  if (glyphId != 0) {
+    if (GlyphPropertiesEntry const *props = store->GetGlyphProperties(glyphId))
+      ApplyGlyphSpellAura(props->spellId, /*apply=*/true);
+  }
+
   SendGlyphSlotFields();
   SendTalentsInfo();
   LOG_DEBUG("[GLYPH] applied: slot {} glyph {}", slotIndex, glyphId);
   return true;
+}
+
+// Casts (apply) or strips (remove) the passive aura that a glyph's effect spell
+// grants. The effect spell lives in GlyphProperties.dbc; without applying it the
+// glyph would show as socketed but do nothing in-game.
+void WorldSession::ApplyGlyphSpellAura(uint32 glyphSpellId, bool apply) {
+  if (_playerGuid == 0 || glyphSpellId == 0)
+    return;
+  auto map = runtime().GetMap(_mapId);
+  if (!map)
+    return;
+  uint8 const level = _playerLevel > 0 ? _playerLevel : 1u;
+
+  if (!apply) {
+    RemovePlayerAuraOnMap(_mapId, map, _playerGuid, glyphSpellId, level);
+    return;
+  }
+
+  if (auto pl = map->TryGetPlayer(_playerGuid))
+    if (pl->HasAura(glyphSpellId))
+      return; // already active (e.g. re-applied on login)
+
+  auto defs = runtime().GetSpellDefinitions();
+  if (!defs)
+    return;
+  std::optional<SpellDefinition> def = defs->GetDefinition(glyphSpellId);
+  // The glyph's effect spell may be absent from the server Spell.dbc (custom or
+  // cross-expansion content). Nothing to apply then — the socket field stands.
+  if (!def) {
+    LOG_DEBUG("[GLYPH] effect spell {} not in server Spell.dbc; socket only",
+              glyphSpellId);
+    return;
+  }
+
+  auto tables = runtime().GetSpellCastTables();
+  auto const now = std::chrono::steady_clock::now();
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplyAuraFromDefinition(&*def, _playerGuid, _playerGuid, level,
+                                           now, tables.get(), &out);
+  if (out.hasAuraApply)
+    ApplySpellCastAuraOnMap(_mapId, map, out, now);
+}
+
+void WorldSession::ApplySocketedGlyphAuras() {
+  auto store = WorldService::Instance().GetTalentStore();
+  if (!store)
+    return;
+  for (uint8 i = 0; i < kMaxGlyphSlots; ++i) {
+    uint32 const glyphId = _glyphs[i];
+    if (glyphId == 0)
+      continue;
+    if (GlyphPropertiesEntry const *props = store->GetGlyphProperties(glyphId))
+      ApplyGlyphSpellAura(props->spellId, /*apply=*/true);
+  }
+}
+
+void WorldSession::RemoveSocketedGlyphAuras() {
+  auto store = WorldService::Instance().GetTalentStore();
+  if (!store)
+    return;
+  for (uint8 i = 0; i < kMaxGlyphSlots; ++i) {
+    uint32 const glyphId = _glyphs[i];
+    if (glyphId == 0)
+      continue;
+    if (GlyphPropertiesEntry const *props = store->GetGlyphProperties(glyphId))
+      ApplyGlyphSpellAura(props->spellId, /*apply=*/false);
+  }
 }
 
 } // namespace Firelands
