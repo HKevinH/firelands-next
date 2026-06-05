@@ -21,6 +21,7 @@
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <infrastructure/dbc/SpellCastTablesDbc.h>
 #include <infrastructure/dbc/SpellEntryDbcStore.h>
+#include <infrastructure/dbc/TalentDbcStore.h>
 #include <shared/dbc/SpellVisualDbc.h>
 #include <infrastructure/network/asio/AsyncNetworkServer.h>
 #include <infrastructure/network/realm_link/RealmLinkOutbound.h>
@@ -273,6 +274,22 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     }
     if (spellVisualDbc)
       WorldService::Instance().SetSpellVisualDbc(spellVisualDbc);
+
+    auto talentStore = std::make_shared<TalentDbcStore>();
+    if (talentStore->Load(dbcBasePath + "/Talent.dbc",
+                          dbcBasePath + "/TalentTab.dbc",
+                          dbcBasePath + "/NumTalentsAtLevel.dbc",
+                          dbcBasePath + "/TalentTreePrimarySpells.dbc")) {
+      talentStore->LoadGlyphs(dbcBasePath + "/GlyphSlot.dbc",
+                              dbcBasePath + "/GlyphProperties.dbc");
+      talentStore->LoadGlyphApplySpells(dbcBasePath + "/SpellEffect.dbc");
+      LOG_DEBUG("Talent DBCs ready ({} talents).", talentStore->TalentCount());
+      WorldService::Instance().SetTalentStore(talentStore);
+    } else {
+      LOG_WARN("Talent/TalentTab/NumTalentsAtLevel.dbc not fully loaded from {} "
+               "— talent learning disabled.",
+               dbcBasePath);
+    }
 
     SpellDifficultyDbc spellDifficultyDbc;
     if (spellDifficultyDbc.Load(dbcBasePath + "/SpellDifficulty.dbc")) {

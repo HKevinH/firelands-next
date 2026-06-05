@@ -250,6 +250,66 @@ bool EnsureCharacterSpellTable(std::shared_ptr<sql::Connection> conn) {
   }
 }
 
+bool EnsureCharacterTalentTable(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS firelands_characters.character_talent ("
+        "guid INT UNSIGNED NOT NULL,"
+        "spec TINYINT UNSIGNED NOT NULL DEFAULT 0,"
+        "talent INT UNSIGNED NOT NULL,"
+        "`rank` TINYINT UNSIGNED NOT NULL DEFAULT 0,"
+        "PRIMARY KEY (guid, spec, talent),"
+        "KEY idx_guid (guid),"
+        "CONSTRAINT fk_character_talent_guid FOREIGN KEY (guid) REFERENCES "
+        "characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return true;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("EnsureCharacterTalentTable failed: {}", e.what());
+    return false;
+  }
+}
+
+bool EnsureCharacterTalentSpecTable(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS firelands_characters.character_talent_spec ("
+        "guid INT UNSIGNED NOT NULL,"
+        "spec TINYINT UNSIGNED NOT NULL DEFAULT 0,"
+        "primary_tree INT UNSIGNED NOT NULL DEFAULT 0,"
+        "PRIMARY KEY (guid, spec),"
+        "CONSTRAINT fk_character_talent_spec_guid FOREIGN KEY (guid) REFERENCES "
+        "characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return true;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("EnsureCharacterTalentSpecTable failed: {}", e.what());
+    return false;
+  }
+}
+
+bool EnsureCharacterGlyphTable(std::shared_ptr<sql::Connection> conn) {
+  try {
+    std::unique_ptr<sql::Statement> st(conn->createStatement());
+    st->execute(
+        "CREATE TABLE IF NOT EXISTS firelands_characters.character_glyph ("
+        "guid INT UNSIGNED NOT NULL,"
+        "spec TINYINT UNSIGNED NOT NULL DEFAULT 0,"
+        "slot TINYINT UNSIGNED NOT NULL,"
+        "glyph INT UNSIGNED NOT NULL DEFAULT 0,"
+        "PRIMARY KEY (guid, spec, slot),"
+        "CONSTRAINT fk_character_glyph_guid FOREIGN KEY (guid) REFERENCES "
+        "characters(guid) ON DELETE CASCADE"
+        ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    return true;
+  } catch (sql::SQLException &e) {
+    LOG_ERROR("EnsureCharacterGlyphTable failed: {}", e.what());
+    return false;
+  }
+}
+
 bool EnsureCharacterActionTable(std::shared_ptr<sql::Connection> conn) {
   try {
     std::unique_ptr<sql::Statement> st(conn->createStatement());
@@ -1517,6 +1577,158 @@ bool MySqlCharacterRepository::RemoveCharacterSpell(uint32_t characterGuid,
     return true;
   } catch (sql::SQLException const &e) {
     LOG_ERROR("RemoveCharacterSpell failed: {}", e.what());
+    return false;
+  }
+}
+
+std::vector<CharacterTalentRow>
+MySqlCharacterRepository::GetCharacterTalents(uint32_t characterGuid,
+                                             uint8_t spec) {
+  std::vector<CharacterTalentRow> out;
+  if (!EnsureCharacterTalentTable(_connection))
+    return out;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "SELECT talent, `rank` FROM character_talent WHERE guid = ? AND spec = ? "
+        "ORDER BY talent"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+    while (rs->next()) {
+      CharacterTalentRow row;
+      row.talentId = rs->getUInt("talent");
+      row.rank = static_cast<uint8_t>(rs->getUInt("rank"));
+      row.spec = spec;
+      out.push_back(row);
+    }
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("GetCharacterTalents failed: {}", e.what());
+  }
+  return out;
+}
+
+bool MySqlCharacterRepository::AddOrUpdateCharacterTalent(uint32_t characterGuid,
+                                                         uint32_t talentId,
+                                                         uint8_t rank,
+                                                         uint8_t spec) {
+  if (talentId == 0)
+    return false;
+  if (!EnsureCharacterTalentTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "INSERT INTO character_talent (guid, spec, talent, `rank`) "
+        "VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE `rank` = VALUES(`rank`)"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    ps->setUInt(3, talentId);
+    ps->setUInt(4, rank);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("AddOrUpdateCharacterTalent failed: {}", e.what());
+    return false;
+  }
+}
+
+bool MySqlCharacterRepository::ClearCharacterTalents(uint32_t characterGuid,
+                                                    uint8_t spec) {
+  if (!EnsureCharacterTalentTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "DELETE FROM character_talent WHERE guid = ? AND spec = ?"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("ClearCharacterTalents failed: {}", e.what());
+    return false;
+  }
+}
+
+uint32_t MySqlCharacterRepository::GetPrimaryTalentTree(uint32_t characterGuid,
+                                                       uint8_t spec) {
+  if (!EnsureCharacterTalentSpecTable(_connection))
+    return 0u;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "SELECT primary_tree FROM character_talent_spec WHERE guid = ? AND "
+        "spec = ?"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+    if (rs->next())
+      return rs->getUInt("primary_tree");
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("GetPrimaryTalentTree failed: {}", e.what());
+  }
+  return 0u;
+}
+
+bool MySqlCharacterRepository::SetPrimaryTalentTree(uint32_t characterGuid,
+                                                   uint32_t tree, uint8_t spec) {
+  if (!EnsureCharacterTalentSpecTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "INSERT INTO character_talent_spec (guid, spec, primary_tree) "
+        "VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE primary_tree = VALUES(primary_tree)"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    ps->setUInt(3, tree);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("SetPrimaryTalentTree failed: {}", e.what());
+    return false;
+  }
+}
+
+std::vector<CharacterGlyphRow>
+MySqlCharacterRepository::GetCharacterGlyphs(uint32_t characterGuid,
+                                            uint8_t spec) {
+  std::vector<CharacterGlyphRow> out;
+  if (!EnsureCharacterGlyphTable(_connection))
+    return out;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "SELECT slot, glyph FROM character_glyph WHERE guid = ? AND spec = ? "
+        "ORDER BY slot"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    std::unique_ptr<sql::ResultSet> rs(ps->executeQuery());
+    while (rs->next()) {
+      CharacterGlyphRow row;
+      row.slot = static_cast<uint8_t>(rs->getUInt("slot"));
+      row.glyph = rs->getUInt("glyph");
+      row.spec = spec;
+      out.push_back(row);
+    }
+  } catch (sql::SQLException const &e) {
+    LOG_WARN("GetCharacterGlyphs failed: {}", e.what());
+  }
+  return out;
+}
+
+bool MySqlCharacterRepository::SetCharacterGlyph(uint32_t characterGuid,
+                                                uint8_t slot, uint32_t glyph,
+                                                uint8_t spec) {
+  if (!EnsureCharacterGlyphTable(_connection))
+    return false;
+  try {
+    std::shared_ptr<sql::PreparedStatement> ps(_connection->prepareStatement(
+        "INSERT INTO character_glyph (guid, spec, slot, glyph) "
+        "VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE glyph = VALUES(glyph)"));
+    ps->setUInt(1, characterGuid);
+    ps->setUInt(2, spec);
+    ps->setUInt(3, slot);
+    ps->setUInt(4, glyph);
+    ps->executeUpdate();
+    return true;
+  } catch (sql::SQLException const &e) {
+    LOG_ERROR("SetCharacterGlyph failed: {}", e.what());
     return false;
   }
 }

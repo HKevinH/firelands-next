@@ -3,6 +3,7 @@
 #include <domain/models/Character.h>
 #include <domain/models/CharacterActionButtons.h>
 #include <domain/models/CharacterCooldown.h>
+#include <domain/models/CharacterTalent.h>
 #include <domain/models/PlayerCreateInfo.h>
 #include <array>
 #include <shared/game/Bag0InventoryData.h>
@@ -80,6 +81,26 @@ public:
                                                uint8_t toggles) = 0;
   virtual bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) = 0;
   virtual bool RemoveCharacterSpell(uint32_t characterGuid, uint32_t spellId) = 0;
+  /// Learned talents for one spec (rank is 0-based).
+  virtual std::vector<CharacterTalentRow> GetCharacterTalents(
+      uint32_t characterGuid, uint8_t spec = 0) = 0;
+  /// Persists/raises a learned talent rank (INSERT … ON DUPLICATE KEY UPDATE).
+  virtual bool AddOrUpdateCharacterTalent(uint32_t characterGuid,
+                                          uint32_t talentId, uint8_t rank,
+                                          uint8_t spec = 0) = 0;
+  /// Removes every learned talent in a spec (used by respec/wipe).
+  virtual bool ClearCharacterTalents(uint32_t characterGuid, uint8_t spec = 0) = 0;
+  /// Active spec's chosen primary talent tree (TalentTab id), 0 if unchosen.
+  virtual uint32_t GetPrimaryTalentTree(uint32_t characterGuid,
+                                        uint8_t spec = 0) = 0;
+  virtual bool SetPrimaryTalentTree(uint32_t characterGuid, uint32_t tree,
+                                    uint8_t spec = 0) = 0;
+  /// Socketed glyphs for one spec (slot → glyph id).
+  virtual std::vector<CharacterGlyphRow> GetCharacterGlyphs(
+      uint32_t characterGuid, uint8_t spec = 0) = 0;
+  /// Sets (or clears, glyph=0) one glyph slot.
+  virtual bool SetCharacterGlyph(uint32_t characterGuid, uint8_t slot,
+                                 uint32_t glyph, uint8_t spec = 0) = 0;
   /// True if `itemEntry` resolves from `item_template`, item DB2 hotfix, or CharStartOutfit DBC.
   virtual bool HasItemTemplate(uint32_t itemEntry) const = 0;
   /// Creates `item_instance` + `character_inventory` row in bag 0 (equipment or backpack).

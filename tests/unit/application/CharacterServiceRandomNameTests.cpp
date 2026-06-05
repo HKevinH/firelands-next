@@ -51,6 +51,18 @@ public:
   MOCK_METHOD(bool, UpdateCharacterActionBarToggles, (uint32_t, uint8_t), (override));
   MOCK_METHOD(bool, AddCharacterSpell, (uint32_t, uint32_t), (override));
   MOCK_METHOD(bool, RemoveCharacterSpell, (uint32_t, uint32_t), (override));
+  MOCK_METHOD(std::vector<CharacterTalentRow>, GetCharacterTalents,
+              (uint32_t, uint8_t), (override));
+  MOCK_METHOD(bool, AddOrUpdateCharacterTalent,
+              (uint32_t, uint32_t, uint8_t, uint8_t), (override));
+  MOCK_METHOD(bool, ClearCharacterTalents, (uint32_t, uint8_t), (override));
+  MOCK_METHOD(uint32_t, GetPrimaryTalentTree, (uint32_t, uint8_t), (override));
+  MOCK_METHOD(bool, SetPrimaryTalentTree, (uint32_t, uint32_t, uint8_t),
+              (override));
+  MOCK_METHOD(std::vector<CharacterGlyphRow>, GetCharacterGlyphs,
+              (uint32_t, uint8_t), (override));
+  MOCK_METHOD(bool, SetCharacterGlyph, (uint32_t, uint8_t, uint32_t, uint8_t),
+              (override));
   MOCK_METHOD(bool, HasItemTemplate, (uint32_t), (const, override));
   MOCK_METHOD(bool, GrantItemToBag0, (uint32_t, uint32_t, uint32_t, uint32_t *, uint8_t *),
               (override));

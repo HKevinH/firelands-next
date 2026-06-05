@@ -1,6 +1,7 @@
 #include <application/combat/CreatureChaseMovement.h>
 #include <application/ports/IMapCollisionQueries.h>
 #include <application/services/WorldService.h>
+#include <infrastructure/dbc/TalentDbcStore.h>
 #include <boost/asio/redirect_error.hpp>
 #include <infrastructure/network/asio/AsioAwaitables.h>
 #include <application/spell/SpellManager.h>
@@ -239,6 +240,17 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
         c.spellId, static_cast<unsigned>(c.sendCastFlags), packet.GetReadPos(),
         packet.Size());
     return;
+  }
+
+  // Glyph application: a glyph item's apply spell carries the target glyph slot
+  // index in `misc`. Intercept it before the normal cast pipeline (4.3.4 has no
+  // dedicated CMSG_SET_GLYPH).
+  if (auto talentStore = WorldService::Instance().GetTalentStore()) {
+    if (uint32 const glyphId =
+            talentStore->GetGlyphForApplySpell(static_cast<uint32>(c.spellId))) {
+      ApplyGlyph(static_cast<uint8>(c.misc), glyphId);
+      return;
+    }
   }
 
   auto const now = std::chrono::steady_clock::now();

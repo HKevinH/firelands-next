@@ -78,6 +78,9 @@ void WorldSession::MaybeGrantKillExperience(Creature &creature, uint32 hpBefore)
       _knownSpellIds.insert(_knownSpells.begin(), _knownSpells.end());
       SendKnownSpells(true, _knownSpells);
     }
+    // New levels may grant talent points; re-derive and push to the client.
+    RecalculateTalentPoints();
+    SendTalentsInfo();
   }
 }
 

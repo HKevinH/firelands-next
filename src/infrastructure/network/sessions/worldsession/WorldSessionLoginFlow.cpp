@@ -254,7 +254,10 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
   // player already has — not a list of quest-gated trainable ids. Sending 688 here
   // made Summon Imp show as learnable (yellow) on the client.
   SendUnlearnSpellsEmpty();
+  LoadTalentsForCharacter(static_cast<uint32_t>(character.GetGuid()));
+  LoadGlyphsForCharacter(static_cast<uint32_t>(character.GetGuid()));
   SendTalentsInfo();
+  SendGlyphSlotFields();
   LoadActionButtonsForCharacter(static_cast<uint32_t>(character.GetGuid()));
   SendInitialActionButtons();
   SendInitialFactions();

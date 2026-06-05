@@ -64,6 +64,18 @@ namespace Firelands {
                                              uint8_t toggles) override;
         bool AddCharacterSpell(uint32_t characterGuid, uint32_t spellId) override;
         bool RemoveCharacterSpell(uint32_t characterGuid, uint32_t spellId) override;
+        std::vector<CharacterTalentRow> GetCharacterTalents(uint32_t characterGuid,
+                                                            uint8_t spec = 0) override;
+        bool AddOrUpdateCharacterTalent(uint32_t characterGuid, uint32_t talentId,
+                                        uint8_t rank, uint8_t spec = 0) override;
+        bool ClearCharacterTalents(uint32_t characterGuid, uint8_t spec = 0) override;
+        uint32_t GetPrimaryTalentTree(uint32_t characterGuid, uint8_t spec = 0) override;
+        bool SetPrimaryTalentTree(uint32_t characterGuid, uint32_t tree,
+                                  uint8_t spec = 0) override;
+        std::vector<CharacterGlyphRow> GetCharacterGlyphs(uint32_t characterGuid,
+                                                          uint8_t spec = 0) override;
+        bool SetCharacterGlyph(uint32_t characterGuid, uint8_t slot,
+                               uint32_t glyph, uint8_t spec = 0) override;
         bool HasItemTemplate(uint32_t itemEntry) const override;
         bool GrantItemToBag0(uint32_t characterGuid, uint32_t itemEntry, uint32_t count,
                              uint32_t *outItemGuidLow = nullptr,

@@ -162,6 +162,16 @@ WorldService::GetNpcTemplateSearch() {
   return m_npcTemplateSearch;
 }
 
+void WorldService::SetTalentStore(std::shared_ptr<TalentDbcStore const> store) {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  m_talentStore = std::move(store);
+}
+
+std::shared_ptr<TalentDbcStore const> WorldService::GetTalentStore() {
+  std::lock_guard<std::mutex> lock(m_auxMutex);
+  return m_talentStore;
+}
+
 void WorldService::SetExperienceRates(ExperienceRates rates) {
   std::lock_guard<std::mutex> lock(m_auxMutex);
   m_experienceRates = rates;

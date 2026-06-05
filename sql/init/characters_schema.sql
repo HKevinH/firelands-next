@@ -63,6 +63,41 @@ CREATE TABLE IF NOT EXISTS `character_spell` (
     FOREIGN KEY (`character_guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Learned talents per character and spec. Free talent points are not stored;
+-- they are derived as pointsForLevel(level) - spentPoints at load time.
+-- Columns match EnsureCharacterTalentTable() so runtime + init agree.
+CREATE TABLE IF NOT EXISTS `character_talent` (
+  `guid` int unsigned NOT NULL,
+  `spec` tinyint unsigned NOT NULL DEFAULT 0,
+  `talent` int unsigned NOT NULL,
+  `rank` tinyint unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`guid`, `spec`, `talent`),
+  KEY `idx_guid` (`guid`),
+  CONSTRAINT `fk_character_talent_guid`
+    FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Chosen primary talent tree (specialization) per character and spec.
+CREATE TABLE IF NOT EXISTS `character_talent_spec` (
+  `guid` int unsigned NOT NULL,
+  `spec` tinyint unsigned NOT NULL DEFAULT 0,
+  `primary_tree` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`guid`, `spec`),
+  CONSTRAINT `fk_character_talent_spec_guid`
+    FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Socketed glyphs per character, spec and slot (0..8). glyph = GlyphProperties id.
+CREATE TABLE IF NOT EXISTS `character_glyph` (
+  `guid` int unsigned NOT NULL,
+  `spec` tinyint unsigned NOT NULL DEFAULT 0,
+  `slot` tinyint unsigned NOT NULL,
+  `glyph` int unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (`guid`, `spec`, `slot`),
+  CONSTRAINT `fk_character_glyph_guid`
+    FOREIGN KEY (`guid`) REFERENCES `characters` (`guid`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS `character_spell_cooldown` (
   `character_guid` int unsigned NOT NULL,
   `spell_id` int unsigned NOT NULL,

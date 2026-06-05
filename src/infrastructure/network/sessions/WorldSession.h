@@ -29,6 +29,7 @@
 #include <shared/game/PlayerGmAppearance.h>
 #include <application/combat/CreatureChaseMovement.h>
 #include <domain/models/Character.h>
+#include <domain/models/CharacterTalent.h>
 #include <domain/models/GossipMenu.h>
 #include <domain/models/QuestGossip.h>
 #include <domain/models/PlayerCreateInfo.h>
@@ -467,6 +468,29 @@ public:
   void SendForcedReactions();
   void SendSetProficiency(uint8 itemClass, uint32 itemMask);
   void SendTalentsInfo();
+  /// CMSG_LEARN_TALENT (0x0306): learn/raise a talent rank for the active spec.
+  void HandleLearnTalent(WorldPacket &packet);
+  /// CMSG_LEARN_PREVIEW_TALENTS (0x2415): batch commit from the talent preview UI.
+  void HandleLearnPreviewTalents(WorldPacket &packet);
+  /// Validates+applies one talent learn (active spec). True if a rank was learned.
+  bool LearnTalent(uint32 talentId, uint32 requestedRank);
+  /// Picks the active spec's primary tree by class tab index (0/1/2): sets the
+  /// tree, teaches its signature/mastery spells, and persists it. 4.3.4 requires
+  /// this before any talent can be spent.
+  bool LearnPrimarySpecialization(uint8 tabIndex);
+  /// Loads persisted talents for `characterGuid` (active spec) and recomputes
+  /// free talent points from the character's level.
+  void LoadTalentsForCharacter(uint32 characterGuid);
+  /// free = pointsForLevel(level) - sum(rank+1). Clamped at 0.
+  void RecalculateTalentPoints();
+  /// Loads socketed glyphs for `characterGuid` (active spec) into `_glyphs`.
+  void LoadGlyphsForCharacter(uint32 characterGuid);
+  /// Pushes PLAYER_FIELD_GLYPH_SLOTS_1 / PLAYER_GLYPHS_ENABLED (level-gated) /
+  /// PLAYER_FIELD_GLYPHS_1 to the client as a values update.
+  void SendGlyphSlotFields();
+  /// Applies glyph `glyphId` to slot `slotIndex` (validates type/level), persists,
+  /// and refreshes the client. Returns true on success.
+  bool ApplyGlyph(uint8 slotIndex, uint32 glyphId);
   void SendInitialFactions();
   void SendLoginVerifyWorld(uint32 mapId, float x, float y, float z, float o);
   void SendMailListToClient(uint32_t characterGuid);
@@ -761,6 +785,15 @@ public:
       _actionButtonBySpec{};
   uint8_t _activeActionBarSpec = 0;
   uint8_t _actionBarToggles = 0xFF;
+
+  /// Learned talents for the active spec (loaded on login, updated on learn).
+  std::vector<CharacterTalentRow> _characterTalents;
+  /// Talent points not yet spent. Derived: pointsForLevel(level) - spentPoints.
+  uint32 _talentFreePoints = 0;
+  /// Chosen primary talent tree (TalentTab id) per spec; 0 = not specialized.
+  std::array<uint32, ActionButton::kMaxActionBarSpecs> _primaryTalentTree{};
+  /// Socketed glyphs (GlyphProperties id) per slot, active spec; 0 = empty.
+  std::array<uint32, 9> _glyphs{};
 
   ActionButton::PackedActionBar &ActiveActionBar() {
     return _actionButtonBySpec[std::min<size_t>(_activeActionBarSpec,

@@ -289,6 +289,40 @@ bool UpdateCharacterMoney(uint32_t accountId, uint32_t characterGuid,
     return m_repository->RemoveCharacterSpell(characterGuid, spellId);
   }
 
+  std::vector<CharacterTalentRow> GetCharacterTalents(uint32_t characterGuid,
+                                                      uint8_t spec = 0) {
+    return m_repository->GetCharacterTalents(characterGuid, spec);
+  }
+
+  bool AddOrUpdateCharacterTalent(uint32_t characterGuid, uint32_t talentId,
+                                  uint8_t rank, uint8_t spec = 0) {
+    return m_repository->AddOrUpdateCharacterTalent(characterGuid, talentId,
+                                                    rank, spec);
+  }
+
+  bool ClearCharacterTalents(uint32_t characterGuid, uint8_t spec = 0) {
+    return m_repository->ClearCharacterTalents(characterGuid, spec);
+  }
+
+  uint32_t GetPrimaryTalentTree(uint32_t characterGuid, uint8_t spec = 0) {
+    return m_repository->GetPrimaryTalentTree(characterGuid, spec);
+  }
+
+  bool SetPrimaryTalentTree(uint32_t characterGuid, uint32_t tree,
+                            uint8_t spec = 0) {
+    return m_repository->SetPrimaryTalentTree(characterGuid, tree, spec);
+  }
+
+  std::vector<CharacterGlyphRow> GetCharacterGlyphs(uint32_t characterGuid,
+                                                    uint8_t spec = 0) {
+    return m_repository->GetCharacterGlyphs(characterGuid, spec);
+  }
+
+  bool SetCharacterGlyph(uint32_t characterGuid, uint8_t slot, uint32_t glyph,
+                         uint8_t spec = 0) {
+    return m_repository->SetCharacterGlyph(characterGuid, slot, glyph, spec);
+  }
+
   bool HasItemTemplate(uint32_t itemEntry) const {
     return m_repository->HasItemTemplate(itemEntry);
   }

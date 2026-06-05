@@ -294,25 +294,37 @@ void WorldSession::SendTalentsInfo() {
   // Reference: Player::SendTalentsInfoData(false) → BuildPlayerTalentsInfoData.
   // Format: uint8(isPet) | uint32(freeTalentPoints) | uint8(specsCount) |
   // uint8(activeSpec) | per-spec: uint32(primaryTree) | uint8(talentCount) |
-  // uint8(MAX_GLYPH_SLOT_INDEX=6) | uint16[6] glyphs.
+  // uint8(MAX_GLYPH_SLOT_INDEX) | uint16[slots] glyphs.
   // specsCount MUST be ≥ 1: with 0 the 4.3.4 client accesses specs[activeSpec]
   // out-of-bounds and crashes at the end of the loading screen.
-  static constexpr uint8 kGlyphSlots = 6;
+  // 4.3.4 has 9 glyph slots (GlyphSlot.dbc has 9 rows): 3 prime, 3 major,
+  // 3 minor, unlocked at levels 25/50/75.
+  static constexpr uint8 kGlyphSlots = 9;
   WorldPacket data(SMSG_TALENTS_INFO);
-  data.Append<uint8>(0); // isPet = false
-  data.Append<uint32>(0); // freeTalentPoints
-  static constexpr uint8 kSpecsCount =
-      static_cast<uint8>(ActionButton::kMaxActionBarSpecs);
+  data.Append<uint8>(0);                  // isPet = false
+  data.Append<uint32>(_talentFreePoints); // unspent talent points
+  // Send a SINGLE talent spec. Dual-spec is purchased in-game (~level 30); a
+  // character has 1 spec until then. Declaring 2 here makes the 4.3.4 client
+  // render a phantom second spec and the talent/glyph frame draws garbled.
+  static constexpr uint8 kSpecsCount = 1;
   data.Append<uint8>(kSpecsCount);
-  data.Append<uint8>(_activeActionBarSpec);
-  for (uint8 spec = 0; spec < kSpecsCount; ++spec) {
-    (void)spec;
-    data.Append<uint32>(0); // primaryTalentTree
-  data.Append<uint8>(0); // talentIdCount
-    data.Append<uint8>(kGlyphSlots);
-    for (uint8 i = 0; i < kGlyphSlots; ++i)
-  data.Append<uint16>(0);
-}
+  data.Append<uint8>(0); // active spec index (only one spec exists)
+
+  uint32 const primaryTree =
+      _primaryTalentTree.empty() ? 0u : _primaryTalentTree[0];
+  data.Append<uint32>(primaryTree); // chosen specialization (TalentTab id)
+
+  data.Append<uint8>(static_cast<uint8>(_characterTalents.size()));
+  for (CharacterTalentRow const &t : _characterTalents) {
+    data.Append<uint32>(t.talentId); // Talent.dbc id
+    data.Append<uint8>(t.rank);      // highest learned rank, 0-based
+  }
+
+  data.Append<uint8>(kGlyphSlots);
+  for (uint8 i = 0; i < kGlyphSlots; ++i) {
+    uint32 const glyph = (i < _glyphs.size()) ? _glyphs[i] : 0u;
+    data.Append<uint16>(static_cast<uint16>(glyph));
+  }
   SendPacket(data);
 }
 

@@ -12,6 +12,12 @@ void WorldSession::ProcessPacket(WorldPacket &packet) {
   case CMSG_AUTH_SESSION:
     HandleAuthSession(packet);
     break;
+  case CMSG_LEARN_TALENT:
+    HandleLearnTalent(packet);
+    break;
+  case CMSG_LEARN_PREVIEW_TALENTS:
+    HandleLearnPreviewTalents(packet);
+    break;
   case CMSG_CHAR_CREATE:
     HandleCharCreate(packet);
     break;
