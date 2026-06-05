@@ -396,6 +396,9 @@ void WorldSession::SendNearbyCreatureCreatesInChunks(float x, float y) {
   UpdateData batch(mapIdU16);
   uint32_t inBatch = 0;
   _visibleCreatureGuids.clear();
+  // Baseline for the movement-driven visibility throttle.
+  _lastVisibilityRefreshX = x;
+  _lastVisibilityRefreshY = y;
 
   auto flushBatch = [this, mapIdU16, &batch, &inBatch]() {
     if (batch.GetBlockCount() == 0)

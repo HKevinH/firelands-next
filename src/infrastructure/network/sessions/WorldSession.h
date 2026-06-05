@@ -748,6 +748,10 @@ public:
 
   PhaseShift _playerPhaseShift;
   std::unordered_set<uint64> _visibleCreatureGuids;
+  /// XY where nearby-creature visibility was last diffed; movement re-runs the
+  /// diff once the player has travelled far enough from here (throttle).
+  float _lastVisibilityRefreshX = 0.f;
+  float _lastVisibilityRefreshY = 0.f;
   };
 
 } // namespace Firelands
