@@ -127,6 +127,10 @@ void WorldSession::HandlePlayerLogin(WorldPacket &packet) {
   LoginSpawnInWorld(guid, character, move);
   LoadQuestProgressForCharacter(static_cast<uint32>(guid));
   LoginSendCreateUpdatesAndMutualVisibility(guid, character, move);
+  // Now that the self CREATE object exists on the client, push the glyph socket
+  // layout (PLAYER_FIELD_GLYPH_SLOTS / PLAYER_GLYPHS_ENABLED / PLAYER_FIELD_GLYPHS).
+  // Doing this before the CREATE leaves the sockets at 0 and the wheel unordered.
+  SendGlyphSlotFields();
   SendRestoredQuestLogToClient();
   LoginFinalizeWorldEntry(guid);
 
@@ -257,7 +261,11 @@ void WorldSession::LoginBuildKnownSpellsAndSendSpellbook(Character const &charac
   LoadTalentsForCharacter(static_cast<uint32_t>(character.GetGuid()));
   LoadGlyphsForCharacter(static_cast<uint32_t>(character.GetGuid()));
   SendTalentsInfo();
-  SendGlyphSlotFields();
+  // NOTE: SendGlyphSlotFields() is intentionally NOT called here. The glyph
+  // socket layout is a values update on the player object, so it must be sent
+  // AFTER the self CREATE object (see LoginPlayerEnterWorld). Sent here it would
+  // be wiped by the later CREATE, leaving every socket at 0 and the glyph wheel
+  // unordered on the client.
   LoadActionButtonsForCharacter(static_cast<uint32_t>(character.GetGuid()));
   SendInitialActionButtons();
   SendInitialFactions();
