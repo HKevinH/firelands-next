@@ -4,6 +4,7 @@
 #include <application/services/OnlineCharacterSessionRegistry.h>
 #include <application/services/CharacterService.h>
 #include <application/services/WorldService.h>
+#include <shared/game/GameTele.h>
 #include <application/logic/CreatureSpawnLogic.h>
 #include <domain/models/Character.h>
 #include <domain/repositories/INpcTemplateSearchRepository.h>
@@ -1099,6 +1100,31 @@ bool CommandService::HandleTele(std::shared_ptr<ICommandSession> session,
                                 const std::vector<std::string> &args,
                                 PrivilegeOrigin origin) {
   (void)origin;
+  if (args.empty()) {
+    session->SendNotification(
+        "Usage: .tele <name>  |  .tele <x> <y> <z> [mapId]");
+    return false;
+  }
+
+  // `.tele <name>` — resolve a named destination from `game_tele` (works across
+  // maps via the world-port flow). Detected when the first arg is not a number.
+  char const first = args[0][0];
+  bool const firstIsNumeric =
+      (first >= '0' && first <= '9') || first == '-' || first == '+' ||
+      first == '.';
+  if (!firstIsNumeric) {
+    std::string const name = JoinArgs(args.begin(), args.end());
+    if (auto store = WorldService::Instance().GetGameTeleStore()) {
+      if (GameTele const *tele = store->Find(name)) {
+        session->TeleportTo(tele->mapId, tele->x, tele->y, tele->z, tele->o);
+        session->SendNotification("Teleporting to " + tele->name + ".");
+        return true;
+      }
+    }
+    session->SendNotification("Unknown teleport location: " + name);
+    return false;
+  }
+
   try {
     if (args.size() < 3) {
       session->SendNotification(
