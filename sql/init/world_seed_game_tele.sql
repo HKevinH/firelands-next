@@ -2,7 +2,7 @@ USE `firelands_world`;
 
 -- Named teleport destinations for the `.tele <name>` command. Loaded into the
 -- in-memory GameTeleStore at world startup. Cross-map aware (each row has its
--- own `map`). Import a full TrinityCore game_tele dump on top to replace these.
+-- own `map`).
 DROP TABLE IF EXISTS `game_tele`;
 CREATE TABLE `game_tele` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
