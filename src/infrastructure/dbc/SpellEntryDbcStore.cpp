@@ -2,6 +2,7 @@
 
 #include <domain/repositories/ISpellCastTables.h>
 #include <shared/dbc/DbcReader.h>
+#include <shared/game/ShapeshiftForms.h>
 #include <shared/game/SpellAuraTypes.h>
 #include <shared/game/SpellPowerCost.h>
 #include <shared/game/StarterSpellFilters.h>
@@ -604,6 +605,72 @@ void SpellEntryDbcStore::MergeImmediateHealthFromSpellEffect(
   if (auraCount > 0u)
     LOG_DEBUG("SpellEffect.dbc: detected auras on {} spell(s) from {}.",
               auraCount, path);
+  }
+
+void SpellEntryDbcStore::MergeWarriorStanceGating() {
+  // Stance requirement masks for warrior abilities (no SpellShapeshift.dbc loader yet).
+  for (auto &kv : m_byId) {
+    uint32 stances = 0u;
+    uint32 stancesNot = 0u;
+    if (TryGetWarriorAbilityStanceRequirement(kv.first, stances, stancesNot)) {
+      kv.second.shapeshiftStancesMask = stances;
+      kv.second.shapeshiftStancesNotMask = stancesNot;
+    }
+  }
+
+  // Ensure the 3 stance spells are castable shapeshift spells: the generic SpellEffect merge
+  // drops shapeshift aura rows (IsExcludedLoginAuraType), so (re)attach the row here. Inject a
+  // minimal definition when a stance is missing from a trimmed Spell.dbc.
+  uint32 const stanceSpells[] = {kSpellBattleStance, kSpellDefensiveStance,
+                                 kSpellBerserkerStance};
+  for (uint32 const spellId : stanceSpells) {
+    uint8 const form = WarriorStanceFormForSpell(spellId);
+    SpellDefinition &def = m_byId[spellId];
+    def.id = spellId;
+    if (def.shapeshiftFormFromAura() == 0u) {
+      SpellAuraEffectRow ar{};
+      ar.effectIndex = 0u;
+      ar.auraType = kSpellAuraModShapeshift;
+      ar.miscValue = static_cast<int32>(form);
+      def.auraEffects.push_back(ar);
+    }
+    def.hasAuraEffect = true;
+    def.auraEffectType = kSpellAuraModShapeshift;
+    def.auraEffectIndex = 0u;
+    def.auraActiveEffectMask |= static_cast<uint8>(1u << 0);
+    // DurationIndex 0 keeps the stance aura infinite.
+
+    // Passive damage modifiers (Defensive mitigates / Berserker glass-cannon). Only injected
+    // when the loaded DBC has no damage-percent rows, so real DBC data wins.
+    bool hasDamagePctRow = false;
+    for (SpellAuraEffectRow const &row : def.auraEffects) {
+      if (row.auraType == kSpellAuraModDamagePercentDone ||
+          row.auraType == kSpellAuraModDamagePercentTaken) {
+        hasDamagePctRow = true;
+        break;
+      }
+    }
+    int32 donePct = 0;
+    int32 takenPct = 0;
+    if (!hasDamagePctRow && GetWarriorStanceDamageMods(form, donePct, takenPct)) {
+      if (donePct != 0) {
+        SpellAuraEffectRow doneRow{};
+        doneRow.effectIndex = 1u;
+        doneRow.auraType = kSpellAuraModDamagePercentDone;
+        doneRow.basePoints = donePct;
+        def.auraEffects.push_back(doneRow);
+      }
+      if (takenPct != 0) {
+        SpellAuraEffectRow takenRow{};
+        takenRow.effectIndex = 2u;
+        takenRow.auraType = kSpellAuraModDamagePercentTaken;
+        takenRow.basePoints = takenPct;
+        def.auraEffects.push_back(takenRow);
+      }
+    }
+  }
+
+  LOG_DEBUG("Warrior stance gating applied (3 stance spells, hardcoded ability masks).");
   }
 
 bool SpellEntryDbcStore::HasSpell(uint32 spellId) const {

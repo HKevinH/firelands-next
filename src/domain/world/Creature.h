@@ -40,6 +40,10 @@ public:
   bool IsInCombat() const { return (m_unitFieldFlags & kUnitFlagInCombat) != 0; }
   void MarkInCombat() { m_unitFieldFlags |= kUnitFlagInCombat; }
   void ClearInCombat() { m_unitFieldFlags &= ~kUnitFlagInCombat; }
+  /// `UNIT_FLAG_STUNNED` (Charge Stun, etc.). Stunned creatures cannot act/chase.
+  bool IsStunned() const { return (m_unitFieldFlags & kUnitFlagStunned) != 0; }
+  void MarkStunned() { m_unitFieldFlags |= kUnitFlagStunned; }
+  void ClearStunned() { m_unitFieldFlags &= ~kUnitFlagStunned; }
   /// Clears combat and marks corpse lootable for the killing player.
   void MarkDeadAndLootable();
   /// `creature_template.flags_extra` (server-only template metadata).

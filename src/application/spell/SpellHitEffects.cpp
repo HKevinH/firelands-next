@@ -4,6 +4,7 @@
 #include <shared/game/SpellAttributes.h>
 #include <shared/game/SpellAuraTypes.h>
 #include <shared/game/SpellEffectMagnitude.h>
+#include <shared/game/WarriorAbilities.h>
 
 namespace Firelands {
 namespace SpellHitEffects {
@@ -74,6 +75,11 @@ void FillAuraOutcomeFromRow(SpellDefinition const &def, SpellAuraEffectRow const
   }
   out->auraIsNegative = AuraIsNegative(def, row.auraType);
   out->auraCasterLevel = level;
+  // Shapeshift (warrior stance): expose the form so the infra layer can write the form byte,
+  // swap stances, and treat the aura as infinite even though the spell is not PASSIVE.
+  out->auraIsShapeshiftForm = (row.auraType == kSpellAuraModShapeshift);
+  out->shapeshiftForm =
+      out->auraIsShapeshiftForm ? static_cast<uint8>(row.miscValue) : 0u;
 }
 
 int32 SumImmediateHealthFromEffectRows(SpellDefinition const &def, uint8 casterLevel) {
@@ -145,6 +151,7 @@ void ApplyAuraFromDefinition(SpellDefinition const *def, uint64 hitGuid, uint64 
   row.realPointsPerLevel = def->auraRealPointsPerLevel;
   row.periodMs = def->auraPeriodicPeriodMs;
   row.periodicHealthDeltaPerTick = def->auraPeriodicHealthDeltaPerTick;
+  row.miscValue = static_cast<int32>(def->shapeshiftFormFromAura());
   FillAuraOutcomeFromRow(*def, row, hitGuid, casterGuid, casterLevel, castTables, out);
   (void)now;
 }
@@ -174,6 +181,35 @@ void ApplySpellEffectsFromDefinition(SpellDefinition const *def, uint64 hitGuid,
   }
 
   ApplyAuraFromDefinition(def, hitGuid, casterGuid, casterLevel, now, castTables, out);
+
+  // Shapeshift spells (warrior stances) carry extra aura rows (stance damage modifiers) that
+  // can be picked as the "primary" cast aura, masking the shapeshift. Force the applied aura
+  // to be the form change so the stance is set; the damage-modifier rows still feed the stat
+  // recompute once the stance aura is active on the unit.
+  if (uint8 const stanceForm = def->shapeshiftFormFromAura()) {
+    out->hasAuraApply = true;
+    out->auraTargetGuid = casterGuid;
+    out->auraCasterGuid = casterGuid;
+    out->auraSpellId = def->id;
+    out->auraEffectType = kSpellAuraModShapeshift;
+    out->auraEffectIndex = 0;
+    out->auraIsShapeshiftForm = true;
+    out->shapeshiftForm = stanceForm;
+    out->auraIsNegative = false;
+  }
+
+  // Warrior Charge: server-side combat side effects (rage + triggered stun). The rush
+  // movement itself is driven by the casting player's client.
+  uint32 stunSpellId = 0;
+  int32 rageGain = 0;
+  if (TryGetWarriorChargeData(def->id, stunSpellId, rageGain) &&
+      hitGuid != casterGuid && hitGuid != 0) {
+    out->isChargeEffect = true;
+    out->chargeTargetGuid = hitGuid;
+    out->chargeStunSpellId = stunSpellId;
+    out->chargeStunDurationMs = kChargeStunDurationMs;
+    out->chargeRageGain = rageGain;
+  }
 }
 
 uint32 ResolveAuraDurationMs(uint32 spellId, uint8 casterLevel, uint32 outcomeDurationMs,

@@ -64,6 +64,8 @@ struct SpellCastRequest {
   bool targetIsFriendlyTeamForSpellRange = false;
   /// Caster level for aura packets (defaults to 1 when unset).
   uint8 casterLevel = 1;
+  /// Caster's current `ShapeshiftForm` (warrior stance) for `SpellShapeshift.dbc` gating.
+  uint8 casterShapeshiftForm = 0;
   /// `UNIT_MOD_CAST_HASTE` / Berserking-style bonus (1.0 = none).
   float casterCastHasteMultiplier = 1.f;
 };
@@ -119,6 +121,20 @@ struct SpellCastOutcome {
   int32 auraPeriodicHealthDeltaPerTick = 0;
   bool auraIsNegative = false;
   uint8 auraCasterLevel = 1;
+  /// True when the applied aura is `SPELL_AURA_MOD_SHAPESHIFT` (warrior stance). Lets the
+  /// infra layer treat it as an infinite aura, write the form byte, and swap stances.
+  bool auraIsShapeshiftForm = false;
+  /// `ShapeshiftForm` to set on the caster when `auraIsShapeshiftForm` (0 otherwise).
+  uint8 shapeshiftForm = 0;
+  /// Warrior Charge (`SPELL_EFFECT_CHARGE`): infra grants rage and stuns the target. Movement
+  /// is client-driven for player casters; the server applies the combat side effects.
+  bool isChargeEffect = false;
+  uint64 chargeTargetGuid = 0;
+  /// Triggered stun spell (`7922`) applied to `chargeTargetGuid`.
+  uint32 chargeStunSpellId = 0;
+  uint32 chargeStunDurationMs = 0;
+  /// POWER1 (rage) granted to the caster on charge (rage * 10).
+  int32 chargeRageGain = 0;
 };
 
 /// Centralizes spell cast validation and server-side spell wire output (Phase A+).

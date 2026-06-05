@@ -59,6 +59,12 @@ enum SpellFailedReason : uint8 {
   SPELL_FAILED_SPELL_IS_PASSIVE = 58,
   /// Caster level below `SpellLevels.dbc` requirement (`SPELL_FAILED_LOW_CASTLEVEL`).
   SPELL_FAILED_LOW_CASTLEVEL = 73,
+  /// Cast requires a shapeshift/stance the caster is not in (`SpellShapeshift.dbc` Stances).
+  /// Verify value vs client 15595 if the red UI text mismatches.
+  SPELL_FAILED_ONLY_SHAPESHIFT = 95,
+  /// Cast forbidden in the caster's current shapeshift/stance (`StancesNot`).
+  /// Verify value vs client 15595 if the red UI text mismatches.
+  SPELL_FAILED_NOT_SHAPESHIFT = 89,
 };
 
 /// Parses `CMSG_CANCEL_CAST` (spell id + cast id).

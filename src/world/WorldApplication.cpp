@@ -1,5 +1,4 @@
 #include "WorldApplication.h"
-
 #include "WorldFtxuiConsole.h"
 #include "WorldInteractiveConsole.h"
 #include <infrastructure/combat/InMemoryThreatManager.h>
@@ -253,6 +252,7 @@ int RunWorldGameStack(std::shared_ptr<WorldFtxuiRuntime> tui_runtime,
     spellEntryStore->MergeSpellDbcRows(worldConn);
     spellEntryStore->MergeImmediateHealthFromSpellEffect(dbcBasePath +
                                                          "/SpellEffect.dbc");
+    spellEntryStore->MergeWarriorStanceGating();
     spellEntryStore->ApplySpellPowerManaFromTables(*spellCastTables);
     if (!spellEntryStore->LoadSpellLevels(dbcBasePath + "/SpellLevels.dbc")) {
       LOG_WARN("SpellLevels.dbc not loaded from {}; spell level gates use "

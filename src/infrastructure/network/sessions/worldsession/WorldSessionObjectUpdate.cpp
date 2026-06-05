@@ -735,6 +735,15 @@ void BuildUnitDynamicFlagsValuesUpdate(uint16 mapId, uint64 unitGuid,
   update.Build(outPacket);
 }
 
+void BuildUnitBytes2ValuesUpdate(uint16 mapId, uint64 unitGuid, uint32 bytes2Value,
+                                 WorldPacket &outPacket) {
+  std::map<uint16, uint32> fields;
+  fields[UNIT_FIELD_BYTES_2] = bytes2Value;
+  UpdateData update(mapId);
+  update.AddValuesUpdate(unitGuid, fields);
+  update.Build(outPacket);
+}
+
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName) {
   dst.WriteString(ch.GetName());

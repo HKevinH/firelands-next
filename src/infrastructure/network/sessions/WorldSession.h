@@ -335,6 +335,9 @@ public:
   void HandleLfgLockInfoRequest(WorldPacket &packet);
   void HandleRequestCemeteryList(WorldPacket &packet);
   void HandleCastSpell(WorldPacket &packet);
+  /// Server-drives the warrior Charge rush to `out.chargeTargetGuid`: sends a movement spline
+  /// to the caster + nearby and updates the authoritative position to the melee stop point.
+  void DriveChargeMovement(std::shared_ptr<Map> const &map, SpellCastOutcome const &out);
   void HandleAttackSwing(WorldPacket &packet);
   void HandleAttackStop(WorldPacket &packet);
   void StopMeleeAutoAttack(bool sendStopPackets = true);

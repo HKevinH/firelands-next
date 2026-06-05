@@ -2,6 +2,7 @@
 
 #include <shared/Common.h>
 #include <shared/game/SpellAttributes.h>
+#include <shared/game/SpellAuraTypes.h>
 #include <shared/game/StarterSpellFilters.h>
 
 #include <vector>
@@ -94,6 +95,12 @@ struct SpellDefinition {
   /// Signed HP change per periodic tick (negative = damage).
   int32 auraPeriodicHealthDeltaPerTick = 0;
 
+  /// `SpellShapeshift.dbc` Stances bitmask: forms in which this spell may be cast (0 = any).
+  /// Populated post-load from `TryGetWarriorAbilityStanceRequirement` (no DBC loader yet).
+  uint32 shapeshiftStancesMask = 0;
+  /// `SpellShapeshift.dbc` StancesNot bitmask: forms in which this spell is forbidden.
+  uint32 shapeshiftStancesNotMask = 0;
+
   /// Any `SpellEffect.dbc` apply-aura row uses a mount/vehicle aura (not shapeshift).
   bool hasMountOrVehicleAura = false;
   /// Any `SpellEffect.dbc` row uses `SPELL_EFFECT_SKILL` (118) — profession trainers.
@@ -105,6 +112,19 @@ struct SpellDefinition {
   std::vector<SpellEffectRow> effectRows;
 
   bool isPassiveSpell() const { return (attributes & SpellAttr0::kPassive) != 0u; }
+
+  /// `ShapeshiftForm` granted by this spell's `SPELL_AURA_MOD_SHAPESHIFT` row (0 if none).
+  /// The form id is the row's `EffectMiscValue` (warrior stances: 17/18/19).
+  uint8 shapeshiftFormFromAura() const {
+    for (SpellAuraEffectRow const &row : auraEffects) {
+      if (row.auraType == kSpellAuraModShapeshift)
+        return static_cast<uint8>(row.miscValue);
+    }
+    return 0u;
+  }
+
+  /// True when this spell shifts the caster into a shapeshift form (e.g. warrior stance).
+  bool isShapeshiftFormSpell() const { return shapeshiftFormFromAura() != 0u; }
 
   /// On-use racials (Blood Fury, Berserking, Stoneform, …): `PASSIVE` in spellbook with a
   /// `SpellCooldowns` row. Always-on racials still use `DurationIndex` for infinite auras.

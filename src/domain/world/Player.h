@@ -100,6 +100,11 @@ public:
   void SetGmModeEnabled(bool enabled) { m_gmModeEnabled = enabled; }
   bool IsGmModeEnabled() const { return m_gmModeEnabled; }
 
+  /// `UnitBytes2` shapeshift form (warrior stance). 0 = `FORM_NONE`. In-memory only:
+  /// resets to `FORM_NONE` on relog (stance auras are not re-applied at login).
+  uint8 GetShapeshiftForm() const { return m_shapeshiftForm; }
+  void SetShapeshiftForm(uint8 form) { m_shapeshiftForm = form; }
+
 private:
   std::shared_ptr<IMapNotifier> m_notifier;
   uint8 m_race = 0;
@@ -120,6 +125,7 @@ private:
   uint8 m_powerType = 0;
   uint32 m_spirit = 0;
   uint8 m_level = 1;
+  uint8 m_shapeshiftForm = 0;
   std::chrono::steady_clock::time_point m_lastCombatAt{};
 
   PhaseShift m_phaseShift;

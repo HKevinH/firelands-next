@@ -35,6 +35,12 @@ public:
   /// columns are missing (error 1054), falls back to legacy merge. Missing table → warn.
   void MergeSpellDbcRows(std::shared_ptr<sql::Connection> worldConn);
 
+  /// After load/merge, populates `shapeshiftStancesMask` / `shapeshiftStancesNotMask` from the
+  /// hardcoded warrior gating table and guarantees the 3 warrior stance spells carry their
+  /// `SPELL_AURA_MOD_SHAPESHIFT` row (the generic load strips shapeshift auras via
+  /// `IsExcludedLoginAuraType`). Injects a minimal definition when a stance is absent from DBC.
+  void MergeWarriorStanceGating();
+
   bool IsLoaded() const { return m_loaded; }
 
   size_t DefinitionCount() const { return m_byId.size(); }

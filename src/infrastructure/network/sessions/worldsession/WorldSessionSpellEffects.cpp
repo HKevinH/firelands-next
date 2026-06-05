@@ -17,8 +17,12 @@
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionObjectUpdate.h>
 #include <shared/Logger.h>
+#include <shared/game/PlayerPowerType.h>
+#include <shared/game/ShapeshiftForms.h>
 #include <shared/game/SpellAttributes.h>
 #include <shared/game/SpellAuraTypes.h>
+#include <shared/game/UnitFieldFlags.h>
+#include <shared/game/WarriorAbilities.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <shared/dbc/SpellVisualDbc.h>
 #include <shared/network/AuraUpdateWire.h>
@@ -148,8 +152,11 @@ bool ApplyAuraFromOutcome(std::shared_ptr<Map> const &map,
   uint32 const durationMs = SpellHitEffects::ResolveAuraDurationMs(
       outcome.auraSpellId, outcome.auraCasterLevel, outcome.auraDurationMs, defPtr,
       tables.get());
+  // Shapeshift (warrior stance) auras have no `SpellDuration.dbc` row and are not PASSIVE,
+  // yet must persist indefinitely — treat them as infinite like login passives.
   bool const infiniteAura =
-      durationMs == 0u && defPtr && defPtr->isPassiveSpell();
+      durationMs == 0u &&
+      ((defPtr && defPtr->isPassiveSpell()) || outcome.auraIsShapeshiftForm);
   if (durationMs == 0u && !infiniteAura) {
     LOG_WARN("Aura spell {}: no duration from SpellDuration.dbc; not applying (client "
              "timer would desync)",
@@ -300,6 +307,56 @@ void BroadcastUnitTargetOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
   map->BroadcastPacketToNearby(unitGuid, pkt, true);
 }
 
+void BroadcastUnitShapeshiftFormOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
+                                      uint64 unitGuid, uint8 form) {
+  if (!map || unitGuid == 0)
+    return;
+  // Form sits in byte index 3 of UNIT_FIELD_BYTES_2 (other bytes stay 0 from create).
+  uint32 const bytes2Value = static_cast<uint32>(form) << 24;
+  WorldPacket pkt;
+  ws_obj::BuildUnitBytes2ValuesUpdate(static_cast<uint16>(mapId), unitGuid, bytes2Value,
+                                      pkt);
+  map->BroadcastPacketToNearby(unitGuid, pkt, true);
+}
+
+namespace {
+
+/// Stance side effects after the shapeshift aura is applied: swap the previous stance aura,
+/// store the new form, broadcast the form byte, and reset rage (warrior power dump).
+void ApplyShapeshiftStanceSwitch(uint32 mapId, std::shared_ptr<Map> const &map,
+                                 SpellCastOutcome const &outcome) {
+  auto player = map->TryGetPlayer(outcome.auraTargetGuid);
+  if (!player)
+    return;
+
+  uint8 const oldForm = player->GetShapeshiftForm();
+  uint8 const newForm = outcome.shapeshiftForm;
+  if (oldForm != FORM_NONE && oldForm != newForm) {
+    // Stances are mutually exclusive: drop the previous stance aura (different spell id, so
+    // this never touches the just-applied new stance aura).
+    if (uint32 const oldStanceSpell = StanceSpellForForm(oldForm))
+      RemovePlayerAuraOnMap(mapId, map, outcome.auraTargetGuid, oldStanceSpell,
+                            outcome.auraCasterLevel);
+  }
+
+  player->SetShapeshiftForm(newForm);
+  BroadcastUnitShapeshiftFormOnMap(mapId, map, outcome.auraTargetGuid, newForm);
+
+  // Warrior stance change dumps rage (baseline). Only for rage users.
+  if (player->GetPowerType() == static_cast<uint8>(PlayerPowerType::Rage)) {
+    uint32 const currentRage = player->GetLivePower1();
+    uint32 const retained = RageRetainedOnStanceSwitch(currentRage);
+    int32 const delta = static_cast<int32>(retained) - static_cast<int32>(currentRage);
+    if (delta != 0 &&
+        ApplyPlayerPower1DeltaOnMap(map, outcome.auraTargetGuid, delta)) {
+      BroadcastPlayerPower1OnMap(mapId, map, outcome.auraTargetGuid,
+                                 static_cast<uint8>(PlayerPowerType::Rage));
+    }
+  }
+}
+
+} // namespace
+
 void BroadcastPlayerAuraStatBonusOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
                                      uint64 unitGuid, uint8 casterLevel) {
   if (!map || unitGuid == 0)
@@ -361,9 +418,48 @@ void ApplySpellCastAuraOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
     return;
   if (!ApplyAuraFromOutcome(map, outcome, now))
     return;
+  if (outcome.auraIsShapeshiftForm && outcome.shapeshiftForm != FORM_NONE)
+    ApplyShapeshiftStanceSwitch(mapId, map, outcome);
   if (outcome.auraTargetGuid != 0)
     BroadcastPlayerAuraStatBonusOnMap(mapId, map, outcome.auraTargetGuid,
       outcome.auraCasterLevel);
+}
+
+void ApplyChargeEffectOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
+                            uint64 casterGuid, SpellCastOutcome const &outcome,
+                            std::chrono::steady_clock::time_point now) {
+  if (!map || !outcome.isChargeEffect || outcome.chargeTargetGuid == 0)
+    return;
+
+  // Rage reward (warrior). The rush movement is driven by the casting player's client.
+  if (outcome.chargeRageGain != 0 &&
+      ApplyPlayerPower1DeltaOnMap(map, casterGuid, outcome.chargeRageGain)) {
+    BroadcastPlayerPower1OnMap(mapId, map, casterGuid,
+                               static_cast<uint8>(PlayerPowerType::Rage));
+  }
+
+  // Triggered Charge Stun on the target, applied through the normal aura pipeline.
+  if (outcome.chargeStunSpellId != 0 && outcome.chargeStunDurationMs != 0) {
+    SpellCastOutcome stunOut{};
+    stunOut.hasAuraApply = true;
+    stunOut.auraTargetGuid = outcome.chargeTargetGuid;
+    stunOut.auraCasterGuid = casterGuid;
+    stunOut.auraSpellId = outcome.chargeStunSpellId;
+    stunOut.auraEffectType = kSpellAuraModStun;
+    stunOut.auraEffectIndex = 0;
+    stunOut.auraDurationMs = outcome.chargeStunDurationMs;
+    stunOut.auraIsNegative = true;
+    stunOut.auraCasterLevel = outcome.auraCasterLevel > 0 ? outcome.auraCasterLevel : 1u;
+    ApplySpellCastAuraOnMap(mapId, map, stunOut, now);
+
+    // Stun the creature: set UNIT_FLAG_STUNNED so the combat tick holds it in place.
+    if (auto creature = map->TryGetCreature(outcome.chargeTargetGuid)) {
+      creature->MarkStunned();
+      BroadcastUnitFlagsOnMap(mapId, map, outcome.chargeTargetGuid,
+                              creature->GetUnitFieldFlags());
+    }
+    // TODO(Charge): PvP player targets need a player-side UNIT_FLAG_STUNNED + root path.
+  }
 }
 
 void SendActiveAurasOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
@@ -412,6 +508,15 @@ void SendAuraRemovalOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
     });
 
   SendUnitAurasUpdateAll(map, unitGuid, now);
+
+  // Charge Stun (and other warrior stuns) expiring: drop UNIT_FLAG_STUNNED so the creature
+  // resumes chasing/attacking.
+  if (IsWarriorStunSpell(removal.spellId)) {
+    if (auto creature = map->TryGetCreature(unitGuid)) {
+      creature->ClearStunned();
+      BroadcastUnitFlagsOnMap(mapId, map, unitGuid, creature->GetUnitFieldFlags());
+    }
+  }
 
   if (auto player = map->TryGetPlayer(unitGuid)) {
     uint8 const level =

@@ -21,6 +21,33 @@ uint32 ApplyMagicResistToDamage(uint32 damage, float averageReduction) {
       std::ceil(std::max(static_cast<float>(damage) * factor, 0.f)));
 }
 
+/// 0 = "no data" sentinel from the stat snapshot; treat as 1.0 (no modifier).
+float ResolveDamagePctMultiplier(float stored) {
+  return stored > 0.f ? stored : 1.f;
+}
+
+uint32 ApplyDamageDonePctMultiplier(uint32 damage, UnitCombatStats const *caster,
+                                    uint8 school) {
+  if (damage == 0u || caster == nullptr || school >= 7)
+    return damage;
+  float const m = ResolveDamagePctMultiplier(caster->damageDonePctMultiplier[school]);
+  if (m == 1.f)
+    return damage;
+  return static_cast<uint32>(
+      std::max(0.f, std::round(static_cast<float>(damage) * m)));
+}
+
+uint32 ApplyDamageTakenPctMultiplier(uint32 damage, UnitCombatStats const *victim,
+                                     uint8 school) {
+  if (damage == 0u || victim == nullptr || school >= 7)
+    return damage;
+  float const m = ResolveDamagePctMultiplier(victim->damageTakenPctMultiplier[school]);
+  if (m == 1.f)
+    return damage;
+  return static_cast<uint32>(
+      std::max(0.f, std::round(static_cast<float>(damage) * m)));
+}
+
 } // namespace
 
 uint32 CalcArmorReducedDamage(uint8 attackerLevel, uint32 victimArmor, uint32 damage) {
@@ -100,6 +127,9 @@ int32 ResolveMitigatedHealthDelta(int32 rawSignedDelta, uint32 schoolMask,
                                              casterStats, schoolMask, periodicTick);
 
   uint8 const school = FirstSchoolFromMask(schoolMask);
+  // Caster damage-done modifier (e.g. Berserker +%, Defensive -%) before mitigation.
+  damage = ApplyDamageDonePctMultiplier(damage, casterStats, school);
+
   uint8 const victimLevel = victimStats ? victimStats->level : 1;
   uint32 const victimArmor = victimStats ? victimStats->armor : 0;
   uint32 const victimResist =
@@ -114,13 +144,20 @@ int32 ResolveMitigatedHealthDelta(int32 rawSignedDelta, uint32 schoolMask,
     damage = ApplyMagicResistToDamage(damage, resist);
   }
 
+  // Victim damage-taken modifier (e.g. Defensive Stance mitigation) after mitigation.
+  damage = ApplyDamageTakenPctMultiplier(damage, victimStats, school);
+
   return -static_cast<int32>(damage);
 }
 
 uint32 ComputeMeleeSwingDamage(UnitCombatStats const &attacker,
                                UnitCombatStats const &victim) {
-  uint32 const raw = ComputeMeleeSwingRawDamage(attacker);
-  return CalcArmorReducedDamage(attacker.level, victim.armor, raw);
+  // Physical melee = school 0; honor stance damage-done/taken multipliers.
+  uint32 raw = ComputeMeleeSwingRawDamage(attacker);
+  raw = ApplyDamageDonePctMultiplier(raw, &attacker, 0);
+  uint32 dmg = CalcArmorReducedDamage(attacker.level, victim.armor, raw);
+  dmg = ApplyDamageTakenPctMultiplier(dmg, &victim, 0);
+  return dmg;
 }
 
 } // namespace Firelands

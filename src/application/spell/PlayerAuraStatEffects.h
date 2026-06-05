@@ -25,6 +25,8 @@ struct PlayerAuraStatBonus {
   std::array<int32, 7> damageDoneNeg{};
   /// Multiplier on baseline 1.0 (`PLAYER_FIELD_MOD_DAMAGE_DONE_PCT`), multiplicative stack.
   std::array<float, 7> damageDonePctMultiplier{};
+  /// Per-school multiplier on damage *received* (Defensive Stance mitigation, …). 0 = no data.
+  std::array<float, 7> damageTakenPctMultiplier{};
   /// Additive percent points for `PLAYER_DODGE_PERCENTAGE` (Night Elf Quickness, …).
   float dodgePctBonus = 0.f;
   /// Additive fraction on baseline max health (Tauren Endurance, …).

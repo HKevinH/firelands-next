@@ -1012,6 +1012,9 @@ void WorldSession::ProcessCreatureCombatMovementTick() {
       evaded.push_back(creatureGuid);
       continue;
     }
+    // Stunned (e.g. Charge Stun) creatures hold position and cannot melee.
+    if (creature->IsStunned())
+      continue;
     ChaseCreatureTowardPlayer(map, creature, attackerPl, *this, runtime, now);
     ProcessCreatureCombatAttack(map, creature, attackerPl, runtime);
   }

@@ -1,3 +1,4 @@
+#include <application/combat/CreatureChaseMovement.h>
 #include <application/ports/IMapCollisionQueries.h>
 #include <application/services/WorldService.h>
 #include <boost/asio/redirect_error.hpp>
@@ -5,9 +6,13 @@
 #include <application/spell/SpellManager.h>
 #include <infrastructure/network/sessions/WorldSession.h>
 #include <infrastructure/network/sessions/worldsession/WorldSessionSpellEffects.h>
+#include <domain/world/Map.h>
+#include <domain/world/Player.h>
 #include <shared/Logger.h>
+#include <shared/game/MeleeRange.h>
 #include <shared/game/PlayerFactionTeam.h>
 #include <shared/game/SpellPowerCost.h>
+#include <shared/network/MonsterMovePackets.h>
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldPacket.h>
@@ -178,6 +183,44 @@ void WorldSession::ScheduleSpellImpactVisual(std::shared_ptr<Map> map, uint64 ca
                       });
   }
 
+void WorldSession::DriveChargeMovement(std::shared_ptr<Map> const &map,
+                                       SpellCastOutcome const &out) {
+  if (!map || out.chargeTargetGuid == 0)
+    return;
+
+  float tx = 0.f;
+  float ty = 0.f;
+  float tz = 0.f;
+  if (!map->TryGetObjectWorldPosition(out.chargeTargetGuid, tx, ty, tz))
+    return;
+
+  // Land at melee contact distance from the target along the charge line.
+  constexpr float kChargeContactStopYards = 2.0f;
+  MovementInfo const dest = application::combat::ComputeChaseStandPosition(
+      _position, tx, ty, tz, kChargeContactStopYards);
+
+  // Charge rush speed (yards/sec): a fast, fixed spline so the run is near-instant.
+  constexpr float kChargeSpeedYardsPerSec = 42.0f;
+  constexpr int32 kChargeSplineId = 1;
+  uint32 const durationMs = monster_move_wire::MonsterMoveDurationMs(
+      _position.x, _position.y, _position.z, dest.x, dest.y, dest.z,
+      kChargeSpeedYardsPerSec);
+
+  WorldPacket pkt = monster_move_wire::BuildMonsterMoveToPosition(
+      _playerGuid, _position.x, _position.y, _position.z, dest.x, dest.y, dest.z,
+      kChargeSplineId, durationMs, monster_move_wire::FacingTarget, 0.f,
+      out.chargeTargetGuid);
+  map->BroadcastPacketToNearby(_playerGuid, pkt, true);
+
+  // Server-authoritative landing position (client corrects with a heartbeat on arrival).
+  _position.x = dest.x;
+  _position.y = dest.y;
+  _position.z = dest.z;
+  _position.orientation = dest.orientation;
+  if (auto pl = map->TryGetPlayer(_playerGuid))
+    pl->SetPosition(_position);
+}
+
 void WorldSession::HandleCastSpell(WorldPacket &packet) {
   if (_playerGuid == 0)
     return;
@@ -257,6 +300,7 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
       req.casterMaxPower1 = casterPl->GetLiveMaxPower1();
             req.casterBasePower1 = casterPl->GetLiveBasePower1();
       req.casterCastHasteMultiplier = casterPl->GetCastHasteMultiplier();
+      req.casterShapeshiftForm = casterPl->GetShapeshiftForm();
   }
   }
     if (!req.hasCasterPowerSnapshot && _loginMaxPower1 > 0u) {
@@ -289,6 +333,10 @@ void WorldSession::HandleCastSpell(WorldPacket &packet) {
             combatOnly.power1Delta = 0;
       (void)ApplySpellCastOutcomeOnMap(_mapId, map, _playerGuid,
                                                                             static_cast<uint32>(c.spellId), combatOnly, now);
+      if (out.isChargeEffect) {
+        DriveChargeMovement(map, out);
+        ApplyChargeEffectOnMap(_mapId, map, _playerGuid, out, now);
+      }
       TryAggroCreatureFromSpellDamage(out.directHealthTargetGuid, out.directHealthDelta);
       ScheduleSpellImpactVisual(map, _playerGuid, static_cast<uint32>(c.spellId),
                                 out.primaryHitTargetGuid, out.spellImpactDelayMs);

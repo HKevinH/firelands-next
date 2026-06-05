@@ -61,6 +61,24 @@ void ApplyDamagePercentRowToBonus(SpellAuraEffectRow const &row, uint8 casterLev
   }
 }
 
+void ApplyDamageTakenPercentRowToBonus(SpellAuraEffectRow const &row, uint8 casterLevel,
+                                       PlayerAuraStatBonus &bonus) {
+  int32 const magnitude = SpellEffectMagnitude::NeutralMagnitudeAtLevel(
+      row.basePoints, row.dieSides, row.realPointsPerLevel, casterLevel);
+  if (magnitude == 0)
+    return;
+  float const factor = 1.f + static_cast<float>(magnitude) / 100.f;
+  int const mask = row.miscValue;
+  for (uint8 school = 0; school < 7; ++school) {
+    if (mask != 0 && (mask & (1 << school)) == 0)
+      continue;
+    if (bonus.damageTakenPctMultiplier[school] <= 0.f)
+      bonus.damageTakenPctMultiplier[school] = factor;
+    else
+      bonus.damageTakenPctMultiplier[school] *= factor;
+  }
+}
+
 void ApplyAuraRowToBonus(SpellDefinition const &def, SpellAuraEffectRow const &row,
                          uint8 casterLevel, std::array<uint32, 5> const *primaryStats,
                          PlayerAuraStatBonus &bonus) {
@@ -144,6 +162,11 @@ void ApplyAuraRowToBonus(SpellDefinition const &def, SpellAuraEffectRow const &r
     return;
   }
 
+  if (row.auraType == kSpellAuraModDamagePercentTaken) {
+    ApplyDamageTakenPercentRowToBonus(row, level, bonus);
+    return;
+  }
+
   if (row.auraType == kSpellAuraModCombatSpeedPct) {
     if (magnitude != 0) {
       float const factor = 1.f + static_cast<float>(magnitude) / 100.f;
@@ -221,6 +244,8 @@ void ApplyPlayerAuraStatBonusToCombatStats(UnitCombatStats &stats,
     stats.spellDamageDonePos[school] -= bonus.damageDoneNeg[school];
     stats.resistanceBuffPos[school] = bonus.resistanceBuffPos[school];
     stats.resistanceBuffNeg[school] = bonus.resistanceBuffNeg[school];
+    stats.damageDonePctMultiplier[school] = bonus.damageDonePctMultiplier[school];
+    stats.damageTakenPctMultiplier[school] = bonus.damageTakenPctMultiplier[school];
   }
 }
 

@@ -22,6 +22,12 @@ void ApplySpellCastAuraOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
 void SendActiveAurasOnMap(std::shared_ptr<Map> const &map, uint64 unitGuid,
                              std::chrono::steady_clock::time_point now);
 
+/// Applies warrior Charge combat side effects: grants rage to the caster and stuns the target
+/// (triggered stun aura + `UNIT_FLAG_STUNNED`). The rush movement is client-driven.
+void ApplyChargeEffectOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
+                            uint64 casterGuid, SpellCastOutcome const &outcome,
+                            std::chrono::steady_clock::time_point now);
+
 /// Recomputes aura-derived stat/rating fields and broadcasts `SMSG_UPDATE_OBJECT`.
 void BroadcastPlayerAuraStatBonusOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
                                        uint64 unitGuid, uint8 casterLevel);
@@ -96,5 +102,9 @@ void BroadcastUnitDynamicFlagsOnMap(uint32 mapId, std::shared_ptr<Map> const &ma
 /// Broadcasts `UNIT_FIELD_TARGET` to nearby observers.
 void BroadcastUnitTargetOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
                               uint64 unitGuid, uint64 targetGuid);
+
+/// Broadcasts the `UNIT_FIELD_BYTES_2` shapeshift form (warrior stance) to nearby + self.
+void BroadcastUnitShapeshiftFormOnMap(uint32 mapId, std::shared_ptr<Map> const &map,
+                                      uint64 unitGuid, uint8 form);
 
 } // namespace Firelands

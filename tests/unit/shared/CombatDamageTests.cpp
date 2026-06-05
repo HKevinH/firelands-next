@@ -86,3 +86,56 @@ TEST(CombatDamageTests, MeleeSwingUsesAttackPowerAndArmor) {
   EXPECT_GT(vsSoft, vsArmored);
   EXPECT_GT(vsSoft, 10u);
 }
+
+TEST(CombatDamageTests, StanceDamageDoneMultiplierScalesMelee) {
+  UnitCombatStats attacker{};
+  attacker.level = 60;
+  attacker.attackPower = 1000;
+  UnitCombatStats victim{};
+  victim.level = 60;
+  victim.armor = 1000u;
+
+  uint32 const neutral = ComputeMeleeSwingDamage(attacker, victim);
+
+  UnitCombatStats berserker = attacker;
+  berserker.damageDonePctMultiplier[0] = 1.1f; // +10% physical
+  uint32 const boosted = ComputeMeleeSwingDamage(berserker, victim);
+  EXPECT_GT(boosted, neutral);
+
+  UnitCombatStats defensive = attacker;
+  defensive.damageDonePctMultiplier[0] = 0.9f; // -10% physical
+  uint32 const softened = ComputeMeleeSwingDamage(defensive, victim);
+  EXPECT_LT(softened, neutral);
+}
+
+TEST(CombatDamageTests, StanceDamageTakenMultiplierMitigatesMelee) {
+  UnitCombatStats attacker{};
+  attacker.level = 60;
+  attacker.attackPower = 1000;
+
+  UnitCombatStats victim{};
+  victim.level = 60;
+  victim.armor = 1000u;
+  uint32 const neutral = ComputeMeleeSwingDamage(attacker, victim);
+
+  UnitCombatStats tank = victim;
+  tank.damageTakenPctMultiplier[0] = 0.75f; // -25% taken
+  uint32 const mitigated = ComputeMeleeSwingDamage(attacker, tank);
+  EXPECT_LT(mitigated, neutral);
+}
+
+TEST(CombatDamageTests, StanceMultipliersApplyToSpellDamage) {
+  UnitCombatStats caster{};
+  caster.level = 60;
+  caster.damageDonePctMultiplier[1] = 1.5f; // +50% holy (school index 1)
+  UnitCombatStats victim{};
+  victim.level = 60;
+
+  int32 const boosted = ResolveMitigatedHealthDelta(-100, kSpellSchoolMaskHoly, &caster, 60,
+                                                    &victim);
+  UnitCombatStats neutralCaster{};
+  neutralCaster.level = 60;
+  int32 const neutral = ResolveMitigatedHealthDelta(-100, kSpellSchoolMaskHoly,
+                                                    &neutralCaster, 60, &victim);
+  EXPECT_LT(boosted, neutral); // more damage = more negative delta
+}

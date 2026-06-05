@@ -5,6 +5,7 @@
 namespace Firelands {
 
 /// Cataclysm 4.3.4 `UNIT_FIELD_FLAGS` bits (reference `UnitDefines.h`).
+inline constexpr uint32_t kUnitFlagStunned = 0x00040000u;
 inline constexpr uint32_t kUnitFlagCanSwim = 0x00008000u;
 inline constexpr uint32_t kUnitFlagInCombat = 0x00080000u;
 /// `creature_template.unit_flags` / GM visibility.

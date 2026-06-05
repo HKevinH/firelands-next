@@ -36,6 +36,25 @@ TEST(SpellDefinitionTests, ActivatablePassiveUsesSpellCooldownRow) {
   EXPECT_TRUE(hardiness.isPermanentLoginPassiveSpell());
 }
 
+TEST(SpellDefinitionTests, ShapeshiftFormExtractedFromAuraMiscValue) {
+  SpellDefinition defensiveStance{};
+  SpellAuraEffectRow row{};
+  row.auraType = kSpellAuraModShapeshift;
+  row.miscValue = 18; // FORM_DEFENSIVESTANCE
+  defensiveStance.auraEffects.push_back(row);
+
+  EXPECT_TRUE(defensiveStance.isShapeshiftFormSpell());
+  EXPECT_EQ(defensiveStance.shapeshiftFormFromAura(), 18u);
+
+  SpellDefinition fireball{};
+  SpellAuraEffectRow statRow{};
+  statRow.auraType = kSpellAuraModStat;
+  statRow.miscValue = 3;
+  fireball.auraEffects.push_back(statRow);
+  EXPECT_FALSE(fireball.isShapeshiftFormSpell());
+  EXPECT_EQ(fireball.shapeshiftFormFromAura(), 0u);
+}
+
 TEST(SpellDefinitionTests, DaVoodooShuffleQualifiesAsAlwaysOnLoginPassive) {
   SpellDefinition daVoodoo{};
   daVoodoo.attributes = 0x140u;

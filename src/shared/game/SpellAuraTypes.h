@@ -20,6 +20,8 @@ constexpr uint32 kSpellAuraModResistance = 22u;
 constexpr uint32 kSpellAuraModDamageDone = 13u;
 constexpr uint32 kSpellAuraModDodgePercent = 49u;
 constexpr uint32 kSpellAuraModDamagePercentDone = 79u;
+/// Percent modifier on damage the unit *receives* (Defensive Stance mitigation, etc.).
+constexpr uint32 kSpellAuraModDamagePercentTaken = 80u;
 constexpr uint32 kSpellAuraModIncreaseHealthPercent = 133u;
 constexpr uint32 kSpellAuraModPowerRegen = 85u;
 constexpr uint32 kSpellAuraModHealthRegenPercent = 88u;
@@ -31,6 +33,10 @@ constexpr uint32 kSpellAuraModCombatSpeedPct = 193u;
 constexpr uint32 kSpellAuraMechanicDurationMod = 232u;
 constexpr uint32 kSpellAuraModShapeshift = 36u;
 constexpr uint32 kSpellAuraTransform = 56u;
+/// Crowd control auras (`SpellAuraDefines.h`).
+constexpr uint32 kSpellAuraModStun = 12u;
+constexpr uint32 kSpellAuraModRoot = 26u;
+constexpr uint32 kSpellAuraModDecreaseSpeed = 33u;
 constexpr uint32 kSpellAuraModIncreaseMountedSpeed = 32u;
 constexpr uint32 kSpellAuraMounted = 78u;
 constexpr uint32 kSpellAuraFly = 201u;
@@ -53,6 +59,8 @@ constexpr uint32 kSpellEffectHealthLeech = 9u;
 constexpr uint32 kSpellEffectHeal = 10u;
 constexpr uint32 kSpellEffectEnvironmentalDamage = 13u;
 constexpr uint32 kSpellEffectEnergize = 30u;
+/// Warrior Charge / Intercept movement effect (`SpellEffects.h`).
+constexpr uint32 kSpellEffectCharge = 64u;
 
 inline bool SpellEffectKindHasImmediateHealthDelta(uint32 effectKind) {
   return effectKind == kSpellEffectSchoolDamage ||

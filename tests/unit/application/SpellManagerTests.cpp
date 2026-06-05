@@ -8,7 +8,9 @@
 #include <domain/repositories/ISpellDefinitionStore.h>
 #include <shared/game/PlayerFactionTeam.h>
 #include <shared/game/PlayerPowerType.h>
+#include <shared/game/ShapeshiftForms.h>
 #include <shared/game/SpellAttributes.h>
+#include <shared/game/SpellAuraTypes.h>
 #include <shared/network/SpellCastWire.h>
 #include <shared/network/WorldOpcodes.h>
 
@@ -448,6 +450,35 @@ private:
   uint32 m_durationIndex;
 };
 
+/// Store for warrior-stance tests: the 3 stance spells carry a shapeshift aura row; gated
+/// abilities (Overpower 7384 = Battle only, Shield Wall 871 = not Berserker) carry masks.
+class WarriorStanceStore final : public ISpellDefinitionStore {
+public:
+  bool HasSpell(uint32 /*spellId*/) const override { return true; }
+  std::optional<SpellDefinition> GetDefinition(uint32 spellId) const override {
+    SpellDefinition d{};
+    d.id = spellId;
+    uint8 const form = WarriorStanceFormForSpell(spellId);
+    if (form != FORM_NONE) {
+      SpellAuraEffectRow row{};
+      row.effectIndex = 0;
+      row.auraType = kSpellAuraModShapeshift;
+      row.miscValue = static_cast<int32>(form);
+      d.auraEffects.push_back(row);
+      d.hasAuraEffect = true;
+      d.auraEffectType = kSpellAuraModShapeshift;
+      return d;
+    }
+    uint32 stances = 0u;
+    uint32 stancesNot = 0u;
+    if (TryGetWarriorAbilityStanceRequirement(spellId, stances, stancesNot)) {
+      d.shapeshiftStancesMask = stances;
+      d.shapeshiftStancesNotMask = stancesNot;
+    }
+    return d;
+  }
+};
+
 static SpellCastRequest MakeRequest(uint64 casterGuid, int32 spellId,
                                     std::unordered_set<uint32> *knownSpells) {
   SpellCastRequest req;
@@ -508,6 +539,60 @@ TEST(SpellManagerTests, AuraEffectFieldsAreSetCorrectly) {
   // Verify that the aura fields were correctly set in the definition
   // This test primarily verifies that our SpellDefinitionStore implementation works correctly
   // In a real scenario, we would check that the aura fields are properly propagated
+}
+
+TEST(SpellManagerTests, StanceSpell_AppliesShapeshiftAuraWith1sGcd) {
+  auto defs = std::make_shared<WarriorStanceStore>();
+  SpellManager mgr(defs);
+  std::unordered_set<uint32> known = {kSpellDefensiveStance};
+  SpellCastRequest req = MakeRequest(0x10ULL, kSpellDefensiveStance, &known);
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellStartAndGo);
+  EXPECT_TRUE(out.hasAuraApply);
+  EXPECT_TRUE(out.auraIsShapeshiftForm);
+  EXPECT_EQ(out.shapeshiftForm, FORM_DEFENSIVESTANCE);
+  EXPECT_EQ(out.auraEffectType, kSpellAuraModShapeshift);
+  auto const gcd = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       out.newGcdReady - req.now)
+                       .count();
+  EXPECT_EQ(gcd, 1000);
+}
+
+TEST(SpellManagerTests, GatedAbility_WrongStance_FailsOnlyShapeshift) {
+  auto defs = std::make_shared<WarriorStanceStore>();
+  SpellManager mgr(defs);
+  std::unordered_set<uint32> known = {7384};
+  SpellCastRequest req = MakeRequest(0x10ULL, 7384, &known); // Overpower needs Battle
+  req.casterShapeshiftForm = FORM_DEFENSIVESTANCE;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_TRUE(out.failurePacket.Is(SMSG_SPELL_FAILURE));
+}
+
+TEST(SpellManagerTests, GatedAbility_RightStance_Succeeds) {
+  auto defs = std::make_shared<WarriorStanceStore>();
+  SpellManager mgr(defs);
+  std::unordered_set<uint32> known = {7384};
+  SpellCastRequest req = MakeRequest(0x10ULL, 7384, &known);
+  req.casterShapeshiftForm = FORM_BATTLESTANCE;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  EXPECT_NE(out.kind, SpellCastOutcome::Kind::SpellFailure);
+}
+
+TEST(SpellManagerTests, ForbiddenAbility_InForbiddenStance_FailsNotShapeshift) {
+  auto defs = std::make_shared<WarriorStanceStore>();
+  SpellManager mgr(defs);
+  std::unordered_set<uint32> known = {871};
+  SpellCastRequest req = MakeRequest(0x10ULL, 871, &known); // Shield Wall not in Berserker
+  req.casterShapeshiftForm = FORM_BERSERKERSTANCE;
+  SpellCastOutcome out;
+  mgr.ProcessCastRequest(req, &out);
+  ASSERT_EQ(out.kind, SpellCastOutcome::Kind::SpellFailure);
+  EXPECT_TRUE(out.failurePacket.Is(SMSG_SPELL_FAILURE));
 }
 
 TEST(SpellManagerTests, UnknownSpell_ReturnsSpellFailure) {

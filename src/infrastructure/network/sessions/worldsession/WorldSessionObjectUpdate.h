@@ -114,6 +114,11 @@ void BuildUnitFlagsValuesUpdate(uint16 mapId, uint64 unitGuid, uint32 unitFieldF
 void BuildUnitDynamicFlagsValuesUpdate(uint16 mapId, uint64 unitGuid,
                                        uint32 dynamicFlags, WorldPacket &outPacket);
 
+/// `SMSG_UPDATE_OBJECT` values block for `UNIT_FIELD_BYTES_2` only. Shapeshift form lives in
+/// byte index 3, so a warrior stance update passes `form << 24`.
+void BuildUnitBytes2ValuesUpdate(uint16 mapId, uint64 unitGuid, uint32 bytes2Value,
+                                 WorldPacket &outPacket);
+
 void AppendPlayerGuidLookupData(WorldPacket &dst, Character const &ch,
                                 std::string const &realmName);
 

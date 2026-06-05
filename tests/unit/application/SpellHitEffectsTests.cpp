@@ -4,6 +4,7 @@
 #include <application/spell/SpellManager.h>
 #include <domain/repositories/ISpellCastTables.h>
 #include <shared/game/SpellAuraTypes.h>
+#include <shared/game/WarriorAbilities.h>
 
 using namespace Firelands;
 
@@ -219,6 +220,66 @@ TEST(SpellHitEffectsTests, ApplySpellEffects_HealthLeechCountsAsDamage) {
       &def, 0x30ULL, 0x10ULL, 1, std::chrono::steady_clock::now(), nullptr, &out);
   ASSERT_TRUE(out.hasDirectHealthEffect);
   EXPECT_EQ(out.directHealthDelta, -9);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffects_ChargeFillsStunAndRage) {
+  SpellDefinition def{};
+  def.id = kSpellCharge;
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, /*hitGuid=*/0x200ULL, /*casterGuid=*/0x100ULL, 1,
+      std::chrono::steady_clock::now(), nullptr, &out);
+
+  ASSERT_TRUE(out.isChargeEffect);
+  EXPECT_EQ(out.chargeTargetGuid, 0x200ULL);
+  EXPECT_EQ(out.chargeStunSpellId, kSpellChargeStun);
+  EXPECT_EQ(out.chargeStunDurationMs, kChargeStunDurationMs);
+  EXPECT_EQ(out.chargeRageGain, kChargeRageGain);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffects_StanceWithDamageRowsStillShapeshifts) {
+  // Mirrors a real Spell.dbc stance: damage-percent rows precede the shapeshift row, which
+  // must still win as the applied aura so the form is set.
+  SpellDefinition def{};
+  def.id = 71u; // Defensive Stance
+  SpellAuraEffectRow doneRow{};
+  doneRow.effectIndex = 1;
+  doneRow.auraType = kSpellAuraModDamagePercentDone;
+  doneRow.basePoints = -10;
+  SpellAuraEffectRow takenRow{};
+  takenRow.effectIndex = 2;
+  takenRow.auraType = kSpellAuraModDamagePercentTaken;
+  takenRow.basePoints = -10;
+  SpellAuraEffectRow formRow{};
+  formRow.effectIndex = 0;
+  formRow.auraType = kSpellAuraModShapeshift;
+  formRow.miscValue = 18; // FORM_DEFENSIVESTANCE
+  def.auraEffects.push_back(doneRow);
+  def.auraEffects.push_back(takenRow);
+  def.auraEffects.push_back(formRow);
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, 0x10ULL, 0x10ULL, 1, std::chrono::steady_clock::now(), nullptr, &out);
+
+  ASSERT_TRUE(out.hasAuraApply);
+  EXPECT_TRUE(out.auraIsShapeshiftForm);
+  EXPECT_EQ(out.shapeshiftForm, 18u);
+  EXPECT_EQ(out.auraEffectType, kSpellAuraModShapeshift);
+  EXPECT_EQ(out.auraSpellId, 71u);
+}
+
+TEST(SpellHitEffectsTests, ApplySpellEffects_ChargeSelfTargetDoesNotTrigger) {
+  SpellDefinition def{};
+  def.id = kSpellCharge;
+
+  SpellCastOutcome out{};
+  SpellHitEffects::ApplySpellEffectsFromDefinition(
+      &def, /*hitGuid=*/0x100ULL, /*casterGuid=*/0x100ULL, 1,
+      std::chrono::steady_clock::now(), nullptr, &out);
+
+  EXPECT_FALSE(out.isChargeEffect);
 }
 
 TEST(SpellHitEffectsTests, ApplyAuraFromDefinition_PicksPeriodicRowFromAuraEffects) {

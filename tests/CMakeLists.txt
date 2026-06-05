@@ -58,6 +58,8 @@ add_executable(FirelandsUnitTests
     unit/shared/GmCreatureVisibilityTests.cpp
     unit/shared/PlayerResourceRegenTests.cpp
     unit/shared/SpellCastHasteTests.cpp
+    unit/shared/ShapeshiftFormsTests.cpp
+    unit/shared/WarriorAbilitiesTests.cpp
     unit/application/PlayerAuraRegenEffectsTests.cpp
     unit/shared/MeleeRangeTest.cpp
     unit/shared/WorldSessionMovementChecksTest.cpp
@@ -98,6 +100,7 @@ add_executable(FirelandsUnitTests
     unit/infrastructure/ActionButtonPacketTests.cpp
     unit/infrastructure/ActionBarTogglesObjectUpdateTests.cpp
     unit/infrastructure/Power1ObjectUpdateTests.cpp
+    unit/infrastructure/ShapeshiftFormObjectUpdateTests.cpp
     unit/infrastructure/UnitObjectUpdateTests.cpp
     unit/infrastructure/PlayerBaselineStatsObjectUpdateTests.cpp
     unit/infrastructure/GossipPacketTests.cpp
@@ -110,6 +113,7 @@ add_executable(FirelandsUnitTests
     unit/domain/CreatureCombatStateTests.cpp
     unit/domain/CreatureUnitFlagsTests.cpp
     unit/domain/PlayerCombatTests.cpp
+    unit/domain/PlayerShapeshiftTests.cpp
     unit/combat/CombatEngineTest.cpp
     unit/combat/CombatHostilityTests.cpp
     unit/combat/CreatureChaseMovementTest.cpp

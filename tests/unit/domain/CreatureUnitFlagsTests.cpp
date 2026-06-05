@@ -18,6 +18,19 @@ TEST(CreatureUnitFlagsTests, PersistsUnitFieldAndExtraFlagsFromTemplate) {
   EXPECT_EQ(bunny.GetExtraFlags(), kCreatureExtraFlagTrigger | 0x2000u);
 }
 
+TEST(CreatureUnitFlagsTests, StunFlagSetAndCleared) {
+  Creature mob(1u, 1u, 1u, 100u, 1u);
+  EXPECT_FALSE(mob.IsStunned());
+
+  mob.MarkStunned();
+  EXPECT_TRUE(mob.IsStunned());
+  EXPECT_NE(mob.GetUnitFieldFlags() & kUnitFlagStunned, 0u);
+
+  mob.ClearStunned();
+  EXPECT_FALSE(mob.IsStunned());
+  EXPECT_EQ(mob.GetUnitFieldFlags() & kUnitFlagStunned, 0u);
+}
+
 TEST(CreatureUnitFlagsTests, ActsAsScriptTriggerWhenTemplateMatchesProxyPattern) {
   Creature bunny(1u, 38003u, 20570u, 1u, 1u, Creature::kDefaultFactionTemplate, 0u,
                  kUnitFieldFlagNotSelectable, 0u, kCreatureExtraFlagTrigger);

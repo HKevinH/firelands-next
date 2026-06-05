@@ -2,6 +2,7 @@
 
 #include <application/spell/SpellHitEffects.h>
 #include <application/ports/IMapCollisionQueries.h>
+#include <shared/game/ShapeshiftForms.h>
 #include <shared/game/SpellCastHaste.h>
 #include <shared/game/SpellAttributes.h>
 #include <shared/game/SpellLevelGate.h>
@@ -112,6 +113,13 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   out->auraPeriodicHealthDeltaPerTick = 0;
   out->auraIsNegative = false;
   out->auraCasterLevel = 1;
+  out->auraIsShapeshiftForm = false;
+  out->shapeshiftForm = 0;
+  out->isChargeEffect = false;
+  out->chargeTargetGuid = 0;
+  out->chargeStunSpellId = 0;
+  out->chargeStunDurationMs = 0;
+  out->chargeRageGain = 0;
 
   uint32 const spellId = static_cast<uint32>(req.client.spellId);
   if (!IsSpellKnown(spellId, req.knownSpells)) {
@@ -148,6 +156,28 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
                                      SpellCastWire::SPELL_FAILED_LOW_CASTLEVEL);
     out->kind = SpellCastOutcome::Kind::SpellFailure;
     return;
+  }
+
+  // Stance gating (`SpellShapeshift.dbc` Stances/StancesNot): warrior abilities locked to
+  // a form fail unless the caster is in (or out of) the required stance.
+  if (def) {
+    uint32 const currentStanceMask = StanceMaskFromForm(req.casterShapeshiftForm);
+    if (def->shapeshiftStancesMask != 0u &&
+        (def->shapeshiftStancesMask & currentStanceMask) == 0u) {
+      SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                       req.client.castId, req.client.spellId,
+                                       SpellCastWire::SPELL_FAILED_ONLY_SHAPESHIFT);
+      out->kind = SpellCastOutcome::Kind::SpellFailure;
+      return;
+    }
+    if (def->shapeshiftStancesNotMask != 0u &&
+        (def->shapeshiftStancesNotMask & currentStanceMask) != 0u) {
+      SpellCastWire::BuildSpellFailure(out->failurePacket, req.casterGuid,
+                                       req.client.castId, req.client.spellId,
+                                       SpellCastWire::SPELL_FAILED_NOT_SHAPESHIFT);
+      out->kind = SpellCastOutcome::Kind::SpellFailure;
+      return;
+    }
   }
 
   if (req.now < req.gcdReady) {
@@ -293,6 +323,9 @@ void SpellManager::ProcessCastRequest(SpellCastRequest const &req,
   }
 
   uint32 gcdDuration = cooldownGcdMs > 0u ? cooldownGcdMs : 1500u;
+  // Warrior stance swaps use the dedicated 1s stance GCD regardless of `SpellCooldowns.dbc`.
+  if (def && def->isShapeshiftFormSpell() && IsWarriorStanceSpell(spellId))
+    gcdDuration = 1000u;
   gcdDuration = std::min(gcdDuration, 10000u);
   out->newGcdReady =
       req.now + std::chrono::milliseconds(static_cast<int64_t>(gcdDuration));

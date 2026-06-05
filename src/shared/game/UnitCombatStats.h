@@ -19,6 +19,11 @@ struct UnitCombatStats {
   int32 attackPowerModPos = 0;
   int32 attackPowerModNeg = 0;
   float attackPowerMultiplier = 0.f;
+  /// Per-school multiplier on damage *dealt* (Berserker/Defensive Stance, etc.). 0 = no data
+  /// (treated as 1.0); combine multiplicatively. School 0 = physical.
+  std::array<float, 7> damageDonePctMultiplier{};
+  /// Per-school multiplier on damage *received* (Defensive Stance mitigation, etc.). 0 = 1.0.
+  std::array<float, 7> damageTakenPctMultiplier{};
 };
 
 int32 EffectiveAttackPower(UnitCombatStats const &stats);

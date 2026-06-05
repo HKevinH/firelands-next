@@ -20,6 +20,8 @@ add_library(FirelandsShared STATIC
     game/EquipmentCache.cpp
     game/ChatLanguages.cpp
     game/StarterSpellFilters.cpp
+    game/ShapeshiftForms.cpp
+    game/WarriorAbilities.cpp
     game/StarterSkillFilters.cpp
     game/PlayerItemProficiency.cpp
     game/SkillLineCategories.cpp
