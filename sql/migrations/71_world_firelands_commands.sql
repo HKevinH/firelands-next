@@ -33,7 +33,7 @@ INSERT INTO `firelands_commands` (`name`, `description`, `syntax`, `required_per
 ('dev', 'Toggle Developer tag', '.dev [on|off]', 64),
 ('visible', 'Toggle GM visibility to players', '.visible [on|off]', 64),
 ('fly', 'Toggle fly mode', '.fly [on|off]', 64),
-('speed', 'Set movement speed multiplier', '.speed <value>  (1=normal)', 64),
+('speed', 'Set run and flight speed (also affects fly)', '.speed <number> | .speed reset  (default 7)', 64),
 
 -- Manage Players (mask=8)
 ('online', 'List online players', '.online', 8),
@@ -50,13 +50,13 @@ INSERT INTO `firelands_commands` (`name`, `description`, `syntax`, `required_per
 ('additem', 'Add item to inventory', '.additem <itemId> [count]', 128),
 ('delitem', 'Delete item from inventory', '.delitem <itemId> [count]', 128),
 ('level', 'Set character level', '.level <value>', 128),
-('cd', 'Reset all spell cooldowns', '.cd', 128),
+('cd', 'Reset all spell cooldowns (including racials)', '.cd', 128),
 ('damage', 'Deal damage to targeted creature', '.damage <amount>', 128),
 ('revive', 'Revive yourself or targeted player', '.revive', 128),
-('faction', 'Change faction reaction', '.faction <factionId> <reaction>', 128),
+('faction', 'Force faction reaction rank or set faction template', '.faction forced set <id> <rank0-7> | forced clear <id> | forced clearall | template self|target <tpl>', 128),
 
 -- GM Tickets (mask=256 = ManageGmTickets)
-('ticket', 'Manage GM tickets', '.ticket list|close|respond', 256),
+('ticket', 'Manage GM tickets', '.ticket queue|mine|ui|take <id>|reply <id> <msg>|close <id>', 256),
 
 -- Accounts (mask=16 = ManageAccounts)
 ('account', 'Manage accounts (console only)', '.account create|delete|setaccess', 16),

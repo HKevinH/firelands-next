@@ -20,6 +20,21 @@ enum class FindPathStatus : uint8_t {
   NavMeshMissing
 };
 
+/// Human-readable name for logging / GM command output.
+inline char const *FindPathStatusName(FindPathStatus status) {
+  switch (status) {
+  case FindPathStatus::Complete:
+    return "Complete";
+  case FindPathStatus::Partial:
+    return "Partial";
+  case FindPathStatus::NoPath:
+    return "NoPath";
+  case FindPathStatus::NavMeshMissing:
+    return "NavMeshMissing";
+  }
+  return "Unknown";
+}
+
 struct FindPathRequest {
   uint32_t mapId = 0;
   float startX = 0.0f;
