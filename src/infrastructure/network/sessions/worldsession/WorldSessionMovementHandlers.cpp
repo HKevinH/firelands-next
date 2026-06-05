@@ -151,9 +151,13 @@ void WorldSession::HandleMoveTeleportAck(WorldPacket &packet) {
   _movementAnimTierSent.reset();
   SyncPlayerMovementHintsIfNeeded();
 
-  // Login merges nearby creatures into the initial SMSG_UPDATE_OBJECT; teleport does not,
-  // so the client would see an empty cell until we send CREATE for units here.
-  SendNearbyCreatureCreatesToSelf(_teleportPendingX, _teleportPendingY);
+  // After a teleport the player jumped to a new cell. Diff visibility against the
+  // creatures the client already has: CREATE the ones now in range and DESTROY the
+  // ones left behind. (Sending raw CREATEs here re-created already-known units and
+  // never removed the old ones, so they piled up as duplicates across teleports.)
+  RefreshNearbyCreaturePhaseVisibility(_teleportPendingX, _teleportPendingY);
+  _lastVisibilityRefreshX = _teleportPendingX;
+  _lastVisibilityRefreshY = _teleportPendingY;
 }
 
 void WorldSession::HandleMovement(WorldPacket &packet) {
@@ -251,6 +255,20 @@ void WorldSession::HandleMovement(WorldPacket &packet) {
       WorldPacket selfEcho(packet.GetOpcode(), packet.Size());
       selfEcho.Append(packet.GetBuffer(), packet.Size());
       SendPacket(selfEcho);
+
+      // Grid visibility: once the player has travelled far enough, diff nearby
+      // creatures so new ones get CREATE and ones left behind get DESTROY.
+      // Throttled by distance so it isn't run on every heartbeat.
+      if (positionChanged) {
+        constexpr float kVisibilityRefreshDistanceSq = 20.f * 20.f;
+        float const ddx = _position.x - _lastVisibilityRefreshX;
+        float const ddy = _position.y - _lastVisibilityRefreshY;
+        if (ddx * ddx + ddy * ddy >= kVisibilityRefreshDistanceSq) {
+          RefreshNearbyCreaturePhaseVisibility(_position.x, _position.y);
+          _lastVisibilityRefreshX = _position.x;
+          _lastVisibilityRefreshY = _position.y;
+        }
+      }
     }
     // `MSG_MOVE_START_SWIM` / `MSG_MOVE_STOP_SWIM` often carry the transition before
     // `MOVEMENTFLAG_SWIMMING` appears on merged heartbeats — mirror breath from opcode too.
